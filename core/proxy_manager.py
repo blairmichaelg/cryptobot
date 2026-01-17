@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import aiohttp
 import random
 from typing import List, Dict, Optional
@@ -33,11 +34,76 @@ class ProxyManager:
     using a 'Sticky Session' strategy (1 Account = 1 Proxy).
     """
 
+    # Validation constants
+    VALIDATION_TIMEOUT_SECONDS = 10
+    VALIDATION_TEST_URL = "https://httpbin.org/ip"
+
     def __init__(self, settings: BotSettings):
         self.settings = settings
         self.api_key = settings.twocaptcha_api_key
         self.proxies: List[Proxy] = []
-        self.assignments: Dict[str, Proxy] = {} # Map username -> Proxy
+        self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
+        self.assignments: Dict[str, Proxy] = {}  # Map username -> Proxy
+
+    async def validate_proxy(self, proxy: Proxy) -> bool:
+        """
+        Test proxy connectivity before use.
+        
+        Args:
+            proxy: The proxy to validate
+            
+        Returns:
+            True if proxy is working, False otherwise
+        """
+        proxy_url = proxy.to_string()
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.VALIDATION_TIMEOUT_SECONDS)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    self.VALIDATION_TEST_URL,
+                    proxy=proxy_url
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        logger.debug(f"✅ Proxy {proxy.ip}:{proxy.port} validated (origin: {data.get('origin', 'unknown')})")
+                        return True
+                    else:
+                        logger.warning(f"⚠️ Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")
+                        return False
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ Proxy {proxy.ip}:{proxy.port} timed out during validation")
+            return False
+        except Exception as e:
+            logger.warning(f"❌ Proxy {proxy.ip}:{proxy.port} validation failed: {e}")
+            return False
+
+    async def validate_all_proxies(self) -> int:
+        """
+        Validate all fetched proxies concurrently.
+        
+        Returns:
+            Number of valid proxies
+        """
+        if not self.proxies:
+            return 0
+            
+        logger.info(f"🔍 Validating {len(self.proxies)} proxies...")
+        
+        # Validate concurrently (max 10 at a time to avoid overwhelming)
+        semaphore = asyncio.Semaphore(10)
+        
+        async def validate_with_semaphore(proxy: Proxy) -> Optional[Proxy]:
+            async with semaphore:
+                if await self.validate_proxy(proxy):
+                    return proxy
+                return None
+        
+        results = await asyncio.gather(*[validate_with_semaphore(p) for p in self.proxies])
+        self.validated_proxies = [p for p in results if p is not None]
+        
+        valid_count = len(self.validated_proxies)
+        logger.info(f"✅ {valid_count}/{len(self.proxies)} proxies passed validation")
+        return valid_count
 
     async def fetch_proxies(self, count: int = 100) -> bool:
         """

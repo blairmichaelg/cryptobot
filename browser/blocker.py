@@ -4,17 +4,59 @@ from playwright.async_api import Route, Request
 
 logger = logging.getLogger(__name__)
 
-# Common Ad/Tracker Domains (Simplified List)
+# Common Ad/Tracker/Fingerprinting Domains (Expanded)
 AD_DOMAINS = [
-    r".*googlesyndication.com.*",
-    r".*doubleclick.net.*",
-    r".*google-analytics.com.*",
-    r".*facebook.net.*",
-    r".*amazon-adsystem.com.*",
-    r".*criteo.com.*",
-    r".*adnxs.com.*",
-    r".*hotjar.com.*",
-    r".*bing.com/bat.js.*"
+    # Google Ads & Analytics
+    r".*googlesyndication\.com.*",
+    r".*doubleclick\.net.*",
+    r".*google-analytics\.com.*",
+    r".*googleadservices\.com.*",
+    r".*googletagmanager\.com.*",
+    r".*googletagservices\.com.*",
+    r".*pagead2\.googlesyndication\.com.*",
+    # Facebook/Meta
+    r".*facebook\.net.*",
+    r".*facebook\.com/tr.*",
+    r".*connect\.facebook\.net.*",
+    # Amazon
+    r".*amazon-adsystem\.com.*",
+    r".*assoc-amazon\.com.*",
+    # Ad Networks
+    r".*criteo\.com.*",
+    r".*adnxs\.com.*",
+    r".*outbrain\.com.*",
+    r".*taboola\.com.*",
+    r".*pubmatic\.com.*",
+    r".*rubiconproject\.com.*",
+    r".*openx\.net.*",
+    r".*adform\.net.*",
+    r".*bidswitch\.net.*",
+    r".*casalemedia\.com.*",
+    # Analytics & Tracking
+    r".*hotjar\.com.*",
+    r".*bing\.com/bat\.js.*",
+    r".*clarity\.ms.*",
+    r".*mouseflow\.com.*",
+    r".*mixpanel\.com.*",
+    r".*segment\.com.*",
+    r".*amplitude\.com.*",
+    r".*fullstory\.com.*",
+    r".*heapanalytics\.com.*",
+    # Fingerprinting & Bot Detection
+    r".*datadome\.co.*",
+    r".*perimeterx\.net.*",
+    r".*kasada\.io.*",
+    r".*imperva\.com.*",
+    r".*fingerprintjs\.com.*",
+    r".*creativecdn\.com.*",
+    # Social Widgets (load tracking scripts)
+    r".*addthis\.com.*",
+    r".*sharethis\.com.*",
+    # Crypto-specific Ad Networks
+    r".*a-ads\.com.*",
+    r".*bitmedia\.io.*",
+    r".*coinzilla\.com.*",
+    r".*cointraffic\.io.*",
 ]
 
 class ResourceBlocker:

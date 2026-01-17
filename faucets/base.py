@@ -168,7 +168,10 @@ class FaucetBot:
                     logger.debug(f"[{self.faucet_name}] Closing popup: {sel}")
                     await el.first.click(timeout=1000)
                     await asyncio.sleep(0.5)
-            except:
+            except asyncio.TimeoutError:
+                continue  # Expected for popups that don't exist
+            except Exception as e:
+                logger.debug(f"[{self.faucet_name}] Popup close failed for {sel}: {e}")
                 continue
     
     async def login(self) -> bool:
@@ -315,8 +318,6 @@ class FaucetBot:
              tasks.append({"func": self.view_ptc_ads, "name": "PTC Ads"})
         
         return tasks
-    
-        return jobs
              
     async def withdraw(self) -> ClaimResult:
         """
@@ -385,8 +386,9 @@ class FaucetBot:
             if val < threshold:
                 logger.info(f"[{self.faucet_name}] Balance {val} below threshold {threshold}. Skipping.")
                 return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
-        except:
-            pass # Continue if parsing fails
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"[{self.faucet_name}] Balance parsing failed: {e}. Proceeding with withdrawal.")
+            pass  # Continue if parsing fails
             
         return await self.withdraw()
              
@@ -423,32 +425,7 @@ class FaucetBot:
             
             await self.close_popups()
             
-            # WebRTC Leak Prevention & Fingerprint Hardening
-            await self.page.context.add_init_script("""
-                // Webdriver concealment
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                
-                // WebRTC Leak Prevention
-                if (window.RTCPeerConnection) {
-                    const orig = window.RTCPeerConnection;
-                    window.RTCPeerConnection = function(config) {
-                        if (config && config.iceServers) {
-                            config.iceServers = [];
-                        }
-                        return new orig(config);
-                    };
-                }
-
-                // Canvas/WebGL Noise
-                const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-                CanvasRenderingContext2D.prototype.getImageData = function(x, y, w, h) {
-                    const res = originalGetImageData.apply(this, arguments);
-                    for (let i = 0; i < res.data.length; i += 4) {
-                        res.data[i] = res.data[i] + (Math.random() > 0.5 ? 1 : -1);
-                    }
-                    return res;
-                };
-            """)
+            # Note: WebRTC/Canvas stealth is handled at context creation in browser/instance.py
             await self.random_delay()
             
             # Execute all defined tasks

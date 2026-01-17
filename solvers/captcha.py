@@ -1,26 +1,60 @@
 import asyncio
 import logging
 import aiohttp
+import time
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Rate limiting constants per 2Captcha API best practices
+INITIAL_POLL_DELAY_SECONDS = 5  # Wait 5s before first poll
+POLL_INTERVAL_SECONDS = 5  # Retry every 5s
+RECAPTCHA_INITIAL_DELAY = 15  # reCAPTCHA needs longer initial wait
+ERROR_NO_SLOT_DELAY = 5  # Wait 5s if no slots available
+ERROR_ZERO_BALANCE_DELAY = 60  # Wait 60s if balance is zero
+MAX_POLL_ATTEMPTS = 24  # 24 * 5s = 2 minutes max wait
+DEFAULT_DAILY_BUDGET_USD = 5.0  # Default daily budget limit
+
 
 class CaptchaSolver:
     """
     Hybrid Solver: Defaults to 2Captcha if key exists, otherwise
     falls back to manual human solving (Human-in-the-Loop).
+    
+    Includes rate limiting per 2Captcha API best practices and
+    daily budget tracking to prevent cost overruns.
     """
 
-    def __init__(self, api_key: str = None, provider: str = "2captcha"):
+    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD):
         """
         Initialize the CaptchaSolver.
 
         Args:
             api_key: The API key for the captcha solving service.
             provider: The name of the captcha solving provider (default is "2captcha").
+            daily_budget: Maximum daily spend in USD (default $5.00).
         """
         self.api_key = api_key
         self.provider = provider.lower()
         self.session = None
+        self.daily_budget = daily_budget
+        
+        # Rate limiting state
+        self.last_request_time = 0
+        self.consecutive_errors = 0
+        
+        # Budget tracking
+        self._daily_spend = 0.0
+        self._budget_reset_date = time.strftime("%Y-%m-%d")
+        self._solve_count_today = 0
+        
+        # Approximate costs per solve (2Captcha prices as of 2024)
+        self._cost_per_solve = {
+            "turnstile": 0.003,
+            "hcaptcha": 0.003,
+            "userrecaptcha": 0.003,
+            "image": 0.001
+        }
         
         if not self.api_key:
             logger.warning("⚠️ No CAPTCHA API key provided. Switching to MANUAL mode.")
@@ -31,6 +65,43 @@ class CaptchaSolver:
     def set_proxy(self, proxy_string: str):
         """Set the proxy to be used for all 2Captcha requests."""
         self.proxy_string = proxy_string
+
+    def _check_and_reset_daily_budget(self):
+        """Reset daily budget counter if new day."""
+        today = time.strftime("%Y-%m-%d")
+        if today != self._budget_reset_date:
+            logger.info(f"📅 New day detected. Resetting captcha budget. Yesterday's spend: ${self._daily_spend:.4f}")
+            self._daily_spend = 0.0
+            self._solve_count_today = 0
+            self._budget_reset_date = today
+
+    def _can_afford_solve(self, method: str) -> bool:
+        """Check if we can afford another solve within daily budget."""
+        self._check_and_reset_daily_budget()
+        cost = self._cost_per_solve.get(method, 0.003)
+        if self._daily_spend + cost > self.daily_budget:
+            logger.warning(f"💰 Daily captcha budget exhausted (${self._daily_spend:.4f}/${self.daily_budget:.2f})")
+            return False
+        return True
+
+    def _record_solve(self, method: str, success: bool):
+        """Record a solve attempt for budget tracking."""
+        cost = self._cost_per_solve.get(method, 0.003) if success else 0
+        self._daily_spend += cost
+        self._solve_count_today += 1
+        if success:
+            logger.debug(f"💰 Captcha cost: ${cost:.4f} (Today: ${self._daily_spend:.4f}, Solves: {self._solve_count_today})")
+
+    def get_budget_stats(self) -> dict:
+        """Get current budget statistics."""
+        self._check_and_reset_daily_budget()
+        return {
+            "daily_budget": self.daily_budget,
+            "spent_today": self._daily_spend,
+            "remaining": self.daily_budget - self._daily_spend,
+            "solves_today": self._solve_count_today,
+            "date": self._budget_reset_date
+        }
 
     def _parse_proxy(self, proxy_url: str) -> dict:
         """Parse proxy URL into components for 2Captcha API.
