@@ -52,12 +52,52 @@ class BotSettings(BaseSettings):
     electrum_rpc_user: Optional[str] = None
     electrum_rpc_pass: Optional[str] = None
 
-    # Withdrawal Thresholds (in satoshis or equivalent smallest unit)
+    # FaucetPay Integration (Micro-Wallet for Fee Optimization)
+    use_faucetpay: bool = True  # Toggle FaucetPay vs Direct withdrawals
+    faucetpay_email: Optional[str] = None
+    faucetpay_btc_address: Optional[str] = None
+    faucetpay_ltc_address: Optional[str] = None
+    faucetpay_doge_address: Optional[str] = None
+    faucetpay_bch_address: Optional[str] = None
+    faucetpay_trx_address: Optional[str] = None
+    faucetpay_eth_address: Optional[str] = None
+    faucetpay_bnb_address: Optional[str] = None
+    faucetpay_sol_address: Optional[str] = None
+    faucetpay_ton_address: Optional[str] = None
+    faucetpay_dash_address: Optional[str] = None
+    faucetpay_polygon_address: Optional[str] = None
+    faucetpay_usdt_address: Optional[str] = None
+
+    # Dynamic Withdrawal Thresholds (in satoshis/smallest unit)
+    # Format: {"min": minimum before considering, "target": ideal batch size, "max": force withdrawal}
+    withdrawal_thresholds: Dict[str, Dict[str, int]] = {
+        "BTC": {"min": 5000, "target": 50000, "max": 100000},  # Higher due to network fees
+        "LTC": {"min": 1000, "target": 10000, "max": 50000},   # Medium fees
+        "DOGE": {"min": 500, "target": 5000, "max": 10000},     # Low fees
+        "BCH": {"min": 1000, "target": 10000, "max": 50000},
+        "TRX": {"min": 500, "target": 5000, "max": 10000},
+        "ETH": {"min": 10000, "target": 100000, "max": 200000},  # High gas fees
+        "BNB": {"min": 1000, "target": 10000, "max": 50000},
+        "SOL": {"min": 500, "target": 5000, "max": 10000},
+        "TON": {"min": 500, "target": 5000, "max": 10000},
+        "DASH": {"min": 1000, "target": 10000, "max": 50000},
+        "POLYGON": {"min": 500, "target": 5000, "max": 10000},
+        "USDT": {"min": 1000, "target": 10000, "max": 50000}
+    }
+
+    # Legacy Withdrawal Thresholds (for backward compatibility)
     coinpayu_min_withdraw: int = 2000
     firefaucet_min_withdraw: int = 5000
     dutchycorp_min_withdraw: int = 10000
     faucetcrypto_min_withdraw: int = 1000
     freebitcoin_min_withdraw: int = 30000
+
+    # Withdrawal Timing Strategy
+    withdrawal_schedule: str = "off_peak"  # Options: immediate, off_peak, weekly_batch
+    off_peak_hours: List[int] = [0, 1, 2, 3, 4, 5, 22, 23]  # UTC hours (low network activity)
+    auto_consolidate_to_faucetpay: bool = True  # Auto-transfer from faucets to FaucetPay
+    auto_withdraw_from_faucetpay: bool = False  # Requires FaucetPay API (manual for now)
+    consolidation_interval_hours: int = 24  # How often to check/consolidate
 
     # Performance / Concurrency
     max_concurrent_bots: int = 3

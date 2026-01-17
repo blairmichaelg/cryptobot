@@ -8,13 +8,22 @@ from browser.instance import BrowserManager
 @pytest.mark.asyncio
 async def test_stealth_primitives():
     # Mock page and settings
-    page = AsyncMock()
+    from unittest.mock import MagicMock
+    page = MagicMock() # page itself has sync methods like locator()
     page.viewport_size = {'width': 1920, 'height': 1080}
+    page.mouse = AsyncMock()  # Mock mouse operations
+    page.evaluate = AsyncMock() # Used in remove_overlays
     
-    # Setup locator mock
+    # Setup locator mock with ALL async methods
     locator_mock = AsyncMock()
     locator_mock.is_visible.return_value = True
-    locator_mock.bounding_box.return_value = None
+    locator_mock.bounding_box.return_value = None  # No box triggers simple click fallback
+    locator_mock.scroll_into_view_if_needed = AsyncMock()
+    locator_mock.click = AsyncMock()
+    locator_mock.fill = AsyncMock()
+    locator_mock.press = AsyncMock()
+    
+    # locator() is synchronous in Playwright
     page.locator.return_value = locator_mock
     
     settings = MagicMock()

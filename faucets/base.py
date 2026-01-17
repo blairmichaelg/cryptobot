@@ -91,6 +91,56 @@ class FaucetBot:
             return self.settings_account_override
         return self.settings.get_account(faucet_name)
 
+    def get_withdrawal_address(self, coin: str) -> Optional[str]:
+        """
+        Get the appropriate withdrawal address based on configuration.
+        
+        Checks settings.use_faucetpay first, falls back to direct wallet.
+        Priority: FaucetPay → Direct Wallet → wallet_addresses dict
+        
+        Args:
+            coin: Cryptocurrency symbol (BTC, LTC, DOGE, TRX, ETH, etc.)
+            
+        Returns:
+            Withdrawal address string, or None if not configured
+        """
+        coin = coin.upper()
+        
+        # Normalize coin name variations
+        coin_map = {
+            "LITE": "LTC",
+            "TRON": "TRX",
+            "POLYGON": "MATIC",
+            "BINANCE": "BNB"
+        }
+        coin = coin_map.get(coin, coin)
+        
+        # 1. FaucetPay mode (preferred for micro-earnings)
+        if self.settings.use_faucetpay:
+            fp_attr = f"faucetpay_{coin.lower()}_address"
+            fp_address = getattr(self.settings, fp_attr, None)
+            if fp_address:
+                logger.debug(f"[{self.faucet_name}] Using FaucetPay address for {coin}")
+                return fp_address
+        
+        # 2. Direct wallet mode
+        direct_attr = f"{coin.lower()}_withdrawal_address"
+        direct_address = getattr(self.settings, direct_attr, None)
+        if direct_address:
+            logger.debug(f"[{self.faucet_name}] Using direct wallet address for {coin}")
+            return direct_address
+        
+        # 3. Fallback to wallet_addresses dict
+        if hasattr(self.settings, 'wallet_addresses'):
+            dict_address = self.settings.wallet_addresses.get(coin)
+            if dict_address:
+                logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict for {coin}")
+                return dict_address
+        
+        logger.warning(f"[{self.faucet_name}] No withdrawal address configured for {coin}")
+        return None
+
+
     async def random_delay(self, min_s=2, max_s=5):
         """
         Wait for a random amount of time to mimic human behavior.
