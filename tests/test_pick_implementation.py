@@ -145,5 +145,6 @@ async def test_pick_withdraw_success(mock_settings, mock_page, mock_solver):
     
     assert result.success is True
     assert result.status == "Withdrawn"
-    mock_page.fill.assert_called() # Should fill address
+    # mock_page.fill.assert_called() # Incorrect - implementation uses locator.fill
+    addr_input.fill.assert_called()
     bot.human_like_click.assert_called()

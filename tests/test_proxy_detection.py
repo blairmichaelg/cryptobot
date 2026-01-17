@@ -232,9 +232,10 @@ async def test_proxy_rotation_on_detection(mock_settings, mock_browser_manager):
         next_run=time.time(),
         name="Test Job",
         profile=profile,
-        func=job_with_proxy_detection,
-        faucet_type="test"
+        faucet_type="test",
+        job_type="claim_wrapper"
     )
+
     
     # Execute job (will detect proxy)
     await scheduler._run_job_wrapper(job)
