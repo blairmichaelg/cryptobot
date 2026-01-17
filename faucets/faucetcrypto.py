@@ -89,6 +89,7 @@ class FaucetCryptoBot(FaucetBot):
         import time
         
         jobs = []
+        f_type = self.faucet_name.lower()
         
         # Job 1: Faucet Claim
         jobs.append(Job(
@@ -96,18 +97,28 @@ class FaucetCryptoBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="claim_wrapper"
         ))
         
-        # Job 2: PTC Ads
+        # Job 2: Withdrawal Job
+        jobs.append(Job(
+            priority=5,
+            next_run=time.time() + 3600,
+            name=f"{self.faucet_name} Withdraw",
+            profile=None,
+            faucet_type=f_type,
+            job_type="withdraw_wrapper"
+        ))
+        
+        # Job 3: PTC Ads
         jobs.append(Job(
             priority=3,
             next_run=time.time() + 300,
             name=f"{self.faucet_name} PTC",
             profile=None,
-            func=self.ptc_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="ptc_wrapper"
         ))
         
         return jobs

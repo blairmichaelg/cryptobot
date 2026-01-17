@@ -198,14 +198,26 @@ class PickFaucetBase(FaucetBot):
         from core.orchestrator import Job
         import time
         
-        return [Job(
-            priority=2, # Higher than PTC/Shortlinks, lower than main faucets like Dutchy
-            next_run=time.time(),
-            name=f"{self.faucet_name} Claim",
-            profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
-        )]
+        f_type = self.faucet_name.lower()
+        
+        return [
+            Job(
+                priority=2, # Higher than PTC/Shortlinks, lower than main faucets like Dutchy
+                next_run=time.time(),
+                name=f"{self.faucet_name} Claim",
+                profile=None,
+                faucet_type=f_type,
+                job_type="claim_wrapper"
+            ),
+            Job(
+                priority=5,
+                next_run=time.time() + 3600,
+                name=f"{self.faucet_name} Withdraw",
+                profile=None,
+                faucet_type=f_type,
+                job_type="withdraw_wrapper"
+            )
+        ]
 
     async def claim(self) -> ClaimResult:
         """Perform the hourly faucet claim.

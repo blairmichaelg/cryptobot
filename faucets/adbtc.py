@@ -91,6 +91,7 @@ class AdBTCBot(FaucetBot):
         import time
         
         jobs = []
+        f_type = self.faucet_name.lower()
         
         # Job 1: Faucet Claim (Login verification)
         jobs.append(Job(
@@ -98,18 +99,28 @@ class AdBTCBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="claim_wrapper"
         ))
         
-        # Job 2: Surf Ads (main earning method for AdBTC)
+        # Job 2: Withdrawal Job
+        jobs.append(Job(
+            priority=5,
+            next_run=time.time() + 3600,
+            name=f"{self.faucet_name} Withdraw",
+            profile=None,
+            faucet_type=f_type,
+            job_type="withdraw_wrapper"
+        ))
+        
+        # Job 3: Surf Ads (main earning method for AdBTC)
         jobs.append(Job(
             priority=2,
             next_run=time.time() + 120,
             name=f"{self.faucet_name} Surf",
             profile=None,
-            func=self.ptc_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="ptc_wrapper"
         ))
         
         return jobs
@@ -169,6 +180,50 @@ class AdBTCBot(FaucetBot):
                 
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Surf Error: {e}")
+
+    async def withdraw(self) -> ClaimResult:
+        """AdBTC withdrawal logic."""
+        try:
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/index/withdraw")
+            await self.handle_cloudflare()
+            
+            # Select FaucetPay by default as it has lower thresholds
+            # AdBTC has different buttons for different methods
+            faucetpay_btn = self.page.locator("a:has-text('To FaucetPay'), button:has-text('To FaucetPay')")
+            
+            if await faucetpay_btn.count() > 0:
+                logger.info(f"[{self.faucet_name}] Clicking FaucetPay withdrawal...")
+                await self.human_like_click(faucetpay_btn.first)
+                await self.page.wait_for_load_state("networkidle")
+                
+                # Check for "Withdraw" confirmation button
+                # Usually it asks for password or just a 'Withdraw' button
+                withdraw_confirm = self.page.locator("input[value='Withdraw'], button:has-text('Withdraw')")
+                if await withdraw_confirm.count() > 0:
+                    # Some accounts require a password to withdraw
+                    pass_field = self.page.locator("input[name='password']")
+                    if await pass_field.is_visible():
+                        creds = self.get_credentials("adbtc")
+                        await self.human_type(pass_field, creds['password'])
+                    
+                    await self.human_like_click(withdraw_confirm)
+                    await self.page.wait_for_load_state()
+                    
+                    # Check for success message
+                    content = await self.page.content()
+                    if "success" in content.lower() or "processing" in content.lower():
+                        logger.info(f"[{self.faucet_name}] Withdrawal successful!")
+                        return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+                    else:
+                        logger.warning(f"[{self.faucet_name}] Withdrawal might have failed or needs manual check.")
+                        return ClaimResult(success=False, status="Verification Required", next_claim_minutes=360)
+                
+            return ClaimResult(success=False, status="No Withdrawal Method Available", next_claim_minutes=1440)
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Withdrawal Error: {e}")
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)
 
     async def solve_math_captcha(self):
         """

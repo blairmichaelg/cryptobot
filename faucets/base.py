@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import time
 from dataclasses import dataclass
 from typing import Optional, Union
 from playwright.async_api import Page, Locator
@@ -147,6 +148,50 @@ class FaucetBot:
             });
             overlays.forEach(el => el.remove());
         }""")
+
+    async def human_type(self, selector: Union[str, Locator], text: str, delay_min=50, delay_max=150):
+        """
+        Type text into a field with human-like delays between keystrokes.
+        
+        Args:
+            selector: CSS selector or Playwright Locator
+            text: Text to type
+            delay_min: Minimum delay in ms
+            delay_max: Maximum delay in ms
+        """
+        locator = self.page.locator(selector) if isinstance(selector, str) else selector
+        
+        await self.human_like_click(locator)
+        
+        # Clear existing text if any (optional, context dependent)
+        await locator.fill("") 
+        
+        for char in text:
+            await locator.press(char) # press sends keydown/keyup events
+            await asyncio.sleep(random.randint(delay_min, delay_max) / 1000)
+
+    async def idle_mouse(self, duration: float = 2.0):
+        """
+        Move mouse randomly to simulate user reading/thinking.
+        
+        Args:
+            duration: Approximate duration in seconds
+        """
+        start = time.time()
+        while time.time() - start < duration:
+            # Get current viewport size
+            vp = self.page.viewport_size
+            if not vp: return
+            
+            w, h = vp['width'], vp['height']
+            
+            # Random destination
+            x = random.randint(0, w)
+            y = random.randint(0, h)
+            
+            # Move in short burst
+            await self.page.mouse.move(x, y, steps=random.randint(5, 20))
+            await asyncio.sleep(random.uniform(0.1, 0.5))
 
     async def handle_cloudflare(self) -> bool:
         """
@@ -361,6 +406,7 @@ class FaucetBot:
         import time
         
         jobs = []
+        f_type = self.faucet_name.lower().replace(" ", "_")
         
         # 1. Primary claim job - highest priority
         jobs.append(Job(
@@ -368,19 +414,18 @@ class FaucetBot:
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower().replace(" ", "_")
+            faucet_type=f_type,
+            job_type="claim_wrapper"
         ))
         
         # 2. Withdrawal job - scheduled once per day
-        # We start it slightly offset to avoid overlap with first claim
         jobs.append(Job(
             priority=5,
             next_run=time.time() + 3600, 
             name=f"{self.faucet_name} Withdraw",
             profile=None,
-            func=self.withdraw_wrapper,
-            faucet_type=self.faucet_name.lower().replace(" ", "_")
+            faucet_type=f_type,
+            job_type="withdraw_wrapper"
         ))
         
         # 3. PTC job if available
@@ -390,8 +435,8 @@ class FaucetBot:
                 next_run=time.time() + 300,
                 name=f"{self.faucet_name} PTC",
                 profile=None,
-                func=self.ptc_wrapper,
-                faucet_type=self.faucet_name.lower().replace(" ", "_")
+                faucet_type=f_type,
+                job_type="ptc_wrapper"
             ))
         
         return jobs
