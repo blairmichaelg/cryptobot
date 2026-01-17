@@ -1,6 +1,7 @@
 from playwright.async_api import Browser, BrowserContext, Page
 from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
+from .secure_storage import SecureCookieStorage
 import logging
 import random
 import os
@@ -14,7 +15,7 @@ class BrowserManager:
     Manages the lifecycle of a stealthy Camoufox browser instance.
     Handles context creation, page management, and cleanup.
     """
-    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True):
+    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True):
         """
         Initialize the BrowserManager.
 
@@ -23,6 +24,7 @@ class BrowserManager:
             proxy: Optional proxy server address (e.g., "http://user:pass@host:port").
             block_images: Whether to block image loading.
             block_media: Whether to block media (video/audio).
+            use_encrypted_cookies: Whether to use encrypted cookie storage. Defaults to True.
         """
         self.headless = headless
         self.proxy = proxy
@@ -31,6 +33,13 @@ class BrowserManager:
         self.browser = None
         self.context = None
         self.playwright = None
+        
+        # Cookie storage - encrypted by default
+        self.use_encrypted_cookies = use_encrypted_cookies
+        if use_encrypted_cookies:
+            self._secure_storage = SecureCookieStorage()
+        else:
+            self._secure_storage = None
 
     async def launch(self):
         """Launches a highly stealthy Camoufox instance."""
@@ -105,28 +114,33 @@ class BrowserManager:
     async def save_cookies(self, context: BrowserContext, profile_name: str):
         """
         Save browser cookies to disk for faster subsequent logins.
+        Uses encrypted storage by default.
         
         Args:
             context: The browser context to save cookies from
             profile_name: Unique identifier for this profile (e.g., faucet_username)
         """
         try:
-            cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
-            os.makedirs(cookies_dir, exist_ok=True)
-            
-            cookies_file = os.path.join(cookies_dir, f"{profile_name}.json")
             cookies = await context.cookies()
             
-            with open(cookies_file, "w") as f:
-                json.dump(cookies, f)
-            
-            logger.debug(f"💾 Saved {len(cookies)} cookies for {profile_name}")
+            # Use encrypted storage if available
+            if self._secure_storage:
+                await self._secure_storage.save_cookies(cookies, profile_name)
+            else:
+                # Fallback to unencrypted (backward compatibility)
+                cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
+                os.makedirs(cookies_dir, exist_ok=True)
+                cookies_file = os.path.join(cookies_dir, f"{profile_name}.json")
+                with open(cookies_file, "w") as f:
+                    json.dump(cookies, f)
+                logger.debug(f"💾 Saved {len(cookies)} cookies for {profile_name} (unencrypted)")
         except Exception as e:
             logger.warning(f"Failed to save cookies for {profile_name}: {e}")
 
     async def load_cookies(self, context: BrowserContext, profile_name: str) -> bool:
         """
         Load previously saved cookies into a browser context.
+        Tries encrypted storage first, falls back to unencrypted.
         
         Args:
             context: The browser context to load cookies into
@@ -135,22 +149,29 @@ class BrowserManager:
         Returns:
             True if cookies were loaded successfully, False otherwise
         """
+        cookies = None
+        
         try:
-            cookies_file = os.path.join(
-                os.path.dirname(__file__), "..", "cookies", f"{profile_name}.json"
-            )
+            # Try encrypted storage first
+            if self._secure_storage:
+                cookies = await self._secure_storage.load_cookies(profile_name)
             
-            if not os.path.exists(cookies_file):
-                logger.debug(f"No saved cookies for {profile_name}")
-                return False
-            
-            with open(cookies_file, "r") as f:
-                cookies = json.load(f)
+            # Fallback to unencrypted if no encrypted cookies found
+            if not cookies:
+                cookies_file = os.path.join(
+                    os.path.dirname(__file__), "..", "cookies", f"{profile_name}.json"
+                )
+                if os.path.exists(cookies_file):
+                    with open(cookies_file, "r") as f:
+                        cookies = json.load(f)
+                    logger.debug(f"Loaded unencrypted cookies for {profile_name}")
             
             if cookies:
                 await context.add_cookies(cookies)
                 logger.info(f"🍪 Loaded {len(cookies)} cookies for {profile_name}")
                 return True
+            
+            logger.debug(f"No saved cookies for {profile_name}")
             return False
             
         except Exception as e:
