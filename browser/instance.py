@@ -7,6 +7,7 @@ import random
 import os
 import json
 from typing import Optional
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +62,18 @@ class BrowserManager:
         self.browser = await self.camoufox.__aenter__()
         return self
 
-    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None) -> BrowserContext:
+    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None) -> BrowserContext:
         """
         Creates a new isolated browser context with specific proxy and user agent.
-        Includes enhanced anti-detection measures.
+        Includes enhanced anti-detection measures and sticky session support.
         """
         if not self.browser:
             raise RuntimeError("Browser not launched. Call launch() first.")
+
+        # Sticky Session Logic: Register proxy with solver if provided
+        if proxy and self._secure_storage:
+             # This allows the solver to use the same proxy as the browser
+             logger.debug(f"Creating sticky context for {profile_name} with proxy {proxy}")
 
         # Randomized screen resolutions for natural fingerprints
         dims = random.choice([
@@ -75,7 +81,11 @@ class BrowserManager:
         ])
 
         context_args = {
-            "user_agent": user_agent,
+            "user_agent": user_agent or random.choice([
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            ]),
             "viewport": {"width": dims[0], "height": dims[1]},
             "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],
@@ -83,10 +93,38 @@ class BrowserManager:
             "timezone_id": random.choice(["America/New_York", "Europe/London", "UTC"]),
         }
         
-        if proxy:
-            context_args["proxy"] = {"server": proxy}
+        # Sticky Session Logic: Resolve and Persist Proxy
+        if profile_name:
+            # Load existing binding
+            saved_proxy = await self.load_proxy_binding(profile_name)
+            
+            if saved_proxy:
+                if proxy and proxy != saved_proxy:
+                    logger.warning(f"⚠️ Proxy mismatch for {profile_name}. Requested: {proxy}, Stuck to: {saved_proxy}")
+                    logger.info(f"🔄 Updating sticky proxy for {profile_name} to {proxy}")
+                    await self.save_proxy_binding(profile_name, proxy)
+                elif not proxy:
+                     logger.info(f"🔗 Using sticky proxy {saved_proxy} for {profile_name}")
+                     proxy = saved_proxy
+            elif proxy:
+                # No existing binding, create one
+                logger.info(f"📌 Binding {profile_name} to proxy {proxy}")
+                await self.save_proxy_binding(profile_name, proxy)
 
-        logger.info(f"Creating isolated stealth context (Proxy: {proxy or 'None'}, Resolution: {dims[0]}x{dims[1]})")
+        if proxy:
+            # Parse proxy string if it's a URL
+            if "://" in proxy:
+                from urllib.parse import urlparse
+                p = urlparse(proxy)
+                context_args["proxy"] = {
+                    "server": f"{p.scheme}://{p.hostname}:{p.port}",
+                    "username": p.username,
+                    "password": p.password
+                }
+            else:
+                context_args["proxy"] = {"server": proxy}
+
+        logger.info(f"Creating isolated stealth context (Profile: {profile_name or 'Anonymous'}, Proxy: {proxy or 'None'}, Resolution: {dims[0]}x{dims[1]})")
         context = await self.browser.new_context(**context_args)
         
         # WebRTC Leak Prevention: Critical for proxy-based stealth
@@ -108,6 +146,10 @@ class BrowserManager:
         blocker = ResourceBlocker(block_images=True, block_media=True)
         await context.route("**/*", blocker.handle_route)
         context.resource_blocker = blocker
+        
+        # Load cookies if profile name provided
+        if profile_name:
+            await self.load_cookies(context, profile_name)
         
         return context
 
@@ -178,6 +220,41 @@ class BrowserManager:
             logger.warning(f"Failed to load cookies for {profile_name}: {e}")
             return False
 
+    async def save_proxy_binding(self, profile_name: str, proxy: str):
+        """Save the proxy binding for a profile to ensuring sticky sessions."""
+        try:
+            bindings_file = os.path.join(os.path.dirname(__file__), "..", "proxy_bindings.json")
+            data = {}
+            if os.path.exists(bindings_file):
+                with open(bindings_file, "r") as f:
+                    try:
+                        data = json.load(f)
+                    except json.JSONDecodeError:
+                        pass
+            
+            data[profile_name] = proxy
+            
+            with open(bindings_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save proxy binding for {profile_name}: {e}")
+
+    async def load_proxy_binding(self, profile_name: str) -> Optional[str]:
+        """Load the sticky proxy for a profile."""
+        try:
+            bindings_file = os.path.join(os.path.dirname(__file__), "..", "proxy_bindings.json")
+            if os.path.exists(bindings_file):
+                with open(bindings_file, "r") as f:
+                    try:
+                        data = json.load(f)
+                        return data.get(profile_name)
+                    except json.JSONDecodeError:
+                        pass
+            return None
+        except Exception as e:
+            logger.error(f"Failed to load proxy binding for {profile_name}: {e}")
+            return None
+
     async def new_page(self, context: BrowserContext = None) -> Page:
         """Creates and returns a new page. If context is provided, uses it. Otherwise uses default context."""
         if not self.browser:
@@ -194,10 +271,35 @@ class BrowserManager:
             
         return page
 
+    async def restart(self):
+        """Restarts the browser instance to clear memory and hung processes."""
+        logger.info("🔄 Restarting browser instance...")
+        await self.close()
+        await asyncio.sleep(2)
+        await self.launch()
+        logger.info("✅ Browser instance restarted.")
+
+    async def check_health(self) -> bool:
+        """Checks if the browser instance is still responsive."""
+        if not self.browser:
+            return False
+        try:
+            # Try to create a dummy context and check its version
+            # This is a lightweight check to ensure the connection is alive
+            context = await self.browser.new_context()
+            await context.close()
+            return True
+        except Exception as e:
+            logger.warning(f"Browser health check failed: {e}")
+            return False
+
     async def close(self):
         """Cleanup resources."""
         if self.browser:
-            await self.camoufox.__aexit__(None, None, None)
+            try:
+                await self.camoufox.__aexit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"Error during browser exit: {e}")
             self.browser = None
             logger.info("Browser closed.")
 

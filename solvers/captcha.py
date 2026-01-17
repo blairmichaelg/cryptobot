@@ -226,7 +226,7 @@ class CaptchaSolver:
 
                 if sitekey:
                     if self.provider == "capsolver":
-                        code = await self._solve_capsolver(sitekey, page.url, method)
+                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context)
                     else:
                         code = await self._solve_2captcha(sitekey, page.url, method, proxy_context)
 
@@ -430,21 +430,42 @@ class CaptchaSolver:
                     return None
         return None
 
-    async def _solve_capsolver(self, sitekey, url, method):
+    async def _solve_capsolver(self, sitekey, url, method, proxy_context=None):
         session = await self._get_session()
         
-        # CapSolver Task Types
-        task_type = "TurnstileTaskProxyLess" if method == "turnstile" else \
-                    "HCaptchaTaskProxyLess" if method == "hcaptcha" else \
-                    "ReCaptchaV2TaskProxyLess"
-                    
+        # Determine Task Type (ProxyLess or Proxy)
+        # CapSolver uses different task names for proxy vs proxyless
+        # e.g., TurnstileTask vs TurnstileTaskProxyLess
+        
+        use_proxy = False
+        if proxy_context:
+            proxy_str = proxy_context.get("proxy_string")
+            # CapSolver format: http://user:pass@host:port (socks5 also supported)
+            if proxy_str:
+                use_proxy = True
+        
+        if method == "turnstile":
+            task_type = "TurnstileTask" if use_proxy else "TurnstileTaskProxyLess"
+        elif method == "hcaptcha":
+            task_type = "HCaptchaTask" if use_proxy else "HCaptchaTaskProxyLess"
+        else:
+             # ReCaptchaV2Task / ReCaptchaV2TaskProxyLess
+            task_type = "ReCaptchaV2Task" if use_proxy else "ReCaptchaV2TaskProxyLess"
+            
+        task_payload = {
+            "type": task_type,
+            "websiteURL": url,
+            "websiteKey": sitekey
+        }
+        
+        if use_proxy:
+             task_payload["proxy"] = proxy_context.get("proxy_string")
+             # CapSolver might auto-detect type, but for safety:
+             # task_payload["proxyType"] = proxy_context.get("proxy_type", "http").lower()
+
         payload = {
             "clientKey": self.api_key,
-            "task": {
-                "type": task_type,
-                "websiteURL": url,
-                "websiteKey": sitekey
-            }
+            "task": task_payload
         }
 
         # 1. Create Task
@@ -460,7 +481,7 @@ class CaptchaSolver:
             return None
 
         # 2. Get Result
-        logger.info(f"CapSolver Task Created ({task_id}). Polling...")
+        logger.info(f"CapSolver Task Created ({task_id}) [Proxy: {use_proxy}]. Polling...")
         waited = 0
         while waited < 120:
             await asyncio.sleep(2)
