@@ -93,7 +93,7 @@ async def register_single_faucet(
     
     page = None
     try:
-        # Create new page for this registration (uses global context)
+        # Create new page using browser's global context
         page = await browser_manager.new_page(context=None)
         
         # Initialize bot
@@ -102,11 +102,8 @@ async def register_single_faucet(
         # Get wallet address for this coin if available
         wallet_address = None
         if hasattr(settings, 'wallet_addresses') and settings.wallet_addresses:
-            wallet_info = settings.wallet_addresses.get(config.coin_symbol)
-            if isinstance(wallet_info, dict):
-                wallet_address = wallet_info.get('address')
-            elif isinstance(wallet_info, str):
-                wallet_address = wallet_info
+            # wallet_addresses is Dict[str, str] mapping coin symbol to address
+            wallet_address = settings.wallet_addresses.get(config.coin_symbol)
         
         # Perform registration
         success = await bot.register(email, password, wallet_address)

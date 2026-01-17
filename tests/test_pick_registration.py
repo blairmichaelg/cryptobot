@@ -15,10 +15,11 @@ class TestPickFaucetRegistration(unittest.IsolatedAsyncioTestCase):
         self.settings = MagicMock(spec=BotSettings)
         self.settings.captcha_provider = "capsolver"
         self.settings.capsolver_api_key = "test_key"
+        # wallet_addresses is Dict[str, str] mapping coin to address
         self.settings.wallet_addresses = {
-            "LTC": {"address": "LTC_TEST_ADDRESS", "min_withdraw": 0.005},
-            "TRX": {"address": "TRX_TEST_ADDRESS", "min_withdraw": 10},
-            "DOGE": {"address": "DOGE_TEST_ADDRESS", "min_withdraw": 5}
+            "LTC": "LTC_TEST_ADDRESS",
+            "TRX": "TRX_TEST_ADDRESS",
+            "DOGE": "DOGE_TEST_ADDRESS"
         }
         
         self.page = AsyncMock()

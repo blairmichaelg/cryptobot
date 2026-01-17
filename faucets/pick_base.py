@@ -74,7 +74,8 @@ class PickFaucetBase(FaucetBot):
                     await wallet_field.fill(wallet_address)
             
             # Check for and solve hCaptcha or Turnstile
-            if await self.page.locator(".h-captcha, .cf-turnstile").is_visible():
+            captcha_locator = self.page.locator(".h-captcha, .cf-turnstile")
+            if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
                 logger.info(f"[{self.faucet_name}] Solving registration captcha...")
                 await self.solver.solve_captcha(self.page)
                 await self.random_delay(2, 5)
