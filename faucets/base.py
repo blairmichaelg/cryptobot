@@ -60,9 +60,11 @@ class FaucetBot:
         
         Args:
             email: The email address that may contain a '+' alias.
+                   Can be None or empty string.
         
         Returns:
             The base email address without the alias.
+            Returns the input unchanged if it's None, empty, or doesn't contain '@'.
         """
         if email is None or not email or '@' not in email:
             return email
