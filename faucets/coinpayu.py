@@ -37,7 +37,9 @@ class CoinPayUBot(FaucetBot):
             except: pass
 
             logger.info(f"[{self.faucet_name}] Filling credentials...")
-            await self.page.fill('input[placeholder="Email"]', creds['username'])
+            # CoinPayU blocks email aliases with '+', use base email
+            base_email = self.strip_email_alias(creds['username'])
+            await self.page.fill('input[placeholder="Email"]', base_email)
             await self.page.fill('input[placeholder="Password"]', creds['password'])
             
             # Check for Cloudflare Turnstile explicitly

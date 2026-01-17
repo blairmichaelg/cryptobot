@@ -49,7 +49,9 @@ class AdBTCBot(FaucetBot):
             if await self.page.locator("img[src*='captcha.php']").is_visible():
                  await self.solve_math_captcha()
 
-            await self.page.fill('input[name="email"]', creds['username'])
+            # AdBTC blocks email aliases with '+', use base email
+            base_email = self.strip_email_alias(creds['username'])
+            await self.page.fill('input[name="email"]', base_email)
             await self.page.fill('input[name="password"]', creds['password'])
             
             await self.solver.solve_captcha(self.page)

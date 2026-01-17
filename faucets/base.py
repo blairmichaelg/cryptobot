@@ -50,6 +50,30 @@ class FaucetBot:
         if self.solver:
             self.solver.set_proxy(proxy_string)
 
+    @staticmethod
+    def strip_email_alias(email: str) -> str:
+        """
+        Strip email alias (plus addressing) from email address.
+        
+        Converts 'user+alias@example.com' to 'user@example.com'.
+        Some faucets (CoinPayU, AdBTC) block email aliases with '+'.
+        
+        Args:
+            email: The email address that may contain a '+' alias.
+        
+        Returns:
+            The base email address without the alias.
+        """
+        if not email or '@' not in email:
+            return email
+        
+        local_part, domain = email.rsplit('@', 1)
+        if '+' in local_part:
+            base_local = local_part.split('+')[0]
+            return f"{base_local}@{domain}"
+        
+        return email
+
     def get_credentials(self, faucet_name: str):
         """
         Centralized credential retrieval with override support.
