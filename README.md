@@ -41,6 +41,7 @@ This project is a sophisticated, modular automation system designed to harvest h
 | **FaucetCrypto** | ✅ Active | Faucet claims, PTC | Standardized extraction |
 | **CoinPayU** | ⚠️ Limited | Multi-coin faucet, Surf Ads | Proxy detection may block cloud IPs |
 | **AdBTC** | ⚠️ Limited | Surf Ads, Math captcha | Proxy detection may block cloud IPs |
+| **Pick.io Family** | ✅ Active | 11 faucets: LTC, TRX, DOGE, SOL, BNB, BCH, TON, MATIC, DASH, ETH, USDT | Automated registration available |
 
 ---
 
@@ -148,6 +149,47 @@ Do one round of claims and stop:
 
 ```bash
 python main.py --once
+```
+
+### Register New Accounts (Pick.io Family)
+
+Automate registration for all 11 Pick.io faucet sites with a single command:
+
+```bash
+# Register all 11 Pick.io faucets with the same credentials
+python register_faucets.py --email your@email.com --password yourpassword
+
+# Register specific faucets only
+python register_faucets.py --email your@email.com --password yourpassword --faucets litepick tronpick dogepick
+
+# Show browser during registration (for debugging)
+python register_faucets.py --email your@email.com --password yourpassword --visible
+```
+
+**Supported Pick.io Faucets:**
+- LitePick.io (LTC)
+- TronPick.io (TRX)
+- DogePick.io (DOGE)
+- SolPick.io (SOL)
+- BinPick.io (BNB)
+- BchPick.io (BCH)
+- TonPick.io (TON)
+- PolygonPick.io (MATIC)
+- DashPick.io (DASH)
+- EthPick.io (ETH)
+- UsdPick.io (USDT)
+
+The script will:
+1. Navigate to each registration page
+2. Fill in email, password, and wallet address (if configured)
+3. Solve any CAPTCHAs automatically
+4. Verify successful registration
+5. Provide a summary report
+
+**Note:** Configure wallet addresses in your `.env` file to automatically populate wallet fields during registration:
+
+```ini
+WALLET_ADDRESSES='{"LTC": "your_ltc_address", "TRX": "your_trx_address", "DOGE": "your_doge_address"}'
 ```
 
 ### Check Wallet Connection
