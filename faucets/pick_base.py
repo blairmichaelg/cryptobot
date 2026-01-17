@@ -29,6 +29,89 @@ class PickFaucetBase(FaucetBot):
         self.login_url = ""  # Often same as base_url/login
         self.faucet_url = ""  # Often same as base_url/faucet
 
+    async def register(self, email: str, password: str, wallet_address: str = None) -> bool:
+        """Standard registration for .io pick family.
+
+        Navigates to the registration page, fills the form, solves captchas,
+        and verifies successful registration.
+
+        Args:
+            email: Email address for registration
+            password: Password for the account
+            wallet_address: Optional wallet address for withdrawals
+
+        Returns:
+            bool: True if registration was successful.
+        """
+        if not self.base_url:
+            logger.error("Base URL not set for PickFaucetBase subclass")
+            return False
+
+        register_url = f"{self.base_url}/register.php"
+        logger.info(f"[{self.faucet_name}] Registering at {register_url}")
+        
+        try:
+            await self.page.goto(register_url)
+            await self.handle_cloudflare()
+            await self.close_popups()
+
+            # Fill registration form - using researched selectors
+            email_field = self.page.locator('input[type="email"], input[name="email"], input#email')
+            pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
+            confirm_pass_field = self.page.locator('input[name="password2"], input[name="confirm_password"], input#password2')
+            
+            await email_field.fill(email)
+            await pass_field.fill(password)
+            
+            # Fill confirm password if it exists
+            if await confirm_pass_field.count() > 0:
+                await confirm_pass_field.fill(password)
+            
+            # Fill wallet address if provided and field exists
+            if wallet_address:
+                wallet_field = self.page.locator('input[name="address"], input[name="wallet"], input#address')
+                if await wallet_field.count() > 0:
+                    await wallet_field.fill(wallet_address)
+            
+            # Check for and solve hCaptcha or Turnstile
+            if await self.page.locator(".h-captcha, .cf-turnstile").is_visible():
+                logger.info(f"[{self.faucet_name}] Solving registration captcha...")
+                await self.solver.solve_captcha(self.page)
+                await self.random_delay(2, 5)
+
+            # Find and click register button
+            register_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Register"), button:has-text("Sign Up"), button:has-text("Create Account")')
+            await self.human_like_click(register_btn)
+            
+            await self.page.wait_for_load_state("networkidle", timeout=30000)
+            
+            # Check for success indicators
+            page_content = await self.page.content()
+            success_indicators = [
+                "successfully registered",
+                "registration successful", 
+                "account created",
+                "welcome",
+                "check your email",
+                "verification email"
+            ]
+            
+            if any(indicator in page_content.lower() for indicator in success_indicators):
+                logger.info(f"[{self.faucet_name}] Registration successful for {email}")
+                return True
+            
+            # Check if already redirected to dashboard (auto-login after registration)
+            if await self.is_logged_in():
+                logger.info(f"[{self.faucet_name}] Registration successful, auto-logged in")
+                return True
+            
+            logger.warning(f"[{self.faucet_name}] Registration uncertain - no clear success message")
+            return False
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Registration error: {e}")
+            return False
+
     async def login(self) -> bool:
         """Standard login for .io pick family.
 
