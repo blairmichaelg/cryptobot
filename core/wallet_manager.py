@@ -73,12 +73,12 @@ class WalletDaemon:
         """Generate a new receiving address."""
         return await self._rpc_call(coin, "getunusedaddress")
 
-    async def validate_address(self, address: str) -> bool:
+    async def validate_address(self, address: str, coin: str = "BTC") -> bool:
         """Check if address is valid."""
-        res = await self._rpc_call("validateaddress", [address])
+        res = await self._rpc_call(coin, "validateaddress", [address])
         return res if isinstance(res, bool) else res.get('isvalid', False)
 
-    async def check_connection(self) -> bool:
+    async def check_connection(self, coin: str = "BTC") -> bool:
         """Health check."""
-        res = await self._rpc_call("version")
+        res = await self._rpc_call(coin, "getnetworkinfo")  # 'version' is often deprecated/not standard, getnetworkinfo is safer for bitcoind-likes
         return res is not None
