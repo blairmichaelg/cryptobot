@@ -29,8 +29,8 @@ class DutchyBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="claim_wrapper"
         ))
 
         # Job 2: Withdraw - Daily
@@ -39,8 +39,8 @@ class DutchyBot(FaucetBot):
             next_run=time.time() + 3600,
             name=f"{self.faucet_name} Withdraw",
             profile=None,
-            func=self.withdraw_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="withdraw_wrapper"
         ))
         
         return jobs

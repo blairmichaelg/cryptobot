@@ -25,28 +25,7 @@ from core.orchestrator import JobScheduler, Job
 logger = logging.getLogger(__name__)
 
 # Factory registry for faucet bot instantiation
-FAUCET_REGISTRY = {
-    "fire_faucet": FireFaucetBot,
-    "firefaucet": FireFaucetBot,
-    "fire": FireFaucetBot,
-    "cointiply": CointiplyBot,
-    "freebitcoin": FreeBitcoinBot,
-    "free": FreeBitcoinBot,
-    "dutchy": DutchyBot,
-    "dutchycorp": DutchyBot,
-    "coinpayu": CoinPayUBot,
-    "adbtc": AdBTCBot,
-    "faucetcrypto": FaucetCryptoBot,
-    # Pick Family (.io)
-    "litepick": "faucets.litepick.LitePickBot",
-    "tronpick": "faucets.tronpick.TronPickBot",
-    "dogepick": "faucets.dogepick.DogePickBot",
-    "bchpick": "faucets.bchpick.BCHPickBot",
-    "solpick": "faucets.solpick.SolPickBot",
-    "tonpick": "faucets.tonpick.TonPickBot",
-    "polygonpick": "faucets.polygonpick.PolygonPickBot",
-    "binpick": "faucets.binpick.BinPickBot",
-}
+from core.registry import FAUCET_REGISTRY, get_faucet_class
 
 async def main():
     parser = argparse.ArgumentParser(description="Gen 3.0 Smart Crypto Farm - Job Scheduler")
@@ -132,15 +111,9 @@ async def main():
         for profile in profiles:
             # Initialize bot instance to get its jobs using factory pattern
             f_type = profile.faucet.lower()
-            bot_class = FAUCET_REGISTRY.get(f_type)
+            bot_class = get_faucet_class(f_type)
             
             if bot_class:
-                # Handle string-based lazy imports for pick family or others
-                if isinstance(bot_class, str):
-                    import importlib
-                    module_path, class_name = bot_class.rsplit('.', 1)
-                    module = importlib.import_module(module_path)
-                    bot_class = getattr(module, class_name)
                     
                 bot = bot_class(settings, None)
                 # Inject credentials

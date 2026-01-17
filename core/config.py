@@ -30,6 +30,13 @@ class BotSettings(BaseSettings):
     block_images: bool = True
     block_media: bool = True
 
+    # Registration Defaults
+    registration_email: str = "blazefoley97@gmail.com"
+    registration_password: str = "silverFox420!"
+    registration_username: str = "blazefoley97"
+    # Unified proxy string format: protocol://user:pass@host:port
+    registration_proxy: str = "http://ub033d0d0583c05dd-zone-custom:ub033d0d0583c05dd@170.106.118.114:2333"
+
     # Wallet Infrastructure (Multi-Coin Support)
     # Mapping of coin -> RPC URL
     wallet_rpc_urls: Dict[str, str] = {

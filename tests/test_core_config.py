@@ -13,14 +13,14 @@ def mock_env(monkeypatch):
     monkeypatch.setenv("FAUCETCRYPTO_PASSWORD", "faucet_pass")
     monkeypatch.setenv("FREEBITCOIN_USERNAME", "free_user")
     monkeypatch.setenv("FREEBITCOIN_PASSWORD", "free_pass")
-    monkeypatch.setenv("ELECTRUM_RPC_URL", "http://localhost:7777")
 
 def test_bot_settings_init(mock_env):
     settings = BotSettings()
     assert settings.twocaptcha_api_key == "mock_key"
     assert settings.firefaucet_username == "fire_user"
     assert settings.cointiply_password == "coin_pass"
-    assert settings.electrum_rpc_url == "http://localhost:7777"
+    # wallet_rpc_urls is now a dict with default values
+    assert settings.wallet_rpc_urls["BTC"] == "http://127.0.0.1:7777"
     assert settings.captcha_provider == "2captcha"
 
 def test_get_account(mock_env):
@@ -79,7 +79,7 @@ class TestBotSettingsConfiguration:
         assert settings.max_concurrent_per_profile == 1
         assert settings.scheduler_tick_rate == 1.0
         assert settings.exploration_frequency_minutes == 30
-        assert len(settings.user_agents) == 3
+        assert len(settings.user_agents) == 15  # Updated to match actual default list
         assert settings.enabled_faucets == ["fire_faucet", "cointiply", "dutchy"]
     
     def test_capsolver_api_key(self, monkeypatch):

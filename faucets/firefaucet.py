@@ -99,8 +99,8 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="claim_wrapper"
         ))
         
         # Job 2: Daily Bonus - High Priority (runs once per day)
@@ -109,8 +109,8 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 600,  # Start 10 minutes after first claim
             name=f"{self.faucet_name} Daily Bonus",
             profile=None,
-            func=self.daily_bonus_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="daily_bonus_wrapper"
         ))
         
         # Job 3: PTC Ads - Medium Priority
@@ -119,8 +119,8 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 300,
             name=f"{self.faucet_name} PTC",
             profile=None,
-            func=self.ptc_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="ptc_wrapper"
         ))
         
         # Job 4: Shortlinks - Lower Priority
@@ -129,8 +129,8 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 1200,  # Start 20 minutes after first claim
             name=f"{self.faucet_name} Shortlinks",
             profile=None,
-            func=self.shortlinks_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="shortlinks_wrapper"
         ))
         
         # Job 5: Withdraw - Daily Priority
@@ -139,8 +139,8 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 3600,
             name=f"{self.faucet_name} Withdraw",
             profile=None,
-            func=self.withdraw_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=self.faucet_name.lower(),
+            job_type="withdraw_wrapper"
         ))
 
         return jobs

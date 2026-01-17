@@ -25,6 +25,8 @@ MAX_RETRY_BACKOFF_SECONDS = 3600
 MIN_DOMAIN_GAP_SECONDS = 45  # Minimum seconds between requests to same domain
 HEARTBEAT_INTERVAL_SECONDS = 60  # Write heartbeat every minute
 SESSION_PERSIST_INTERVAL = 300  # Save queue every 5 minutes
+BROWSER_HEALTH_CHECK_INTERVAL = 600  # Check browser every 10 minutes
+MAX_CONSECUTIVE_JOB_FAILURES = 5  # Restart browser if 5 jobs fail in a row
 
 @dataclass(order=True)
 class Job:
@@ -32,9 +34,25 @@ class Job:
     next_run: float
     name: str = field(compare=False)
     profile: AccountProfile = field(compare=False)
-    func: Callable = field(compare=False)
     faucet_type: str = field(compare=False)
+    job_type: str = field(compare=False, default="claim_wrapper")
     retry_count: int = field(default=0, compare=False)
+
+    def to_dict(self):
+        return {
+            "priority": self.priority,
+            "next_run": self.next_run,
+            "name": self.name,
+            "profile": self.profile.model_dump(),
+            "faucet_type": self.faucet_type,
+            "job_type": self.job_type,
+            "retry_count": self.retry_count
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        data['profile'] = AccountProfile(**data['profile'])
+        return cls(**data)
 
 class JobScheduler:
     def __init__(self, settings: BotSettings, browser_manager: Any):
@@ -59,6 +77,8 @@ class JobScheduler:
         # Health monitoring - heartbeat file
         self.heartbeat_file = "/tmp/cryptobot_heartbeat" if os.name != "nt" else os.path.join(os.path.dirname(__file__), "..", "heartbeat.txt")
         self.last_heartbeat_time = 0
+        self.last_health_check_time = 0
+        self.consecutive_job_failures = 0
         
         # Try to restore session on init
         self._restore_session()
@@ -69,17 +89,33 @@ class JobScheduler:
             if os.path.exists(self.session_file):
                 with open(self.session_file, "r") as f:
                     data = json.load(f)
-                logger.info(f"📁 Restored session: {len(data.get('domain_last_access', {}))} domains tracked")
+                
                 self.domain_last_access = data.get("domain_last_access", {})
-                # Note: Jobs themselves need special handling due to func field
+                
+                # Restore Jobs
+                raw_jobs = data.get("queue", [])
+                restored_count = 0
+                for rj in raw_jobs:
+                    try:
+                        job = Job.from_dict(rj)
+                        if job.next_run < time.time() - 3600: 
+                             job.next_run = time.time()
+                        self.add_job(job)
+                        restored_count += 1
+                    except Exception as je:
+                        logger.warning(f"Failed to restore job: {je}")
+                
+                logger.info(f"📁 Restored session: {restored_count} jobs, {len(self.domain_last_access)} domains")
         except Exception as e:
             logger.warning(f"Could not restore session: {e}")
 
     def _persist_session(self):
         """Save session state to disk."""
         try:
+            queue_data = [j.to_dict() for j in self.queue]
             data = {
                 "domain_last_access": self.domain_last_access,
+                "queue": queue_data,
                 "timestamp": time.time()
             }
             with open(self.session_file, "w") as f:
@@ -192,20 +228,38 @@ class JobScheduler:
             
             # Create isolated context for the job
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
+            # Sticky Session: Pass profile_name
             context = await self.browser_manager.create_context(
                 proxy=current_proxy,
-                user_agent=ua
+                user_agent=ua,
+                profile_name=username
             )
             page = await self.browser_manager.new_page(context=context)
             
+            # Instantiate Bot dynamically
+            from core.registry import get_faucet_class
+            bot_class = get_faucet_class(job.faucet_type)
+            if not bot_class:
+                raise ValueError(f"Unknown faucet type: {job.faucet_type}")
+            
+            bot = bot_class(self.settings, page)
+            bot.settings_account_override = {
+                "username": job.profile.username,
+                "password": job.profile.password,
+            }
+            # Ensure bot knows about proxy
+            if current_proxy:
+                 p_str = current_proxy
+                 if "://" in p_str:
+                     p_str = p_str.split("://")[1]
+                 bot.set_proxy(p_str)
+
             # Execute the job function
-            # The function should be a method of a FaucetBot instance or similar
-            # For the refactor, we will pass the page to the function
-            logger.info(f"🚀 Executing {job.name} for {username}... (Proxy: {current_proxy or 'None'})")
+            logger.info(f"🚀 Executing {job.name} ({job.job_type}) for {username}... (Proxy: {current_proxy or 'None'})")
             start_time = time.time()
             
-            # This is where the actual bot logic runs
-            result = await job.func(page)
+            method = getattr(bot, job.job_type)
+            result = await method(page)
             
             duration = time.time() - start_time
             logger.info(f"✅ Finished {job.name} for {username} in {duration:.1f}s")
@@ -233,6 +287,12 @@ class JobScheduler:
         except Exception as e:
             logger.error(f"❌ Error in job {job.name} for {username}: {e}")
             # Retry logic
+            self.consecutive_job_failures += 1
+            if self.consecutive_job_failures >= MAX_CONSECUTIVE_JOB_FAILURES:
+                logger.warning(f"⚠️ {self.consecutive_job_failures} consecutive job failures. Triggering browser restart.")
+                await self.browser_manager.restart()
+                self.consecutive_job_failures = 0
+
             job.retry_count += 1
             retry_delay = min(PROXY_COOLDOWN_SECONDS * (2 ** job.retry_count), MAX_RETRY_BACKOFF_SECONDS)  # Exponential backoff capped
             job.next_run = time.time() + retry_delay
@@ -263,6 +323,13 @@ class JobScheduler:
             if now - self.last_persist_time >= SESSION_PERSIST_INTERVAL:
                 self._persist_session()
                 self.last_persist_time = now
+            
+            if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
+                logger.info("🩺 Performing browser health check...")
+                if not await self.browser_manager.check_health():
+                    logger.warning("🚨 Browser health check failed. Restarting...")
+                    await self.browser_manager.restart()
+                self.last_health_check_time = now
             
             # 1. Check for ready jobs
             ready_jobs = [j for j in self.queue if j.next_run <= now]
@@ -308,7 +375,11 @@ class JobScheduler:
                 next_run = min(j.next_run for j in self.queue)
                 sleep_time = max(0.1, min(next_run - now, 10.0))
             
-            await asyncio.sleep(sleep_time)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=sleep_time)
+                break  # Stop event set during sleep
+            except asyncio.TimeoutError:
+                pass  # Sleep completed
 
     def stop(self):
         """Stop the scheduler and persist final state."""

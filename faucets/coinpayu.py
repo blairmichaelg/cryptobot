@@ -124,6 +124,7 @@ class CoinPayUBot(FaucetBot):
         import time
         
         jobs = []
+        f_type = self.faucet_name.lower()
         
         # 1. Faucet Claim (Hourly)
         jobs.append(Job(
@@ -131,8 +132,8 @@ class CoinPayUBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            func=self.claim_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="claim_wrapper"
         ))
         
         # 2. PTC/Surf Ads (Periodically)
@@ -141,8 +142,8 @@ class CoinPayUBot(FaucetBot):
             next_run=time.time() + 300,
             name=f"{self.faucet_name} PTC",
             profile=None,
-            func=self.ptc_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="ptc_wrapper"
         ))
 
         # 3. Consolidation Job (Faucet -> Main)
@@ -151,8 +152,8 @@ class CoinPayUBot(FaucetBot):
             next_run=time.time() + 7200, # Every 2 hours
             name=f"{self.faucet_name} Consolidate",
             profile=None,
-            func=self.consolidate_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="consolidate_wrapper"
         ))
 
         # 4. Withdraw Job (Daily)
@@ -161,8 +162,8 @@ class CoinPayUBot(FaucetBot):
             next_run=time.time() + 3600,
             name=f"{self.faucet_name} Withdraw",
             profile=None,
-            func=self.withdraw_wrapper,
-            faucet_type=self.faucet_name.lower()
+            faucet_type=f_type,
+            job_type="withdraw_wrapper"
         ))
         
         return jobs
@@ -227,9 +228,15 @@ class CoinPayUBot(FaucetBot):
             await self.human_like_click(method_dropdown)
             await asyncio.sleep(1)
             
-            # Select first available (usually BTC or FaucetPay if configured)
-            # This is site-dependent, assuming first option for now
-            await self.page.keyboard.press("Enter")
+            # Try to find specific option (Litecoin or FaucetPay)
+            option = self.page.locator("li:has-text('Litecoin'), li:has-text('FaucetPay'), .el-select-dropdown__item:has-text('Litecoin')")
+            if await option.count() > 0:
+                logger.info(f"[{self.faucet_name}] Selecting specific withdrawal method...")
+                await self.human_like_click(option.first)
+            else:
+                # Select first available (usually BTC or FaucetPay if configured)
+                # This is site-dependent, assuming first option for now
+                await self.page.keyboard.press("Enter")
             
             # 2. Confirm Amount (usually auto-filled with Max)
             confirm_btn = self.page.locator("button.btn-primary:has-text('Confirm')")

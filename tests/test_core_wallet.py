@@ -32,7 +32,7 @@ async def test_wallet_connection_success():
         
         MockSessionClass.return_value = session_instance
         
-        daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+        daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
         result = await daemon.check_connection()
         
         assert result is True
@@ -58,7 +58,7 @@ async def test_wallet_get_balance():
     with patch('aiohttp.ClientSession') as MockSessionClass:
         MockSessionClass.return_value = session_instance
         
-        daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+        daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
         balance = await daemon.get_balance()
         assert balance == expected_balance
 
@@ -87,7 +87,7 @@ class TestWalletDaemonMethods:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             address = await daemon.get_unused_address()
             assert address == expected_address
     
@@ -110,7 +110,7 @@ class TestWalletDaemonMethods:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             is_valid = await daemon.validate_address("bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh")
             assert is_valid is True
     
@@ -133,7 +133,7 @@ class TestWalletDaemonMethods:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             is_valid = await daemon.validate_address("bc1q...")
             assert is_valid is True
     
@@ -156,7 +156,7 @@ class TestWalletDaemonMethods:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             is_valid = await daemon.validate_address("invalid_address")
             assert is_valid is False
 
@@ -182,7 +182,7 @@ class TestWalletDaemonErrorHandling:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             result = await daemon.check_connection()
             # check_connection returns False when result is None, not None itself
             assert result is False
@@ -209,7 +209,7 @@ class TestWalletDaemonErrorHandling:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             result = await daemon.get_balance()
             assert result is None
     
@@ -224,7 +224,7 @@ class TestWalletDaemonErrorHandling:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             result = await daemon.check_connection()
             # check_connection returns False when result is None
             assert result is False
@@ -248,7 +248,7 @@ class TestWalletDaemonErrorHandling:
         with patch('aiohttp.ClientSession') as MockSessionClass:
             MockSessionClass.return_value = session_instance
             
-            daemon = WalletDaemon("http://localhost:7777", "user", "pass")
+            daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
             result = await daemon.check_connection()
             assert result is False
 
@@ -259,8 +259,8 @@ class TestWalletDaemonAuthentication:
     @pytest.mark.asyncio
     async def test_daemon_with_authentication(self):
         """Test WalletDaemon with username and password."""
-        daemon = WalletDaemon("http://localhost:7777", "user", "pass")
-        assert daemon.url == "http://localhost:7777"
+        daemon = WalletDaemon({"BTC": "http://localhost:7777"}, "user", "pass")
+        assert daemon.urls == {"BTC": "http://localhost:7777"}
         assert daemon.auth is not None
         assert daemon.auth.login == "user"
         assert daemon.auth.password == "pass"
@@ -268,6 +268,6 @@ class TestWalletDaemonAuthentication:
     @pytest.mark.asyncio
     async def test_daemon_without_authentication(self):
         """Test WalletDaemon without credentials."""
-        daemon = WalletDaemon("http://localhost:7777", None, None)
-        assert daemon.url == "http://localhost:7777"
+        daemon = WalletDaemon({"BTC": "http://localhost:7777"}, None, None)
+        assert daemon.urls == {"BTC": "http://localhost:7777"}
         assert daemon.auth is None

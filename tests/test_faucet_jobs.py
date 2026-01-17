@@ -1,6 +1,6 @@
 """
 Test suite for faucet get_jobs() implementations.
-Tests that all faucets return valid Job objects with correct priorities and callable functions.
+Tests that all faucets return valid Job objects with correct priorities and job types.
 """
 
 import pytest
@@ -32,7 +32,7 @@ def test_firefaucet_get_jobs(mock_settings, mock_page):
     bot = FireFaucetBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 4, "FireFaucet should have 4 jobs"
+    assert len(jobs) == 5, "FireFaucet should have 5 jobs"
     
     # Check job names
     job_names = [job.name for job in jobs]
@@ -40,16 +40,20 @@ def test_firefaucet_get_jobs(mock_settings, mock_page):
     assert "FireFaucet Daily Bonus" in job_names
     assert "FireFaucet PTC" in job_names
     assert "FireFaucet Shortlinks" in job_names
+    assert "FireFaucet Withdraw" in job_names
     
     # Check priorities
     assert jobs[0].priority == 1  # Claim
     assert jobs[1].priority == 2  # Daily Bonus
     assert jobs[2].priority == 3  # PTC
     assert jobs[3].priority == 4  # Shortlinks
+    assert jobs[4].priority == 5  # Withdraw
     
-    # Check functions are callable
+    # Check job types exist on bot
     for job in jobs:
-        assert callable(job.func)
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
+        assert callable(getattr(bot, job.job_type))
 
 
 def test_faucetcrypto_get_jobs(mock_settings, mock_page):
@@ -57,15 +61,16 @@ def test_faucetcrypto_get_jobs(mock_settings, mock_page):
     bot = FaucetCryptoBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 2, "FaucetCrypto should have 2 jobs (claim + PTC)"
+    assert len(jobs) == 3, "FaucetCrypto should have 3 jobs (claim + PTC + withdraw)"
     
     # Check priorities
     assert jobs[0].priority == 1  # Claim
-    assert jobs[1].priority == 3  # PTC
+    assert jobs[1].priority == 5  # Withdraw
+    assert jobs[2].priority == 3  # PTC
     
-    # Check functions are callable
     for job in jobs:
-        assert callable(job.func)
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_freebitcoin_get_jobs(mock_settings, mock_page):
@@ -73,14 +78,16 @@ def test_freebitcoin_get_jobs(mock_settings, mock_page):
     bot = FreeBitcoinBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 1, "FreeBitcoin should have 1 job (claim only, no PTC)"
+    assert len(jobs) == 2, "FreeBitcoin should have 2 jobs (claim + withdraw)"
     
-    # Check priority
     assert jobs[0].priority == 1
     assert "FreeBitcoin Claim" in jobs[0].name
+    assert jobs[1].priority == 5
+    assert "FreeBitcoin Withdraw" in jobs[1].name
     
-    # Check function is callable
-    assert callable(jobs[0].func)
+    for job in jobs:
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_dutchy_get_jobs(mock_settings, mock_page):
@@ -88,14 +95,16 @@ def test_dutchy_get_jobs(mock_settings, mock_page):
     bot = DutchyBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 1, "Dutchy should have 1 job (claim includes rolls and shortlinks)"
+    assert len(jobs) == 2, "Dutchy should have 2 jobs (claim + withdraw)"
     
-    # Check priority
     assert jobs[0].priority == 1
     assert "DutchyCorp Claim" in jobs[0].name
+    assert jobs[1].priority == 5
+    assert "DutchyCorp Withdraw" in jobs[1].name
     
-    # Check function is callable
-    assert callable(jobs[0].func)
+    for job in jobs:
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_cointiply_get_jobs(mock_settings, mock_page):
@@ -103,15 +112,15 @@ def test_cointiply_get_jobs(mock_settings, mock_page):
     bot = CointiplyBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 2, "Cointiply should have 2 jobs (claim + PTC)"
+    assert len(jobs) == 3, "Cointiply should have 3 jobs (claim + PTC + withdraw)"
     
-    # Check priorities
-    assert jobs[0].priority == 1  # Claim
-    assert jobs[1].priority == 3  # PTC
+    assert jobs[0].priority == 1
+    assert jobs[1].priority == 5
+    assert jobs[2].priority == 3
     
-    # Check functions are callable
     for job in jobs:
-        assert callable(job.func)
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_coinpayu_get_jobs(mock_settings, mock_page):
@@ -119,15 +128,16 @@ def test_coinpayu_get_jobs(mock_settings, mock_page):
     bot = CoinPayUBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 2, "CoinPayU should have 2 jobs (claim + PTC)"
+    assert len(jobs) == 4, "CoinPayU should have 4 jobs (claim + PTC + consolidate + withdraw)"
     
-    # Check priorities
-    assert jobs[0].priority == 1  # Claim
-    assert jobs[1].priority == 3  # PTC
+    assert jobs[0].priority == 1
+    assert jobs[1].priority == 3
+    assert jobs[2].priority == 4
+    assert jobs[3].priority == 5
     
-    # Check functions are callable
     for job in jobs:
-        assert callable(job.func)
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_adbtc_get_jobs(mock_settings, mock_page):
@@ -135,15 +145,15 @@ def test_adbtc_get_jobs(mock_settings, mock_page):
     bot = AdBTCBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
-    assert len(jobs) == 2, "AdBTC should have 2 jobs (claim + PTC/surf)"
+    assert len(jobs) == 3, "AdBTC should have 3 jobs (claim + surf + withdraw)"
     
-    # Check priorities
-    assert jobs[0].priority == 1  # Claim
-    assert jobs[1].priority == 3  # PTC
+    assert jobs[0].priority == 1
+    assert jobs[1].priority == 5
+    assert jobs[2].priority == 2
     
-    # Check functions are callable
     for job in jobs:
-        assert callable(job.func)
+        assert isinstance(job.job_type, str)
+        assert hasattr(bot, job.job_type)
 
 
 def test_all_jobs_have_required_fields():
@@ -167,11 +177,12 @@ def test_all_jobs_have_required_fields():
             assert hasattr(job, 'priority')
             assert hasattr(job, 'next_run')
             assert hasattr(job, 'name')
-            assert hasattr(job, 'func')
+            assert hasattr(job, 'job_type')
             assert hasattr(job, 'faucet_type')
             assert isinstance(job.priority, int)
             assert isinstance(job.name, str)
-            assert callable(job.func)
+            assert isinstance(job.job_type, str)
+            assert hasattr(bot, job.job_type)
 
 
 def test_job_schedules_are_reasonable():
@@ -180,12 +191,11 @@ def test_job_schedules_are_reasonable():
     mock_settings = BotSettings()
     mock_page = AsyncMock()
     
-    # Capture time BEFORE creating bot to avoid timing precision issues
     current_time = time.time()
     bot = FireFaucetBot(mock_settings, mock_page)
     jobs = bot.get_jobs()
     
     for job in jobs:
-        # All jobs should be scheduled within the next hour (with 1 second tolerance for test execution time)
         assert job.next_run >= current_time - 1, f"Job {job.name} scheduled in the past"
-        assert job.next_run <= current_time + 3600, f"Job {job.name} scheduled too far in future"
+        # Increased limit for daily bonus/withdraw/shortlinks which might be scheduled later
+        assert job.next_run <= current_time + 86400, f"Job {job.name} scheduled too far in future"

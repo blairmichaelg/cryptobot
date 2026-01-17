@@ -8,22 +8,30 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
 async def test_blocker():
+    """Test that the resource blocker works without hanging."""
     logger.info("🧪 Testing Resource Blocker...")
     manager = BrowserManager(headless=True)
     
     try:
         await manager.launch()
-        # Context 1: Should have blocker
         context = await manager.create_context()
         page = await manager.new_page(context)
         
-        logger.info("Navigating to a heavy page (Google)...")
-        # Go to a safe page. If blocker works, it shouldn't crash.
-        await page.goto("https://www.google.com")
-        
-        logger.info("✅ Navigation completed without error. Blocker is active.")
+        logger.info("Navigating to a test page with timeout...")
+        # Use a lightweight page with explicit timeout to prevent hanging
+        try:
+            # 10 second timeout to prevent indefinite hang
+            await asyncio.wait_for(
+                page.goto("https://example.com", wait_until="domcontentloaded"),
+                timeout=10.0
+            )
+            logger.info("✅ Navigation completed without error. Blocker is active.")
+        except asyncio.TimeoutError:
+            logger.error("❌ Page navigation timed out after 10 seconds")
+            pytest.fail("Navigation timed out - possible blocker issue")
         
     except Exception as e:
-        pytest.fail(f"❌ Blocker Test Failed: {e}")
+        logger.error(f"❌ Blocker Test Failed: {e}")
+        pytest.fail(f"Blocker Test Failed: {e}")
     finally:
         await manager.close()

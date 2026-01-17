@@ -91,10 +91,18 @@ async def register_single_faucet(
     logger.info(f"Registering: {config.faucet_name}")
     logger.info(f"{'='*60}")
     
+    context = None
     page = None
     try:
-        # Create new page using browser's global context
-        page = await browser_manager.new_page(context=None)
+        # Create isolated context with sticky session support
+        proxy = getattr(settings, "registration_proxy", None)
+        profile_name = f"register_{config.faucet_name}"
+        
+        context = await browser_manager.create_context(
+            proxy=proxy,
+            profile_name=profile_name
+        )
+        page = await browser_manager.new_page(context=context)
         
         # Initialize bot
         bot = config.bot_class(settings, page)
@@ -110,6 +118,8 @@ async def register_single_faucet(
         
         if success:
             logger.info(f"✅ {config.faucet_name} registration successful!")
+            # Save cookies/session is handled by sticky session logic in create_context/save_cookies
+            await browser_manager.save_cookies(context, profile_name)
         else:
             logger.error(f"❌ {config.faucet_name} registration failed")
             
@@ -124,6 +134,8 @@ async def register_single_faucet(
     finally:
         if page:
             await page.close()
+        if context:
+            await context.close()
 
 
 async def register_all_faucets(
