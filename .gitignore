@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+secrets/
+*.key
+*.pem
+*.p12
+
+# Logs
+*.log
+*.log.*
+*.log.gz
+faucet_bot.log*
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+test_output.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Browser Data
+playwright/
+.camoufox/
+browser_cache/
+cookies/
+sessions/
+
+# Project State
+faucet_state.json
+faucet_config.json
+*.session
+*.state
+
+# Deployment
+bundle.zip
+*.service
+deploy_*.sh
+setup_*.sh
+setup_*.ps1
+
+# Azure
+.azure/
+
+# Backup files
+*.bak
+*.backup
+*_backup.*

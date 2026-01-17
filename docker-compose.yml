@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  crypto-bot:
+    build: .
+    container_name: crypto-faucet-bot
+    restart: unless-stopped
+    volumes:
+      - ./faucet_config.json:/app/faucet_config.json
+      - ./faucet_state.json:/app/faucet_state.json
+      - ./faucet_bot.log:/app/faucet_bot.log
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - crypto-bot-network
+
+networks:
+  crypto-bot-network:
+    driver: bridge

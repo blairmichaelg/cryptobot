@@ -1,0 +1,507 @@
+import asyncio
+import logging
+import random
+from dataclasses import dataclass
+from typing import Optional, Union
+from playwright.async_api import Page, Locator
+from solvers.captcha import CaptchaSolver
+from core.config import BotSettings
+
+from core.extractor import DataExtractor
+from core.analytics import get_tracker
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ClaimResult:
+    success: bool
+    status: str
+    next_claim_minutes: float = 0
+    amount: str = "0"
+    balance: str = "0"
+
+class FaucetBot:
+    """Base class for Faucet Bots."""
+    
+    def __init__(self, settings: BotSettings, page: Page, action_lock: asyncio.Lock = None):
+        """
+        Initialize the FaucetBot.
+
+        Args:
+            settings: Configuration settings for the bot.
+            page: The Playwright Page instance to control.
+            action_lock: An asyncio.Lock to prevent simultaneous actions across multiple bot instances.
+        """
+        self.settings = settings
+        self.page = page
+        self.action_lock = action_lock
+        # Initialize solver
+        provider = settings.captcha_provider.lower()
+        key = settings.capsolver_api_key if provider == "capsolver" else settings.twocaptcha_api_key
+        self.solver = CaptchaSolver(api_key=key, provider=provider)
+            
+        self.faucet_name = "Generic"
+        self.base_url = ""
+        self.base_url = ""
+        self.settings_account_override = None # Allow manual injection of credentials
+
+    def set_proxy(self, proxy_string: str):
+        """Pass the proxy string to the underlying solver."""
+        if self.solver:
+            self.solver.set_proxy(proxy_string)
+
+    def get_credentials(self, faucet_name: str):
+        """
+        Centralized credential retrieval with override support.
+        
+        Args:
+            faucet_name: The name of the faucet to get credentials for.
+        
+        Returns:
+            Credentials dict or None if not found.
+        """
+        if hasattr(self, 'settings_account_override') and self.settings_account_override:
+            return self.settings_account_override
+        return self.settings.get_account(faucet_name)
+
+    async def random_delay(self, min_s=2, max_s=5):
+        """
+        Wait for a random amount of time to mimic human behavior.
+
+        Args:
+            min_s: Minimum wait time in seconds.
+            max_s: Maximum wait time in seconds.
+        """
+        await asyncio.sleep(random.uniform(min_s, max_s))
+
+    async def human_like_click(self, locator: Locator):
+        """
+        Simulate a human-like click with Bézier-curve style movement,
+        randomized delays, scrolling, and offset clicks.
+        """
+        if await locator.is_visible():
+            await locator.scroll_into_view_if_needed()
+            await asyncio.sleep(random.uniform(0.2, 0.6))
+            
+            # Remove blocking overlays
+            await self.remove_overlays()
+
+            box = await locator.bounding_box()
+            if not box:
+                await locator.click(delay=random.randint(100, 250))
+                return
+
+            # Target point within the button (randomized)
+            target_x = box['x'] + box['width'] * random.uniform(0.2, 0.8)
+            target_y = box['y'] + box['height'] * random.uniform(0.2, 0.8)
+
+            # Move mouse in 'human' way (multiple small steps)
+            # This is a simplified version of Bézier pathing
+            await self.page.mouse.move(target_x, target_y, steps=random.randint(5, 12))
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+
+            # Action synchronizer
+            if self.action_lock:
+                async with self.action_lock:
+                    await self.page.mouse.click(target_x, target_y, delay=random.randint(80, 200))
+            else:
+                await self.page.mouse.click(target_x, target_y, delay=random.randint(80, 200))
+
+    async def remove_overlays(self):
+        """
+        Removes transparent or semi-transparent divs that often layer 
+        over buttons to trigger pop-unders.
+        """
+        await self.page.evaluate("""() => {
+            const overlays = Array.from(document.querySelectorAll('div, ins, iframe')).filter(el => {
+                const style = window.getComputedStyle(el);
+                return (style.position === 'absolute' || style.position === 'fixed') && 
+                       (style.zIndex > 100 || style.width === '100vw' || style.height === '100vh') &&
+                       (parseFloat(style.opacity) < 0.1 || style.backgroundColor === 'transparent');
+            });
+            overlays.forEach(el => el.remove());
+        }""")
+
+    async def handle_cloudflare(self) -> bool:
+        """
+        Detects and waits for Cloudflare 'Just a moment' or Turnstile challenges.
+        Returns True if clear, False if potentially stuck.
+        """
+        for _ in range(15): # Max 30 seconds
+            title = (await self.page.title()).lower()
+            if "just a moment" in title or "cloudflare" in title:
+                logger.info(f"[{self.faucet_name}] Waiting for Cloudflare/Turnstile...")
+                await asyncio.sleep(2)
+            else:
+                # Check for the challenge spinner specifically if title changed but it's still there
+                if await self.page.locator("#cf-challenge-running, .cf-turnstile").is_visible():
+                     await asyncio.sleep(2)
+                     continue
+                return True
+        return False
+
+
+    async def close_popups(self):
+        """
+        Generic handler for common crypto-site popups, cookie consents, 
+        and notification requests that block view or interaction.
+        """
+        selectors = [
+            ".cc-btn.cc-dismiss",         # Cookie Consent
+            ".pushpad_deny_button",       # Notification Permission
+            ".close-reveal-modal",        # Reveal Modals
+            "div[title='Close']",         # Generic Title-based close
+            "#multitab_comm_close",       # Common in Freebitco.in
+            ".modal-header .close",       # Bootstrap modals
+            "button:has-text('Accept All')", 
+            "button:has-text('Got it!')",
+            ".fc-cta-consent"             # Google Consent
+        ]
+        
+        if not self.page:
+            return
+        
+        for sel in selectors:
+            try:
+                el = self.page.locator(sel)
+                if await el.count() > 0 and await el.first.is_visible():
+                    logger.debug(f"[{self.faucet_name}] Closing popup: {sel}")
+                    await el.first.click(timeout=1000)
+                    await asyncio.sleep(0.5)
+            except:
+                continue
+    
+    async def login(self) -> bool:
+        """
+        Perform the login process for the faucet.
+
+        Returns:
+            True if login was successful, False otherwise.
+        """
+        raise NotImplementedError
+
+    async def claim(self) -> Union[bool, ClaimResult]:
+        """
+        Execute the claim process.
+
+        Returns:
+            True/False or ClaimResult object.
+        """
+        raise NotImplementedError
+        
+    async def get_timer(self, selector: str) -> float:
+        """
+        Extract timer value from a selector and convert to minutes.
+        """
+        try:
+            el = self.page.locator(selector)
+            if await el.count() > 0 and await el.first.is_visible():
+                text = await el.first.text_content()
+                return DataExtractor.parse_timer_to_minutes(text)
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Timer extraction failed: {e}")
+        return 0.0
+
+    async def get_balance(self, selector: str) -> str:
+        """
+        Extract balance from a selector.
+        """
+        try:
+            el = self.page.locator(selector)
+            if await el.count() > 0 and await el.first.is_visible():
+                text = await el.first.text_content()
+                return DataExtractor.extract_balance(text)
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Balance extraction failed: {e}")
+        return "0"
+        
+    async def is_logged_in(self) -> bool:
+        """
+        Check if the session is still active. 
+        Subclasses should override this with specific checks.
+        """
+        return False
+
+    async def check_failure_states(self) -> Optional[str]:
+        """
+        Check for common failure states like IP ban, proxy detection, or maintenance.
+        Returns a string describing the state if failure detected, else None.
+        """
+        content = (await self.page.content()).lower()
+        url = self.page.url.lower()
+        
+        # Proxy/VPN Detection Patterns
+        proxy_patterns = [
+            "proxy detected",
+            "vpn detected",
+            "suspicious activity",
+            "datacenter ip",
+            "hosting provider",
+            "please disable your proxy",
+            "please disable your vpn",
+            "access denied",
+            "forbidden",
+            "your ip has been flagged",
+            "unusual traffic"
+        ]
+        
+        for pattern in proxy_patterns:
+            if pattern in content:
+                logger.warning(f"[{self.faucet_name}] Proxy detection pattern found: '{pattern}'")
+                return "Proxy Detected"
+        
+        # Account Ban/Suspension Patterns
+        ban_patterns = [
+            "account banned",
+            "account suspended",
+            "account disabled",
+            "account locked",
+            "permanently banned",
+            "violation of terms"
+        ]
+        
+        for pattern in ban_patterns:
+            if pattern in content:
+                logger.error(f"[{self.faucet_name}] Account ban pattern found: '{pattern}'")
+                return "Account Banned"
+        
+        # Site Maintenance/Cloudflare Patterns
+        maintenance_patterns = [
+            "maintenance",
+            "under maintenance",
+            "temporarily unavailable",
+            "checking your browser",
+            "cloudflare",
+            "ddos protection",
+            "security check"
+        ]
+        
+        for pattern in maintenance_patterns:
+            if pattern in content:
+                logger.info(f"[{self.faucet_name}] Maintenance/security pattern found: '{pattern}'")
+                return "Site Maintenance / Blocked"
+        
+        # Check for error pages in URL
+        if any(err in url for err in ["error", "403", "404", "500", "banned"]):
+            logger.warning(f"[{self.faucet_name}] Error page detected in URL: {url}")
+            return "Error Page"
+        
+        return None
+
+    async def login_wrapper(self) -> bool:
+        """
+        Ensure we are logged in, with failure state checking.
+        """
+        failure = await self.check_failure_states()
+        if failure:
+            logger.error(f"[{self.faucet_name}] Failure state detected: {failure}")
+            return False
+            
+        if await self.is_logged_in():
+            return True
+            
+        return await self.login()
+
+    def get_earning_tasks(self):
+        """
+        Returns a list of async methods (tasks) to execute for earnings.
+        """
+        tasks = []
+        # Claim is usually the primary task
+        tasks.append({"func": self.claim, "name": "Faucet Claim"})
+        
+        # Add PTC if available
+        if hasattr(self, "view_ptc_ads"):
+             tasks.append({"func": self.view_ptc_ads, "name": "PTC Ads"})
+        
+        return tasks
+    
+        return jobs
+             
+    async def withdraw(self) -> ClaimResult:
+        """
+        Generic withdrawal logic. Subclasses should override this with site-specific
+        navigation and button clicking.
+        """
+        logger.warning(f"[{self.faucet_name}] Withdrawal not implemented for this faucet.")
+        return ClaimResult(success=False, status="Not Implemented", next_claim_minutes=1440)
+
+    def get_jobs(self):
+        """
+        Returns a list of Job objects for the scheduler.
+        """
+        from core.orchestrator import Job
+        import time
+        
+        jobs = []
+        
+        # 1. Primary claim job - highest priority
+        jobs.append(Job(
+            priority=1,
+            next_run=time.time(),
+            name=f"{self.faucet_name} Claim",
+            profile=None,
+            func=self.claim_wrapper,
+            faucet_type=self.faucet_name.lower().replace(" ", "_")
+        ))
+        
+        # 2. Withdrawal job - scheduled once per day
+        # We start it slightly offset to avoid overlap with first claim
+        jobs.append(Job(
+            priority=5,
+            next_run=time.time() + 3600, 
+            name=f"{self.faucet_name} Withdraw",
+            profile=None,
+            func=self.withdraw_wrapper,
+            faucet_type=self.faucet_name.lower().replace(" ", "_")
+        ))
+        
+        # 3. PTC job if available
+        if hasattr(self, "view_ptc_ads"):
+            jobs.append(Job(
+                priority=3,
+                next_run=time.time() + 300,
+                name=f"{self.faucet_name} PTC",
+                profile=None,
+                func=self.ptc_wrapper,
+                faucet_type=self.faucet_name.lower().replace(" ", "_")
+            ))
+        
+        return jobs
+
+    async def withdraw_wrapper(self, page: Page) -> ClaimResult:
+        """Wrapper for withdrawal with threshold checking."""
+        self.page = page
+        
+        # 1. Ensure logged in
+        if not await self.login_wrapper():
+            return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
+        
+        # 2. Check balance against threshold
+        current_balance = await self.get_balance(getattr(self, 'balance_selector', '.balance'))
+        try:
+            val = float(current_balance.replace(',', ''))
+            threshold = getattr(self.settings, f"{self.faucet_name.lower()}_min_withdraw", 1000)
+            if val < threshold:
+                logger.info(f"[{self.faucet_name}] Balance {val} below threshold {threshold}. Skipping.")
+                return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
+        except:
+            pass # Continue if parsing fails
+            
+        return await self.withdraw()
+             
+    async def claim_wrapper(self, page: Page) -> ClaimResult:
+        self.page = page
+        # Ensure logged in with new wrapper
+        if not await self.login_wrapper():
+            return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
+        return await self.claim()
+
+    async def ptc_wrapper(self, page: Page) -> ClaimResult:
+        self.page = page
+        if not await self.login_wrapper():
+            return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
+        
+        await self.view_ptc_ads()
+        return ClaimResult(success=True, status="PTC Done", next_claim_minutes=self.settings.exploration_frequency_minutes)
+
+    async def run(self) -> ClaimResult:
+        """
+        Main execution flow. 
+        Returns the ClaimResult from the primary 'claim' task (or a default failure one)
+        to determine the next schedule time.
+        """
+        logger.info(f"[{self.faucet_name}] Starting run...")
+        
+        # Default result in case everything fails
+        final_result = ClaimResult(success=False, status="Run Failed", next_claim_minutes=5)
+        
+        try:
+            if not await self.login():
+                logger.error(f"[{self.faucet_name}] Login Failed")
+                return ClaimResult(success=False, status="Login Failed", next_claim_minutes=30)
+            
+            await self.close_popups()
+            
+            # WebRTC Leak Prevention & Fingerprint Hardening
+            await self.page.context.add_init_script("""
+                // Webdriver concealment
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                
+                // WebRTC Leak Prevention
+                if (window.RTCPeerConnection) {
+                    const orig = window.RTCPeerConnection;
+                    window.RTCPeerConnection = function(config) {
+                        if (config && config.iceServers) {
+                            config.iceServers = [];
+                        }
+                        return new orig(config);
+                    };
+                }
+
+                // Canvas/WebGL Noise
+                const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+                CanvasRenderingContext2D.prototype.getImageData = function(x, y, w, h) {
+                    const res = originalGetImageData.apply(this, arguments);
+                    for (let i = 0; i < res.data.length; i += 4) {
+                        res.data[i] = res.data[i] + (Math.random() > 0.5 ? 1 : -1);
+                    }
+                    return res;
+                };
+            """)
+            await self.random_delay()
+            
+            # Execute all defined tasks
+            tasks = self.get_earning_tasks()
+            
+            for task_info in tasks:
+                func = task_info["func"]
+                name = task_info["name"]
+                
+                try:
+                    logger.info(f"[{self.faucet_name}] Executing: {name}")
+                    res = await func()
+                    
+                    # If this was the main claim, capture the result for scheduling
+                    if isinstance(res, ClaimResult):
+                        final_result = res
+                        logger.info(f"[{self.faucet_name}] {name} Result: {res.status} (Wait: {res.next_claim_minutes}m)")
+                        
+                        # Track in earnings analytics
+                        try:
+                            tracker = get_tracker()
+                            amount = float(res.amount) if res.amount else 0.0
+                            tracker.record_claim(
+                                faucet=self.faucet_name,
+                                success=res.success,
+                                amount=amount,
+                                currency=getattr(self, 'coin', 'unknown'),
+                                balance_after=float(res.balance) if res.balance else 0.0
+                            )
+                        except Exception as analytics_err:
+                            logger.debug(f"Analytics tracking failed: {analytics_err}")
+                            
+                    elif res:
+                        logger.info(f"[{self.faucet_name}] {name} Successful")
+                    else:
+                        logger.warning(f"[{self.faucet_name}] {name} Completed with no result/fail")
+                        
+                    await self.random_delay()
+                    
+                except Exception as e:
+                     error_msg = f"Task '{name}' Error: {e}"
+                     logger.error(f"[{self.faucet_name}] {error_msg}")
+                     
+                     # If the primary claim fails with an exception, update final_result
+                     if name == "Faucet Claim":
+                         final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
+                     
+                     # We continue to the next task even if this one failed!
+
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Runtime Fatal Error: {e}")
+            final_result = ClaimResult(success=False, status=f"Fatal: {e}", next_claim_minutes=10)
+        finally:
+            await self.solver.close()
+            
+        return final_result
