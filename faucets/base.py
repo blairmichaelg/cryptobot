@@ -51,7 +51,7 @@ class FaucetBot:
             self.solver.set_proxy(proxy_string)
 
     @staticmethod
-    def strip_email_alias(email: str) -> str:
+    def strip_email_alias(email: Optional[str]) -> Optional[str]:
         """
         Strip email alias (plus addressing) from email address.
         

@@ -28,7 +28,7 @@ class TestEmailAliasStripping:
         assert FaucetBot.strip_email_alias("") == ""
         assert FaucetBot.strip_email_alias("invalid") == "invalid"
         assert FaucetBot.strip_email_alias("no-at-sign") == "no-at-sign"
-        assert FaucetBot.strip_email_alias(None) == None
+        assert FaucetBot.strip_email_alias(None) is None
     
     def test_strip_email_alias_preserves_domain(self):
         """Test that domain part is preserved correctly."""
