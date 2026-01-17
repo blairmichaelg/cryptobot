@@ -64,7 +64,7 @@ class FaucetBot:
         Returns:
             The base email address without the alias.
         """
-        if not email or '@' not in email:
+        if email is None or not email or '@' not in email:
             return email
         
         local_part, domain = email.rsplit('@', 1)
