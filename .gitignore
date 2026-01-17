@@ -39,6 +39,9 @@ htmlcov/
 .tox/
 .hypothesis/
 test_output.txt
+test_output_*.txt
+test_log_*.txt
+test_results.txt
 
 # IDE
 .vscode/
@@ -60,6 +63,13 @@ faucet_state.json
 faucet_config.json
 *.session
 *.state
+session_state.json
+heartbeat.txt
+
+# Debug and Test Scripts (root only)
+/debug_*.py
+/repro_*.py
+/test_*.py
 
 # Deployment
 bundle.zip
