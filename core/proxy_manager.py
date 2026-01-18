@@ -32,11 +32,16 @@ class ProxyManager:
     """
     Manages fetching proxies from 2Captcha and assigning them to accounts
     using a 'Sticky Session' strategy (1 Account = 1 Proxy).
+    
+    Also provides proxy health monitoring with latency tracking.
     """
 
     # Validation constants
     VALIDATION_TIMEOUT_SECONDS = 10
     VALIDATION_TEST_URL = "https://httpbin.org/ip"
+    LATENCY_HISTORY_MAX = 10  # Keep last 10 latency measurements per proxy
+    DEAD_PROXY_THRESHOLD_MS = 5000  # Consider proxy dead if avg latency > 5s
+    DEAD_PROXY_FAILURE_COUNT = 3  # Remove after 3 consecutive failures
 
     def __init__(self, settings: BotSettings):
         self.settings = settings
@@ -44,6 +49,154 @@ class ProxyManager:
         self.proxies: List[Proxy] = []
         self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
         self.assignments: Dict[str, Proxy] = {}  # Map username -> Proxy
+        
+        # Latency tracking: proxy_key -> list of latency measurements (ms)
+        self.proxy_latency: Dict[str, List[float]] = {}
+        # Failure tracking for dead proxy removal
+        self.proxy_failures: Dict[str, int] = {}
+        # Dead proxies that have been removed
+        self.dead_proxies: List[str] = []
+
+    def _proxy_key(self, proxy: Proxy) -> str:
+        """Generate a unique key for a proxy."""
+        return f"{proxy.ip}:{proxy.port}"
+
+    async def measure_proxy_latency(self, proxy: Proxy) -> Optional[float]:
+        """
+        Measure the latency of a proxy in milliseconds.
+        
+        Args:
+            proxy: The proxy to measure
+            
+        Returns:
+            Latency in milliseconds, or None if failed
+        """
+        import time
+        proxy_url = proxy.to_string()
+        proxy_key = self._proxy_key(proxy)
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.VALIDATION_TIMEOUT_SECONDS)
+            start_time = time.time()
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    self.VALIDATION_TEST_URL,
+                    proxy=proxy_url
+                ) as resp:
+                    if resp.status == 200:
+                        latency_ms = (time.time() - start_time) * 1000
+                        
+                        # Record latency
+                        if proxy_key not in self.proxy_latency:
+                            self.proxy_latency[proxy_key] = []
+                        self.proxy_latency[proxy_key].append(latency_ms)
+                        
+                        # Keep only last N measurements
+                        if len(self.proxy_latency[proxy_key]) > self.LATENCY_HISTORY_MAX:
+                            self.proxy_latency[proxy_key] = self.proxy_latency[proxy_key][-self.LATENCY_HISTORY_MAX:]
+                        
+                        # Reset failure count on success
+                        self.proxy_failures[proxy_key] = 0
+                        
+                        logger.debug(f"📊 Proxy {proxy_key} latency: {latency_ms:.0f}ms")
+                        return latency_ms
+                    else:
+                        self._record_failure(proxy_key)
+                        return None
+                        
+        except asyncio.TimeoutError:
+            self._record_failure(proxy_key)
+            logger.warning(f"⏱️ Proxy {proxy_key} timed out during latency check")
+            return None
+        except Exception as e:
+            self._record_failure(proxy_key)
+            logger.warning(f"❌ Proxy {proxy_key} latency check failed: {e}")
+            return None
+
+    def _record_failure(self, proxy_key: str):
+        """Record a proxy failure and mark as dead if threshold exceeded."""
+        self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
+        if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
+            if proxy_key not in self.dead_proxies:
+                self.dead_proxies.append(proxy_key)
+                logger.error(f"☠️ Proxy {proxy_key} marked as DEAD after {self.DEAD_PROXY_FAILURE_COUNT} failures")
+
+    def get_proxy_stats(self, proxy: Proxy) -> Dict:
+        """
+        Get statistics for a specific proxy.
+        
+        Returns:
+            Dict with avg_latency, min_latency, max_latency, measurement_count, is_dead
+        """
+        proxy_key = self._proxy_key(proxy)
+        latencies = self.proxy_latency.get(proxy_key, [])
+        
+        if not latencies:
+            return {
+                "avg_latency": None,
+                "min_latency": None,
+                "max_latency": None,
+                "measurement_count": 0,
+                "is_dead": proxy_key in self.dead_proxies
+            }
+        
+        return {
+            "avg_latency": sum(latencies) / len(latencies),
+            "min_latency": min(latencies),
+            "max_latency": max(latencies),
+            "measurement_count": len(latencies),
+            "is_dead": proxy_key in self.dead_proxies
+        }
+
+    async def health_check_all_proxies(self) -> Dict[str, any]:
+        """
+        Perform health check on all assigned proxies, measuring latency.
+        
+        Returns:
+            Summary of health check results
+        """
+        if not self.proxies:
+            return {"total": 0, "healthy": 0, "dead": 0}
+        
+        logger.info(f"🏥 Running health check on {len(self.proxies)} proxies...")
+        
+        semaphore = asyncio.Semaphore(10)
+        
+        async def check_with_semaphore(proxy: Proxy):
+            async with semaphore:
+                return await self.measure_proxy_latency(proxy)
+        
+        results = await asyncio.gather(*[check_with_semaphore(p) for p in self.proxies])
+        
+        healthy = sum(1 for r in results if r is not None)
+        dead = len(self.dead_proxies)
+        
+        summary = {
+            "total": len(self.proxies),
+            "healthy": healthy,
+            "dead": dead,
+            "avg_latency_ms": sum(r for r in results if r) / max(healthy, 1)
+        }
+        
+        logger.info(f"🏥 Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
+        return summary
+
+    def remove_dead_proxies(self) -> int:
+        """
+        Remove dead proxies from the active pool.
+        
+        Returns:
+            Number of proxies removed
+        """
+        before_count = len(self.proxies)
+        self.proxies = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
+        self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in self.dead_proxies]
+        
+        removed = before_count - len(self.proxies)
+        if removed > 0:
+            logger.info(f"🗑️ Removed {removed} dead proxies from pool")
+        return removed
 
     async def validate_proxy(self, proxy: Proxy) -> bool:
         """

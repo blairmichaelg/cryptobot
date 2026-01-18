@@ -352,12 +352,19 @@ class FireFaucetBot(FaucetBot):
             # Faucet Claim Button
             faucet_btn = self.page.locator("#get_reward_button, #faucet_btn")
             if await faucet_btn.count() > 0:
+                logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
                 await self.human_like_click(faucet_btn)
                 await self.random_delay(3, 5)
                 
-                if await self.page.locator(".success_msg").count() > 0:
+                if await self.page.locator(".success_msg, .alert-success").count() > 0:
                     logger.info("FireFaucet faucet claimed successfully.")
                     return ClaimResult(success=True, status="Claimed", next_claim_minutes=30)
+                
+                logger.warning(f"[{self.faucet_name}] Claim verification failed.")
+                await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)
+            else:
+                logger.warning(f"[{self.faucet_name}] Faucet button not found.")
+                await self.page.screenshot(path=f"claim_btn_missing_{self.faucet_name}.png", full_page=True)
                 
             return ClaimResult(success=False, status="Faucet Ready but Failed", next_claim_minutes=5)
             

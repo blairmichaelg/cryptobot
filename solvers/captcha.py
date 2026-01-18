@@ -381,10 +381,16 @@ class CaptchaSolver:
         params = {
             "key": self.api_key,
             "method": method,
-            "sitekey": sitekey,
             "pageurl": url,
             "json": 1
         }
+        
+        # 2Captcha uses different parameter names for different captcha types
+        # reCAPTCHA uses 'googlekey', hCaptcha uses 'sitekey', Turnstile uses 'sitekey'
+        if method == "userrecaptcha":
+            params["googlekey"] = sitekey
+        else:
+            params["sitekey"] = sitekey
         
         if proxy_context:
             params["proxy"] = proxy_context.get("proxy_string")
@@ -396,7 +402,7 @@ class CaptchaSolver:
             params["proxytype"] = proxy_info["proxytype"]
             logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_info['proxytype']}): {proxy_info['proxy'][:30]}...")
         
-        logger.info(f"Submitting {method} to 2Captcha...")
+        logger.info(f"Submitting {method} to 2Captcha (sitekey: {sitekey[:20]}...)...")
         async with session.post(req_url, data=params) as resp:
             try:
                 data = await resp.json()
@@ -429,6 +435,7 @@ class CaptchaSolver:
                     logger.error(f"2Captcha Poll Error: {data}")
                     return None
         return None
+
 
     async def _solve_capsolver(self, sitekey, url, method, proxy_context=None):
         session = await self._get_session()

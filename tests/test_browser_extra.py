@@ -82,37 +82,49 @@ class TestBrowserExtra:
     async def test_proxy_binding_persistence(self):
         """Test actual proxy binding file I/O (lines 213-246)."""
         manager = BrowserManager()
-        mock_data = {"u1": "p1"}
         
         with patch("browser.instance.open", create=True) as mock_open, \
              patch("browser.instance.os.path.exists", return_value=True):
             
-            # 1. Successful load
-            m = mock_open.return_value.__enter__.return_value
-            m.read.return_value = json.dumps(mock_data)
-            p = await manager.load_proxy_binding("u1")
-            assert p == "p1"
+            # 1. Load: Read valid JSON
+            m_read = MagicMock()
+            m_read.__enter__.return_value.read.return_value = json.dumps({"u1": "p1"})
+            mock_open.return_value = m_read
+            assert await manager.load_proxy_binding("u1") == "p1"
             
-            # 2. Successful save
+            # 2. Save: Read valid JSON, then Write
+            m_read2 = MagicMock()
+            m_read2.__enter__.return_value.read.return_value = json.dumps({"u1": "p1"})
+            m_write = MagicMock()
+            mock_open.reset_mock()
+            mock_open.side_effect = [m_read2, m_write]
             await manager.save_proxy_binding("u2", "p2")
-            mock_open.assert_called_with(ANY, "w")
+            assert mock_open.call_count == 2
+            # Verify second call was 'w'
+            assert mock_open.call_args_list[1][0][1] == "w"
 
-            # 3. Corrupt JSON in load (238-242)
-            m.read.return_value = "not json"
-            assert await manager.load_proxy_binding("u1") is None
-            
-            # 4. Corrupt JSON in save (220-223)
-            # When saving, it reads existing first
-            mock_open.side_effect = [MagicMock(), MagicMock()] # One for R, one for W
-            mock_open.side_effect[0].__enter__.return_value.read.return_value = "not json"
+            # 3. Corrupt JSON in save (branch 223)
+            m_read_corrupt = MagicMock()
+            m_read_corrupt.__enter__.return_value.read.return_value = "invalid json"
+            m_write2 = MagicMock()
+            mock_open.reset_mock()
+            mock_open.side_effect = [m_read_corrupt, m_write2]
             await manager.save_proxy_binding("u3", "p3")
             
-            # 5. Save exception (229-231)
-            mock_open.side_effect = Exception("Write error")
-            await manager.save_proxy_binding("u3", "p3") # Should catch
+            # 4. Corrupt JSON in load (branch 242)
+            m_read_corrupt2 = MagicMock()
+            m_read_corrupt2.__enter__.return_value.read.return_value = "invalid json"
+            mock_open.reset_mock()
+            mock_open.side_effect = None
+            mock_open.return_value = m_read_corrupt2
+            assert await manager.load_proxy_binding("u1") is None
             
-            # 6. Load exception (244-246)
-            mock_open.side_effect = Exception("Read error")
+            # 5. Save global exception (branch 230)
+            mock_open.side_effect = Exception("Fatal write error")
+            await manager.save_proxy_binding("u4", "p4") # Should handle
+            
+            # 6. Load global exception (branch 245)
+            mock_open.side_effect = Exception("Fatal read error")
             assert await manager.load_proxy_binding("u1") is None
 
     @pytest.mark.asyncio

@@ -1,0 +1,3970 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\azureuser\Repositories\cryptobot
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 10 items
+
+tests/test_browser_extra.py::TestBrowserExtra::test_launch_and_close PASSED [ 10%]
+tests/test_browser_extra.py::TestBrowserExtra::test_create_context_proxy_formats PASSED [ 20%]
+tests/test_browser_extra.py::TestBrowserExtra::test_sticky_proxy_logic_flow PASSED [ 30%]
+tests/test_browser_extra.py::TestBrowserExtra::test_proxy_binding_persistence FAILED [ 40%]
+tests/test_browser_extra.py::TestBrowserExtra::test_cookie_persistence_unencrypted FAILED [ 50%]
+tests/test_browser_extra.py::TestBrowserExtra::test_cookie_persistence_encrypted PASSED [ 60%]
+tests/test_browser_extra.py::TestBrowserExtra::test_restart_and_health_check PASSED [ 70%]
+tests/test_browser_extra.py::TestBrowserExtra::test_new_page PASSED      [ 80%]
+tests/test_browser_extra.py::TestBrowserExtra::test_create_stealth_browser_factory PASSED [ 90%]
+tests/test_browser_extra.py::TestBrowserExtra::test_exception_paths PASSED [100%]
+
+================================== FAILURES ===================================
+_______________ TestBrowserExtra.test_proxy_binding_persistence _______________
+
+self = <test_browser_extra.TestBrowserExtra object at 0x000002D95294AEA0>
+tmp_path = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_proxy_binding_persistence0')
+
+    @pytest.mark.asyncio
+    async def test_proxy_binding_persistence(self, tmp_path):
+        """Test actual proxy binding file I/O (lines 213-246)."""
+        manager = BrowserManager()
+        bindings_file = tmp_path / "bindings.json"
+    
+        with patch("browser.instance.os.path.join", return_value=str(bindings_file)), \
+             patch("browser.instance.os.path.exists", side_effect=lambda p: os.path.exists(p)):
+    
+            # Save
+            await manager.save_proxy_binding("u1", "p1")
+>           assert bindings_file.exists()
+                   ^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_browser_extra.py:87: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\pathlib\__init__.py:671: in exists
+    return os.path.exists(self)
+           ^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1175: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1179: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1240: in _execute_mock_call
+    result = effect(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_browser_extra.py:83: in <lambda>
+    patch("browser.instance.os.path.exists", side_effect=lambda p: os.path.exists(p)):
+                                                                   ^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1175: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+------------------------------ Captured log call ------------------------------
+WARNING  browser.secure_storage:secure_storage.py:56 \u26a0\ufe0f No cookie encryption key found. Generated new key.\nAdd this to your .env file:\nCRYPTOBOT_COOKIE_KEY=esEDo_eqz5gxk98uFN0kaDZO3q01ibCuf1yedld2SgM=\nERROR    browser.instance:instance.py:230 Failed to save proxy binding for u1: maximum recursion depth exceeded
+____________ TestBrowserExtra.test_cookie_persistence_unencrypted _____________
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    def __str__(self):
+        """Return the string representation of the path, suitable for
+        passing to system calls."""
+        try:
+>           return self._str
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_str'
+
+C:\Python314\Lib\pathlib\__init__.py:255: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0/cookies/u1.json')
+
+    @property
+    def drive(self):
+        """The drive prefix (letter or UNC path), if any."""
+        try:
+>           return self._drv
+                   ^^^^^^^^^
+E           AttributeError: 'pathlib.WindowsPath' object has no attribute '_drv'
+
+C:\Python314\Lib\pathlib\__init__.py:345: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_browser_extra.TestBrowserExtra object at 0x000002D95294DA30>
+tmp_path = WindowsPath('C:/Users/azureuser/AppData/Local/Temp/pytest-of-azureuser/pytest-7/test_cookie_persistence_unencr0')
+
+    @pytest.mark.asyncio
+    async def test_cookie_persistence_unencrypted(self, tmp_path):
+        """Test unencrypted cookie save/load (lines 162-168, 193-200)."""
+        manager = BrowserManager(use_encrypted_cookies=False)
+        mock_context = AsyncMock()
+        mock_context.cookies.return_value = [{"name": "c1", "value": "v1"}]
+    
+        cookies_dir = tmp_path / "cookies"
+        cookies_dir.mkdir()
+    
+        # Use simpler patch that doesn't trigger recursion
+        with patch("browser.instance.os.path.join", side_effect=lambda *args: str(cookies_dir / args[-1]) if ".json" in str(args[-1]) else "/tmp/dummy"):
+            # Save
+            await manager.save_cookies(mock_context, "u1")
+>           assert (cookies_dir / "u1.json").exists()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_browser_extra.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\pathlib\__init__.py:671: in exists
+    return os.path.exists(self)
+           ^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\pathlib\__init__.py:191: in __fspath__
+    return str(self)
+           ^^^^^^^^^
+C:\Python314\Lib\pathlib\__init__.py:257: in __str__
+    self._str = self._format_parsed_parts(self.drive, self.root,
+                                          ^^^^^^^^^^
+C:\Python314\Lib\pathlib\__init__.py:347: in drive
+    self._drv, self._root, self._tail_cached = self._parse_path(self._raw_path)
+                                                                ^^^^^^^^^^^^^^
+C:\Python314\Lib\pathlib\__init__.py:337: in _raw_path
+    return self.parser.join(*paths)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1175: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1179: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\unittest\mock.py:1240: in _execute_mock_call
+    result = effect(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_browser_extra.py:109: in <lambda>
+    with patch("browser.instance.os.path.join", side_effect=lambda *args: str(cookies_dir / args[-1]) if ".json" in str(args[-1]) else "/tmp/dummy"):
+                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\pathlib\__init__.py:257: in __str__
+    self._str = self._format_parsed_parts(self.drive, self.root,
+                                          ^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+------------------------------ Captured log call ------------------------------
+WARNING  browser.instance:instance.py:170 Failed to save cookies for u1: maximum recursion depth exceeded
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.2-final-0 _______________
+
+Name                  Stmts   Miss  Cover   Missing
+---------------------------------------------------
+browser\instance.py     164     28    83%   72, 166-168, 198-199, 219-228, 234-246, 275
+---------------------------------------------------
+TOTAL                   164     28    83%
+=========================== short test summary info ===========================
+FAILED tests/test_browser_extra.py::TestBrowserExtra::test_proxy_binding_persistence
+FAILED tests/test_browser_extra.py::TestBrowserExtra::test_cookie_persistence_unencrypted
+======================== 2 failed, 8 passed in 20.50s =========================

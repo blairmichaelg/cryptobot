@@ -65,21 +65,11 @@ async def main():
         scheduler.stop()
 
     loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGTERM, handle_sigterm)
+    if sys.platform != "win32":
+        loop.add_signal_handler(signal.SIGTERM, handle_sigterm)
 
-    try:
-        await browser_manager.launch()
-        
-        # ... (Profile loading code remains here, assume unchanged for this patch context) ... 
-        # CAUTION: The replacement tool requires me to match the existing content EXACTLY.
-        # Since I am replacing a huge block, I will just wrap the scheduler loop in a task that waits for the signal.
-
-        # Let's adjust the Main Loop part instead.
-        
-        # Load Profiles... (omitted for brevity in thought, but must be in tool call if I replace it)
-        # Actually, let's just insert the signal handler setup BEFORE the try block, and change the loop wait.
-        
-        # ... skipping to the try/except block ...
+    
+    # Main Execution Block
     try:
         await browser_manager.launch()
         

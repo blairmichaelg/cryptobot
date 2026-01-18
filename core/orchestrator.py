@@ -105,7 +105,7 @@ class JobScheduler:
                     except Exception as je:
                         logger.warning(f"Failed to restore job: {je}")
                 
-                logger.info(f"📁 Restored session: {restored_count} jobs, {len(self.domain_last_access)} domains")
+                logger.info(f"Restored session: {restored_count} jobs, {len(self.domain_last_access)} domains")
         except Exception as e:
             logger.warning(f"Could not restore session: {e}")
 
@@ -370,7 +370,7 @@ class JobScheduler:
 
     async def scheduler_loop(self):
         """Main event loop for the scheduler."""
-        logger.info("📅 Job Scheduler loop started.")
+        logger.info("Job Scheduler loop started.")
         while not self._stop_event.is_set():
             now = time.time()
             
@@ -384,9 +384,9 @@ class JobScheduler:
                 self.last_persist_time = now
             
             if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
-                logger.info("🩺 Performing browser health check...")
+                logger.info("Performing browser health check...")
                 if not await self.browser_manager.check_health():
-                    logger.warning("🚨 Browser health check failed. Restarting...")
+                    logger.warning("Browser health check failed. Restarting...")
                     await self.browser_manager.restart()
                 self.last_health_check_time = now
             

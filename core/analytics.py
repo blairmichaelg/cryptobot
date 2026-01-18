@@ -199,6 +199,150 @@ class EarningsTracker:
         lines.append("=" * 50)
         return "\n".join(lines)
 
+    def get_trending_analysis(self, periods: int = 7) -> Dict[str, Any]:
+        """
+        Analyze earnings trends over multiple periods.
+        
+        Args:
+            periods: Number of 24-hour periods to analyze
+            
+        Returns:
+            Dict with trend data for each faucet
+        """
+        trends = {}
+        now = time.time()
+        
+        for i in range(periods):
+            period_start = now - ((i + 1) * 24 * 3600)
+            period_end = now - (i * 24 * 3600)
+            
+            period_claims = [
+                c for c in self.claims 
+                if period_start <= c["timestamp"] < period_end
+            ]
+            
+            for c in period_claims:
+                if c["faucet"] not in trends:
+                    trends[c["faucet"]] = {
+                        "daily_earnings": [0] * periods,
+                        "daily_claims": [0] * periods,
+                        "daily_success": [0] * periods
+                    }
+                
+                trends[c["faucet"]]["daily_claims"][i] += 1
+                if c["success"]:
+                    trends[c["faucet"]]["daily_success"][i] += 1
+                    trends[c["faucet"]]["daily_earnings"][i] += c.get("amount", 0)
+        
+        # Calculate growth rates
+        for faucet in trends:
+            today = trends[faucet]["daily_earnings"][0]
+            yesterday = trends[faucet]["daily_earnings"][1] if periods > 1 else 0
+            
+            if yesterday > 0:
+                trends[faucet]["growth_rate"] = ((today - yesterday) / yesterday) * 100
+            else:
+                trends[faucet]["growth_rate"] = 0 if today == 0 else 100
+            
+            # Average over all periods
+            trends[faucet]["avg_daily_earnings"] = sum(trends[faucet]["daily_earnings"]) / periods
+        
+        return trends
+
+    def generate_automated_report(self, save_to_file: bool = True) -> str:
+        """
+        Generate a comprehensive automated daily report.
+        
+        Args:
+            save_to_file: If True, also saves report to disk
+            
+        Returns:
+            Report content as string
+        """
+        from datetime import datetime
+        
+        now = datetime.now()
+        session = self.get_session_stats()
+        faucet_stats = self.get_faucet_stats(24)
+        hourly_rates = self.get_hourly_rate(hours=24)
+        trends = self.get_trending_analysis(7)
+        
+        lines = [
+            "╔══════════════════════════════════════════════════════╗",
+            f"║       CRYPTOBOT DAILY REPORT - {now.strftime('%Y-%m-%d')}       ║",
+            "╚══════════════════════════════════════════════════════╝",
+            "",
+            "📈 SESSION OVERVIEW",
+            "─" * 50,
+            f"  Runtime: {session['session_duration_hours']:.1f} hours",
+            f"  Claims Attempted: {session['total_claims']}",
+            f"  Success Rate: {session['success_rate']:.1f}%",
+            "",
+            "💰 EARNINGS BY CURRENCY",
+            "─" * 50,
+        ]
+        
+        total_value = 0
+        for currency, amount in session["earnings_by_currency"].items():
+            lines.append(f"  {currency}: {amount:.8f}")
+        
+        lines.extend([
+            "",
+            "🏆 TOP PERFORMING FAUCETS (by hourly rate)",
+            "─" * 50,
+        ])
+        
+        sorted_faucets = sorted(hourly_rates.items(), key=lambda x: x[1], reverse=True)
+        for faucet, rate in sorted_faucets[:5]:
+            stats = faucet_stats.get(faucet, {})
+            success_rate = stats.get('success_rate', 0)
+            trend = trends.get(faucet, {})
+            growth = trend.get('growth_rate', 0)
+            growth_emoji = "📈" if growth > 0 else "📉" if growth < 0 else "➡️"
+            
+            lines.append(f"  {faucet}: {rate:.4f}/hr | {success_rate:.0f}% success | {growth_emoji} {growth:+.1f}%")
+        
+        lines.extend([
+            "",
+            "⚠️  NEEDS ATTENTION (low success rate)",
+            "─" * 50,
+        ])
+        
+        low_performers = [
+            (f, s) for f, s in faucet_stats.items() 
+            if s.get('success_rate', 100) < 50 and s.get('total', 0) >= 3
+        ]
+        
+        if low_performers:
+            for faucet, stats in low_performers[:3]:
+                lines.append(f"  {faucet}: {stats['success_rate']:.0f}% ({stats['success']}/{stats['total']})")
+        else:
+            lines.append("  None - all faucets performing well! ✅")
+        
+        lines.extend([
+            "",
+            "═" * 50,
+            f"Report generated: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+        ])
+        
+        report = "\n".join(lines)
+        
+        # Save to file
+        if save_to_file:
+            try:
+                import os
+                reports_dir = os.path.join(os.path.dirname(__file__), "..", "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                
+                filename = os.path.join(reports_dir, f"daily_report_{now.strftime('%Y%m%d')}.txt")
+                with open(filename, "w") as f:
+                    f.write(report)
+                logger.info(f"📄 Daily report saved to {filename}")
+            except Exception as e:
+                logger.warning(f"Failed to save report: {e}")
+        
+        return report
+
 
 # Global tracker instance
 _tracker = None
@@ -209,3 +353,4 @@ def get_tracker() -> EarningsTracker:
     if _tracker is None:
         _tracker = EarningsTracker()
     return _tracker
+

@@ -291,23 +291,107 @@ class FaucetBot:
             }, delay);
         }""")
 
-    async def handle_cloudflare(self) -> bool:
+    async def handle_cloudflare(self, max_wait_seconds: int = 60) -> bool:
         """
-        Detects and waits for Cloudflare 'Just a moment' or Turnstile challenges.
-        Returns True if clear, False if potentially stuck.
+        Detects and waits for Cloudflare challenges including:
+        - 'Just a moment' interstitial
+        - Turnstile CAPTCHA challenges  
+        - Waiting room queues
+        - DDoS protection pages
+        
+        Args:
+            max_wait_seconds: Maximum time to wait for challenge resolution
+            
+        Returns:
+            True if challenge resolved, False if stuck/timed out
         """
-        for _ in range(15): # Max 30 seconds
-            title = (await self.page.title()).lower()
-            if "just a moment" in title or "cloudflare" in title:
-                logger.info(f"[{self.faucet_name}] Waiting for Cloudflare/Turnstile...")
+        cloudflare_indicators = [
+            "just a moment",
+            "cloudflare",
+            "checking your browser",
+            "please wait",
+            "ddos protection",
+            "security check"
+        ]
+        
+        cloudflare_selectors = [
+            "#cf-challenge-running",
+            ".cf-turnstile", 
+            "[id*='cf-turnstile']",
+            "#challenge-running",
+            ".challenge-body",
+            "#trk_jschal_js"
+        ]
+        
+        start_time = time.time()
+        checks = 0
+        
+        while (time.time() - start_time) < max_wait_seconds:
+            checks += 1
+            
+            try:
+                # Check page title for Cloudflare indicators
+                title = (await self.page.title()).lower()
+                title_detected = any(indicator in title for indicator in cloudflare_indicators)
+                
+                # Check page content for challenge elements
+                element_detected = False
+                for selector in cloudflare_selectors:
+                    try:
+                        if await self.page.locator(selector).is_visible(timeout=500):
+                            element_detected = True
+                            break
+                    except Exception:
+                        continue
+                
+                if title_detected or element_detected:
+                    if checks == 1:
+                        logger.info(f"[{self.faucet_name}] ⏳ Cloudflare/Turnstile challenge detected, waiting...")
+                    
+                    # Simulate human-like behavior while waiting
+                    await asyncio.sleep(2)
+                    
+                    # Occasionally move mouse to appear active
+                    if checks % 3 == 0:
+                        try:
+                            await self.idle_mouse(0.5)
+                        except Exception:
+                            pass
+                else:
+                    # Challenge appears resolved
+                    if checks > 1:
+                        elapsed = time.time() - start_time
+                        logger.info(f"[{self.faucet_name}] ✅ Cloudflare challenge resolved in {elapsed:.1f}s")
+                    return True
+                    
+            except Exception as e:
+                # Page might have crashed or navigated
+                logger.warning(f"[{self.faucet_name}] Cloudflare check error (recoverable): {e}")
                 await asyncio.sleep(2)
-            else:
-                # Check for the challenge spinner specifically if title changed but it's still there
-                if await self.page.locator("#cf-challenge-running, .cf-turnstile").is_visible():
-                     await asyncio.sleep(2)
-                     continue
-                return True
+                
+        logger.error(f"[{self.faucet_name}] ❌ Cloudflare challenge timed out after {max_wait_seconds}s")
         return False
+
+    async def detect_page_crash(self) -> bool:
+        """
+        Detect if the page has crashed or become unresponsive.
+        
+        Returns:
+            True if page appears healthy, False if crashed/unresponsive
+        """
+        try:
+            # Try a simple evaluation to check page responsiveness
+            await asyncio.wait_for(
+                self.page.evaluate("() => document.readyState"),
+                timeout=5.0
+            )
+            return True
+        except asyncio.TimeoutError:
+            logger.error(f"[{self.faucet_name}] Page appears unresponsive (timeout)")
+            return False
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Page crash detected: {e}")
+            return False
 
 
     async def close_popups(self):
