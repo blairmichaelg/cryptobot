@@ -66,6 +66,11 @@ faucet_config.json
 session_state.json
 heartbeat.txt
 
+# Analytics databases
+*.db
+earnings_analytics.json
+withdrawal_analytics.db
+
 # Debug and Test Scripts (root only)
 /debug_*.py
 /repro_*.py
