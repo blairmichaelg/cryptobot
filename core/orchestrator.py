@@ -416,6 +416,14 @@ class JobScheduler:
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
                 
+                # Check Off-Peak Requirement for Withdrawals
+                # Optimization to run withdrawals when network fees are generally lower
+                if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():
+                    if not self.is_off_peak_time():
+                        logger.debug(f"⏳ Scheduling: Postponing withdrawal {job.name} until off-peak hours.")
+                        job.next_run = now + 1800  # Check again in 30 minutes
+                        continue
+
                 # Record that we're accessing this domain
                 self.record_domain_access(job.faucet_type)
                 
