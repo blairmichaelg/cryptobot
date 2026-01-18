@@ -1,7 +1,8 @@
 import aiohttp
 import logging
 import json
-from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +83,124 @@ class WalletDaemon:
         """Health check."""
         res = await self._rpc_call(coin, "getnetworkinfo")  # 'version' is often deprecated/not standard, getnetworkinfo is safer for bitcoind-likes
         return res is not None
+
+    async def get_network_fee_estimate(self, coin: str, priority: str = "economy") -> Optional[float]:
+        """Estimate network fee for a transaction.
+        
+        Uses Bitcoin Core's estimatesmartfee RPC to get fee rate recommendations.
+        
+        Args:
+            coin: Cryptocurrency symbol (BTC, LTC, DOGE)
+            priority: Fee priority ('economy', 'normal', 'priority')
+            
+        Returns:
+            Estimated fee in satoshis per byte, or None if unavailable
+        """
+        # Target confirmation blocks by priority
+        blocks = {"economy": 12, "normal": 6, "priority": 2}
+        target_blocks = blocks.get(priority, 6)
+        
+        result = await self._rpc_call(coin, "estimatesmartfee", [target_blocks])
+        if result and "feerate" in result:
+            # Convert BTC/kB to sat/byte
+            return int(result["feerate"] * 100000000 / 1000)
+        return None
+
+    def is_off_peak_hour(self) -> bool:
+        """Check if current time is optimal for withdrawals (lower network fees).
+        
+        Off-peak hours are typically:
+        - Late night / early morning UTC (22:00 - 05:00)
+        - Weekends (especially Sunday)
+        
+        These times generally have lower network congestion and fees.
+        
+        Returns:
+            True if current time is off-peak for withdrawals
+        """
+        now = datetime.now(timezone.utc)
+        hour = now.hour
+        weekday = now.weekday()
+        
+        is_night = hour >= 22 or hour < 5
+        is_weekend = weekday >= 5
+        
+        return is_night or is_weekend
+
+    async def should_withdraw_now(
+        self, 
+        coin: str, 
+        balance_sat: int, 
+        min_threshold: int = 30000
+    ) -> bool:
+        """Determine if withdrawal should proceed based on multiple conditions.
+        
+        Considers: balance threshold, network fees, time of day.
+        
+        Args:
+            coin: Cryptocurrency symbol
+            balance_sat: Current balance in satoshis
+            min_threshold: Minimum balance required (default 30,000 satoshi)
+            
+        Returns:
+            True if withdrawal is recommended now
+        """
+        if balance_sat < min_threshold:
+            logger.info(f"Balance {balance_sat} sat below threshold {min_threshold}")
+            return False
+        
+        # Check if off-peak hours
+        if not self.is_off_peak_hour():
+            logger.info("Not off-peak hour, deferring withdrawal for better timing")
+            return False
+        
+        # Check fee estimate if available
+        fee_rate = await self.get_network_fee_estimate(coin, "economy")
+        if fee_rate and fee_rate > 50:  # High fee environment (>50 sat/byte)
+            logger.info(f"High network fees ({fee_rate} sat/byte), deferring withdrawal")
+            return False
+        
+        return True
+
+    async def batch_withdraw(
+        self,
+        coin: str,
+        outputs: List[Dict[str, Any]],
+        fee_priority: str = "economy"
+    ) -> Optional[str]:
+        """Execute batched withdrawal with multiple outputs.
+        
+        Batching multiple withdrawals into a single transaction can reduce 
+        fees by 50-70% compared to individual transactions.
+        
+        Args:
+            coin: Cryptocurrency symbol
+            outputs: List of {"address": str, "amount": float}
+            fee_priority: Fee tier ('economy', 'normal', 'priority')
+            
+        Returns:
+            Transaction ID on success, None on failure
+        """
+        if not outputs:
+            logger.warning("No outputs provided for batch withdrawal")
+            return None
+        
+        # Validate all addresses first
+        for out in outputs:
+            is_valid = await self.validate_address(out["address"], coin)
+            if not is_valid:
+                logger.error(f"Invalid address in batch: {out['address']}")
+                return None
+        
+        # Format for sendmany RPC call
+        amounts = {out["address"]: out["amount"] for out in outputs}
+        
+        result = await self._rpc_call(coin, "sendmany", ["", amounts])
+        
+        if result:
+            logger.info(f"Batch withdrawal submitted: txid={result}")
+            return result
+        
+        logger.error("Batch withdrawal failed")
+        return None
+

@@ -189,3 +189,85 @@ class FaucetCryptoBot(FaucetBot):
                 
         except Exception as e:
              logger.error(f"[{self.faucet_name}] PTC Error: {e}")
+
+    async def withdraw(self) -> ClaimResult:
+        """Automated withdrawal for FaucetCrypto.
+        
+        FaucetCrypto uses a multi-step modal withdrawal process:
+        1. Select cryptocurrency from withdrawal list
+        2. Step I: Select Network
+        3. Step II: Fill Info (amount + address)
+        4. Step III: Review & Submit
+        """
+        try:
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/withdraw")
+            await self.handle_cloudflare()
+            
+            # Get current balance
+            balance = await self.get_balance(".user-balance, .balance-text")
+            
+            # Find available cryptocurrencies with withdraw buttons
+            crypto_rows = self.page.locator(".crypto-row:has(button.withdraw-btn), .card:has(button:has-text('Withdraw'))")
+            if await crypto_rows.count() == 0:
+                logger.info(f"[{self.faucet_name}] No withdrawable balances found.")
+                return ClaimResult(success=True, status="No Balance", next_claim_minutes=1440)
+            
+            # Click first available withdraw button
+            withdraw_btn = crypto_rows.first.locator("button.withdraw-btn, button:has-text('Withdraw')")
+            await self.human_like_click(withdraw_btn)
+            await self.random_delay(2, 4)
+            
+            # Step I: Select Network (usually pre-selected or simple confirmation)
+            next_btn = self.page.locator("button:has-text('Next Step'), button.next-step")
+            if await next_btn.is_visible():
+                await self.human_like_click(next_btn)
+                await self.random_delay(1, 2)
+            
+            # Step II: Fill Info
+            amount_field = self.page.locator("input[name='amount'], #amount")
+            address_field = self.page.locator("input[name='address'], #wallet-address")
+            
+            # Use max available
+            max_btn = self.page.locator("button:has-text('Max'), .max-btn")
+            if await max_btn.is_visible():
+                await self.human_like_click(max_btn)
+            
+            # Get withdrawal address (prioritize FaucetPay for lower thresholds)
+            coin = "BTC"  # FaucetCrypto primarily uses BTC
+            address = self.get_withdrawal_address(coin)
+            if not address:
+                logger.error(f"[{self.faucet_name}] No withdrawal address configured")
+                return ClaimResult(success=False, status="No Address", next_claim_minutes=1440)
+            
+            await self.human_type(address_field, address)
+            
+            # Click Next Step to proceed to review
+            next_btn = self.page.locator("button:has-text('Next Step'), button.next-step")
+            if await next_btn.is_visible():
+                await self.human_like_click(next_btn)
+                await self.random_delay(1, 2)
+            
+            # Step III: Review & Submit
+            # Look for confirmation switch if present
+            confirm_switch = self.page.locator("input[type='checkbox'].confirm-switch, .confirm-checkbox")
+            if await confirm_switch.is_visible():
+                await confirm_switch.click()
+            
+            # Submit withdrawal
+            submit_btn = self.page.locator("button:has-text('Submit Withdrawal'), button.submit-btn")
+            await self.human_like_click(submit_btn)
+            
+            await self.random_delay(3, 5)
+            
+            # Check for success
+            success_msg = self.page.locator(".alert-success, .toast-success, :has-text('Withdrawal submitted')")
+            if await success_msg.count() > 0:
+                logger.info(f"🚀 [{self.faucet_name}] Withdrawal submitted successfully!")
+                return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+            
+            return ClaimResult(success=False, status="Withdrawal may be pending", next_claim_minutes=360)
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)

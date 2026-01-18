@@ -139,3 +139,106 @@ class CointiplyBot(FaucetBot):
         except Exception as e:
             logger.error(f"Cointiply claim failed: {e}")
             return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=30)
+
+    def get_jobs(self):
+        """Returns Cointiply-specific jobs for the scheduler."""
+        from core.orchestrator import Job
+        import time
+        
+        return [
+            Job(
+                priority=1,
+                next_run=time.time(),
+                name=f"{self.faucet_name} Claim",
+                profile=None,
+                faucet_type=self.faucet_name.lower(),
+                job_type="claim_wrapper"
+            ),
+            Job(
+                priority=5,
+                next_run=time.time() + 7200,  # Check withdrawal every 2 hours
+                name=f"{self.faucet_name} Withdraw",
+                profile=None,
+                faucet_type=self.faucet_name.lower(),
+                job_type="withdraw_wrapper"
+            ),
+            Job(
+                priority=3,
+                next_run=time.time() + 600,
+                name=f"{self.faucet_name} PTC",
+                profile=None,
+                faucet_type=self.faucet_name.lower(),
+                job_type="ptc_wrapper"
+            )
+        ]
+
+    async def withdraw(self) -> ClaimResult:
+        """Automated withdrawal for Cointiply.
+        
+        Supports BTC, LTC, DOGE, DASH with varying thresholds:
+        - BTC: 50,000 coins minimum
+        - LTC/DOGE/DASH: 30,000 coins minimum
+        """
+        try:
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/withdraw")
+            await self.handle_cloudflare()
+            
+            # Get current balance in coins
+            balance = await self.get_current_balance()
+            balance_coins = float(balance) if balance else 0
+            
+            # Check minimum thresholds
+            min_btc = 50000
+            min_other = 30000
+            
+            if balance_coins < min_other:
+                logger.info(f"[{self.faucet_name}] Balance {balance_coins} below minimum threshold")
+                return ClaimResult(success=True, status="Low Balance", next_claim_minutes=1440)
+            
+            # Select cryptocurrency based on balance and configured wallets
+            coin = None
+            if balance_coins >= min_btc:
+                coin = "BTC"
+            else:
+                for c in ["LTC", "DOGE", "DASH"]:
+                    addr = self.get_withdrawal_address(c)
+                    if addr:
+                        coin = c
+                        break
+            
+            if not coin:
+                logger.warning(f"[{self.faucet_name}] No suitable withdrawal option")
+                return ClaimResult(success=False, status="No Suitable Option", next_claim_minutes=1440)
+            
+            # Click on the coin tab/button
+            coin_selector = self.page.locator(f"button:has-text('{coin}'), .crypto-tab:has-text('{coin}')")
+            if await coin_selector.is_visible():
+                await self.human_like_click(coin_selector)
+                await self.random_delay(1, 2)
+            
+            # Fill wallet address
+            address_field = self.page.locator("input[name='address'], input.wallet-address, #address")
+            address = self.get_withdrawal_address(coin)
+            await self.human_type(address_field, address)
+            
+            # Solve captcha if present
+            await self.solver.solve_captcha(self.page)
+            
+            # Click withdraw
+            withdraw_btn = self.page.locator("button:has-text('Withdraw'), button.withdraw-btn")
+            await self.human_like_click(withdraw_btn)
+            
+            await self.random_delay(3, 5)
+            
+            # Check result
+            content = await self.page.content()
+            if "success" in content.lower() or "email" in content.lower():
+                logger.info(f"🚀 [{self.faucet_name}] Withdrawal request submitted! Check email for confirmation.")
+                return ClaimResult(success=True, status="Withdrawn (Pending Email)", next_claim_minutes=1440)
+            
+            return ClaimResult(success=False, status="Unknown Result", next_claim_minutes=360)
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)

@@ -100,3 +100,111 @@ class FreeBitcoinBot(FaucetBot):
             return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=30)
             
         return ClaimResult(success=False, status="Unknown Failure", next_claim_minutes=15)
+
+    def get_jobs(self):
+        """Returns FreeBitcoin-specific jobs for the scheduler."""
+        from core.orchestrator import Job
+        import time
+        
+        return [
+            Job(
+                priority=1,
+                next_run=time.time(),
+                name=f"{self.faucet_name} Claim",
+                profile=None,
+                faucet_type=self.faucet_name.lower(),
+                job_type="claim_wrapper"
+            ),
+            Job(
+                priority=5,
+                next_run=time.time() + 86400,  # Check withdrawal daily
+                name=f"{self.faucet_name} Withdraw",
+                profile=None,
+                faucet_type=self.faucet_name.lower(),
+                job_type="withdraw_wrapper"
+            )
+        ]
+
+    async def withdraw(self) -> ClaimResult:
+        """Automated withdrawal for FreeBitcoin.
+        
+        Supports three modes:
+        - Auto Withdraw: Enabled via settings, happens automatically
+        - Slow Withdraw: Lower fee (~400 sat), 6-24 hour processing
+        - Instant Withdraw: Higher fee, 15 min processing
+        
+        Minimum: 30,000 satoshis (0.0003 BTC)
+        """
+        try:
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/?op=withdraw")
+            await self.handle_cloudflare()
+            await self.close_popups()
+            
+            # Get current balance
+            balance = await self.get_balance("#balance")
+            balance_sat = int(float(balance) * 100000000) if balance else 0
+            
+            # Check minimum (30,000 satoshis)
+            min_withdraw = 30000
+            if balance_sat < min_withdraw:
+                logger.info(f"[{self.faucet_name}] Balance {balance_sat} sat below minimum {min_withdraw}")
+                return ClaimResult(success=True, status="Low Balance", next_claim_minutes=1440)
+            
+            # Get withdrawal address
+            address = self.get_withdrawal_address("BTC")
+            if not address:
+                logger.error(f"[{self.faucet_name}] No BTC withdrawal address configured")
+                return ClaimResult(success=False, status="No Address", next_claim_minutes=1440)
+            
+            # Fill withdrawal form
+            address_field = self.page.locator("input#withdraw_address, input[name='address']")
+            amount_field = self.page.locator("input#withdraw_amount, input[name='amount']")
+            
+            # Use "Slow Withdraw" for lower fees
+            slow_radio = self.page.locator("input[value='slow'], #slow_withdraw")
+            if await slow_radio.is_visible():
+                await slow_radio.click()
+            
+            # Click Max/All button if available
+            max_btn = self.page.locator("button:has-text('Max'), #max_withdraw")
+            if await max_btn.is_visible():
+                await self.human_like_click(max_btn)
+            elif await amount_field.is_visible():
+                await amount_field.fill(str(float(balance)))
+            
+            await self.human_type(address_field, address)
+            
+            # Handle 2FA if present
+            twofa_field = self.page.locator("input#twofa_code, input[name='2fa']")
+            if await twofa_field.is_visible():
+                logger.warning(f"[{self.faucet_name}] 2FA required - manual intervention needed")
+                return ClaimResult(success=False, status="2FA Required", next_claim_minutes=60)
+            
+            # Solve captcha
+            await self.solver.solve_captcha(self.page)
+            
+            # Submit
+            submit_btn = self.page.locator("button#withdraw_button, button:has-text('Withdraw')")
+            await self.human_like_click(submit_btn)
+            
+            await self.random_delay(3, 5)
+            
+            # Check result
+            success_msg = self.page.locator(".alert-success, #withdraw_success, :has-text('successful')")
+            if await success_msg.count() > 0:
+                logger.info(f"🚀 [{self.faucet_name}] Withdrawal submitted: {balance} BTC")
+                return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+            
+            # Check for error messages
+            error_msg = self.page.locator(".alert-danger, .error, #withdraw_error")
+            if await error_msg.count() > 0:
+                error_text = await error_msg.first.text_content()
+                logger.warning(f"[{self.faucet_name}] Withdrawal error: {error_text}")
+                return ClaimResult(success=False, status=f"Error: {error_text}", next_claim_minutes=360)
+            
+            return ClaimResult(success=False, status="Unknown Result", next_claim_minutes=360)
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)

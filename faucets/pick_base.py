@@ -29,6 +29,52 @@ class PickFaucetBase(FaucetBot):
         self.login_url = ""  # Often same as base_url/login
         self.faucet_url = ""  # Often same as base_url/faucet
 
+    async def _navigate_with_retry(self, url: str, max_retries: int = 3) -> bool:
+        """Navigate with exponential backoff retry for connection errors.
+        
+        Pick family faucets are known to use TLS fingerprinting and aggressive
+        anti-bot measures that can result in ERR_CONNECTION_CLOSED. This method
+        provides robust retry logic with exponential backoff.
+        
+        Args:
+            url: Target URL to navigate to
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            True if navigation succeeded, False if all retries exhausted
+        """
+        for attempt in range(max_retries):
+            try:
+                response = await self.page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                if response and response.ok:
+                    return True
+                # Even if response isn't perfect, page may have loaded
+                return True
+            except Exception as e:
+                error_str = str(e)
+                # Check for connection/TLS errors that warrant retry
+                if any(err in error_str for err in [
+                    "ERR_CONNECTION_CLOSED",
+                    "ERR_CONNECTION_RESET", 
+                    "net::",
+                    "NS_ERROR",
+                    "Timeout",
+                    "ECONNREFUSED"
+                ]):
+                    wait_time = (2 ** attempt) * 5  # 5s, 10s, 20s
+                    logger.warning(
+                        f"[{self.faucet_name}] Connection failed on attempt {attempt+1}/{max_retries}: "
+                        f"{error_str[:100]}. Retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Non-retryable error
+                    logger.error(f"[{self.faucet_name}] Non-retryable navigation error: {e}")
+                    return False
+        
+        logger.error(f"[{self.faucet_name}] All {max_retries} navigation attempts failed for {url}")
+        return False
+
     async def register(self, email: str, password: str, wallet_address: str = None) -> bool:
         """Standard registration for .io pick family.
 
@@ -51,7 +97,9 @@ class PickFaucetBase(FaucetBot):
         logger.info(f"[{self.faucet_name}] Registering at {register_url}")
         
         try:
-            await self.page.goto(register_url)
+            if not await self._navigate_with_retry(register_url):
+                logger.error(f"[{self.faucet_name}] Failed to navigate to registration page")
+                return False
             await self.handle_cloudflare()
             await self.close_popups()
 
@@ -129,7 +177,9 @@ class PickFaucetBase(FaucetBot):
         login_url = f"{self.base_url}/login.php"
         logger.info(f"[{self.faucet_name}] Logging in at {login_url}")
         
-        await self.page.goto(login_url)
+        if not await self._navigate_with_retry(login_url):
+            logger.error(f"[{self.faucet_name}] Failed to navigate to login page")
+            return False
         await self.handle_cloudflare()
         await self.close_popups()
 
@@ -231,7 +281,9 @@ class PickFaucetBase(FaucetBot):
         faucet_url = f"{self.base_url}/faucet.php"
         logger.info(f"[{self.faucet_name}] Navigating to faucet: {faucet_url}")
         
-        await self.page.goto(faucet_url)
+        if not await self._navigate_with_retry(faucet_url):
+            logger.error(f"[{self.faucet_name}] Failed to navigate to faucet page")
+            return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=15)
         await self.handle_cloudflare()
         await self.close_popups()
 
@@ -291,7 +343,9 @@ class PickFaucetBase(FaucetBot):
         withdraw_url = f"{self.base_url}/withdraw.php"
         logger.info(f"[{self.faucet_name}] Navigating to withdrawal: {withdraw_url}")
         
-        await self.page.goto(withdraw_url)
+        if not await self._navigate_with_retry(withdraw_url):
+            logger.error(f"[{self.faucet_name}] Failed to navigate to withdrawal page")
+            return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=60)
         await self.handle_cloudflare()
         
         # Check balance against min_withdraw if specified in wallet_addresses
