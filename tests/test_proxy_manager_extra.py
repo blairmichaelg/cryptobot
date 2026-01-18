@@ -58,111 +58,34 @@ class TestProxyManagerExtra:
     @pytest.mark.asyncio
     async def test_validate_all_proxies(self, mock_settings):
         """Cover validate_all_proxies (lines 87-106)."""
-        manager = ProxyManager(mock_settings)
-        # Empty (87-88)
-        assert await manager.validate_all_proxies() == 0
-        
-        manager.proxies = [Proxy(ip=f"1.1.1.{i}", port=80, username="", password="") for i in range(5)]
-        
-        with patch.object(ProxyManager, "validate_proxy", side_effect=[True, False, True, False, True]):
-            valid_count = await manager.validate_all_proxies()
-            assert valid_count == 3
-            assert len(manager.validated_proxies) == 3
+        # Patch load_proxies_from_file to do nothing so we start empty
+        with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
+            manager = ProxyManager(mock_settings)
+            # Empty (87-88)
+            assert await manager.validate_all_proxies() == 0
+            
+            manager.proxies = [Proxy(ip=f"1.1.1.{i}", port=80, username="", password="") for i in range(5)]
+            
+            with patch.object(ProxyManager, "validate_proxy", side_effect=[True, False, True, False, True]):
+                valid_count = await manager.validate_all_proxies()
+                assert valid_count == 3
+                assert len(manager.validated_proxies) == 3
 
     @pytest.mark.asyncio
-    async def test_fetch_proxies_error_cases(self, mock_settings):
-        """Cover fetch_proxies error branches (lines 120-185)."""
-        # 1. No API key (120-121)
-        mock_settings.twocaptcha_api_key = ""
-        manager = ProxyManager(mock_settings)
-        assert await manager.fetch_proxies() is False
+    async def test_fetch_proxies_wrapper(self, mock_settings):
+        """
+        Cover fetch_proxies wrapper (lines 349-356).
+        The old complex logic is deprecated/removed, so we just test that it delegates to load_proxies_from_file.
+        """
+        with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
+            manager = ProxyManager(mock_settings)
+
+        # 1. Success (loaded > 0)
+        with patch.object(ProxyManager, "load_proxies_from_file", return_value=5):
+            assert await manager.fetch_proxies() is True
         
-        mock_settings.twocaptcha_api_key = "key"
-        manager = ProxyManager(mock_settings)
-
-        # Helper to mock aiohttp response
-        def make_mock_resp(json_data=None, text_data=None, status=200):
-            mock = AsyncMock()
-            mock.status = status
-            mock.json = AsyncMock(return_value=json_data)
-            mock.text = AsyncMock(return_value=text_data)
-            mock.__aenter__ = AsyncMock(return_value=mock)
-            mock.__aexit__ = AsyncMock(return_value=None)
-            return mock
-
-        # 2. Balance detect failure (137-138)
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}), # ipify
-                make_mock_resp({"status": 0, "request": "ERROR"}) # balance
-            ]
-            assert await manager.fetch_proxies() is False
-
-        # 3. Failed to parse JSON, text fallback (157-166)
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            text_resp = "OK|1.1.1.1:8080\n2.2.2.2:8080"
-            mock_resp_invalid_json = make_mock_resp(text_data=text_resp)
-            mock_resp_invalid_json.json.side_effect = Exception("Parse error")
-            
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}), # ipify
-                make_mock_resp({"status": 1, "request": "10.0"}), # balance
-                mock_resp_invalid_json # generate (text format)
-            ]
-            assert await manager.fetch_proxies() is True
-            assert len(manager.proxies) == 2
-
-            # Scenario 3b: Text fallback fails (166)
-            mock_get.reset_mock()
-            mock_resp_fail = make_mock_resp(text_data="INVALID")
-            mock_resp_fail.json.side_effect = Exception("Parse error")
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}),
-                make_mock_resp({"status": 1, "request": "10.0"}),
-                mock_resp_fail
-            ]
-            assert await manager.fetch_proxies() is False
-
-        # 4. Whitelist error and other API errors (170-175)
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}),
-                make_mock_resp({"status": 1, "request": "10.0"}),
-                make_mock_resp({"status": 0, "request": "NOT_IN_WHITE_LIST"})
-            ]
-            assert await manager.fetch_proxies() is False
-            
-            # Line 174 (General API error)
-            mock_get.reset_mock()
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}),
-                make_mock_resp({"status": 1, "request": "10.0"}),
-                make_mock_resp({"status": 0, "request": "SOME_OTHER_ERROR"})
-            ]
-            assert await manager.fetch_proxies() is False
-
-        # 5. Empty proxy list and newline string format (181, 184-185)
-        with patch("aiohttp.ClientSession.get") as mock_get:
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}),
-                make_mock_resp({"status": 1, "request": "10.0"}),
-                make_mock_resp({"status": 1, "request": []})
-            ]
-            assert await manager.fetch_proxies() is False
-
-            # Line 181 (newline separated string)
-            mock_get.reset_mock()
-            mock_get.side_effect = [
-                make_mock_resp({"ip": "1.2.3.4"}),
-                make_mock_resp({"status": 1, "request": "10.0"}),
-                make_mock_resp({"status": 1, "request": "3.3.3.3:8080\n4.4.4.4:8080"})
-            ]
-            manager.proxies = []
-            assert await manager.fetch_proxies() is True
-            assert len(manager.proxies) == 2
-
-        # 6. General exception (203-204)
-        with patch("aiohttp.ClientSession.get", side_effect=Exception("Fatal error")):
+        # 2. Failure (loaded == 0)
+        with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
             assert await manager.fetch_proxies() is False
 
     def test_assign_proxies_fallback(self, mock_settings):
