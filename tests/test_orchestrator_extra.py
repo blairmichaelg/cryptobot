@@ -253,3 +253,103 @@ class TestOrchestratorExtra:
         scheduler.proxy_failures["p1"] = {'failures': 5, 'last_failure_time': time.time(), 'burned': False}
         p = scheduler.get_next_proxy(profile)
         assert p == "p1" # Fallback at 244
+
+    def test_is_off_peak_time_weekend(self, mock_settings, mock_browser_manager):
+        """Cover weekend detection in is_off_peak_time (line 167)."""
+        scheduler = JobScheduler(mock_settings, mock_browser_manager)
+        
+        from datetime import datetime, timezone
+        
+        # Saturday at 12:00 (weekday() = 5)
+        with patch('datetime.datetime') as mock_dt:
+            mock_now = datetime(2024, 1, 6, 12, 0, tzinfo=timezone.utc)
+            mock_dt.now.return_value = mock_now
+            assert scheduler.is_off_peak_time() is True
+        
+        # Sunday at 15:00 (weekday() = 6)
+        with patch('datetime.datetime') as mock_dt:
+            mock_now = datetime(2024, 1, 7, 15, 0, tzinfo=timezone.utc)
+            mock_dt.now.return_value = mock_now
+            assert scheduler.is_off_peak_time() is True
+
+    @pytest.mark.asyncio
+    async def test_withdrawal_off_peak_scheduling(self, mock_browser_manager):
+        """Cover withdrawal off-peak requirement (lines 421-425)."""
+        # Create fresh settings and scheduler for this test
+        settings = BotSettings(
+            max_concurrent_bots=2,
+            max_concurrent_per_profile=1,
+            user_agents=["Agent1"]
+        )
+        
+        with patch.object(JobScheduler, '_restore_session'), \
+             patch.object(JobScheduler, '_persist_session'):
+            scheduler = JobScheduler(settings, mock_browser_manager)
+            
+            # Create a withdrawal job
+            profile = AccountProfile(faucet="f", username="u_withdraw", password="p")
+            job = Job(
+                priority=1, 
+                next_run=time.time() - 10,  # Ready to run
+                name="test_withdraw", 
+                profile=profile, 
+                faucet_type="test",
+                job_type="withdraw_coins"
+            )
+            scheduler.add_job(job)
+            
+            # Mock non-off-peak time (Tuesday 10 AM)
+            from datetime import datetime, timezone
+            with patch('datetime.datetime') as mock_dt:
+                mock_now = datetime(2024, 1, 9, 10, 0, tzinfo=timezone.utc)
+                mock_dt.now.return_value = mock_now
+                
+                # Try to run the scheduler
+                with patch("asyncio.wait_for", side_effect=asyncio.CancelledError):
+                    try:
+                        await scheduler.scheduler_loop()
+                    except asyncio.CancelledError:
+                        pass
+                
+                # Job should still be in queue, postponed (line 424)
+                assert len(scheduler.queue) == 1
+                assert scheduler.queue[0].next_run > time.time()
+
+    @pytest.mark.asyncio
+    async def test_domain_rate_limiting_postpone(self, mock_browser_manager):
+        """Cover domain rate limiting postpone (lines 415-417)."""
+        # Create fresh settings and scheduler for this test
+        settings = BotSettings(
+            max_concurrent_bots=2,
+            max_concurrent_per_profile=1,
+            user_agents=["Agent1"]
+        )
+        
+        with patch.object(JobScheduler, '_restore_session'), \
+             patch.object(JobScheduler, '_persist_session'):
+            scheduler = JobScheduler(settings, mock_browser_manager)
+            
+            # Create a job
+            profile = AccountProfile(faucet="f", username="u_domain", password="p")
+            job = Job(
+                priority=1, 
+                next_run=time.time() - 10,  # Ready to run
+                name="test_job", 
+                profile=profile, 
+                faucet_type="test_faucet"
+            )
+            
+            # Set domain was accessed very recently
+            scheduler.domain_last_access["test_faucet"] = time.time()
+            scheduler.add_job(job)
+            
+            # Try to run the scheduler
+            with patch("asyncio.wait_for", side_effect=asyncio.CancelledError):
+                try:
+                    await scheduler.scheduler_loop()
+                except asyncio.CancelledError:
+                    pass
+            
+            # Job should still be in queue, postponed (line 416)
+            assert len(scheduler.queue) == 1
+            assert scheduler.queue[0].next_run > time.time()
