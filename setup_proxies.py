@@ -9,7 +9,7 @@ async def main():
     logger = logging.getLogger(__name__)
     
     print("\n" + "="*50)
-    print(" 🕵️  2Captcha Proxy Setup Check")
+    print(" [~] 2Captcha Proxy Setup Check")
     print("="*50 + "\n")
     
     settings = BotSettings()
@@ -18,30 +18,32 @@ async def main():
         print("❌ No 2Captcha API Key found in env!")
         return
 
-    print(f"🔑 API Key detected: {settings.twocaptcha_api_key[:5]}...*****")
+    print(f"[KEY] API Key detected: {settings.twocaptcha_api_key[:5]}...*****")
     
     manager = ProxyManager(settings)
-    print("🔄 Attempting to fetch proxies from 2Captcha API...")
+    print(f"[FILE] checking {settings.residential_proxies_file}...")
     
-    success = await manager.fetch_proxies()
+    # Force reload
+    count = manager.load_proxies_from_file()
     
-    if success:
-        print(f"\n✅ SUCCESS! Found {len(manager.proxies)} proxies.")
+    if count > 0:
+        print(f"\n[OK] SUCCESS! Loaded {count} proxies from file.")
         for p in manager.proxies:
-            print(f"   - {p.ip}:{p.port} ({p.username})")
+            print(f"   - {p.to_string()}")
         
-        print("\n✨ You are ready to enable USE_2CAPTCHA_PROXIES=True in your .env")
+        print("\n[!] You are ready to enable USE_2CAPTCHA_PROXIES=True in your .env")
+        
+        # Test validation
+        print("\n[?] Validating connectivity...")
+        asyncio.create_task(manager.validate_all_proxies())
+        # Just wait a bit for logs
+        await asyncio.sleep(5)
+        
     else:
-        print("\n⚠️  Could not fetch proxies automatically.")
-        print("Possible reasons:")
-        print("1. You have not purchased Residential/Mobile proxies on 2captcha.com")
-        print("2. The API endpoint relies on a specific subscription type.")
-        print("3. Your IP is not whitelisted in the dashboard.")
-        
-        print("\n🛠️  Recommendation:")
-        print("   - Visit https://2captcha.com/proxies")
-        print("   - Ensure you have active proxies.")
-        print("   - If you have them but this script fails, contact support or check API docs.")
+        print("\n[WARN] No proxies found in proxies.txt")
+        print(f"-> Please edit {settings.residential_proxies_file}")
+        print("   Add your proxies in format: user:pass@ip:port")
+        print("   Get them from: https://2captcha.com/proxies (Residential)")
 
 if __name__ == "__main__":
     asyncio.run(main())

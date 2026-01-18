@@ -85,3 +85,5 @@ setup_*.ps1
 *.bak
 *.backup
 *_backup.*
+proxies.txt
+verify_solver_proxy.py

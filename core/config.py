@@ -26,6 +26,9 @@ class BotSettings(BaseSettings):
     use_2captcha_proxies: bool = False  # Set to True to enable 2Captcha proxy integration
     capsolver_api_key: Optional[str] = None
     
+    # Proxy Configuration
+    residential_proxies_file: str = "proxies.txt"  # File containing 1 proxy per line (user:pass@ip:port)
+    
     # Optimization
     block_images: bool = True
     block_media: bool = True

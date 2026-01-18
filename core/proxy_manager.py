@@ -57,6 +57,9 @@ class ProxyManager:
         # Dead proxies that have been removed
         self.dead_proxies: List[str] = []
 
+        # Auto-load on init
+        self.load_proxies_from_file()
+
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy."""
         return f"{proxy.ip}:{proxy.port}"
@@ -99,7 +102,7 @@ class ProxyManager:
                         # Reset failure count on success
                         self.proxy_failures[proxy_key] = 0
                         
-                        logger.debug(f"📊 Proxy {proxy_key} latency: {latency_ms:.0f}ms")
+                        logger.debug(f"[LATENCY] Proxy {proxy_key} latency: {latency_ms:.0f}ms")
                         return latency_ms
                     else:
                         self._record_failure(proxy_key)
@@ -107,11 +110,11 @@ class ProxyManager:
                         
         except asyncio.TimeoutError:
             self._record_failure(proxy_key)
-            logger.warning(f"⏱️ Proxy {proxy_key} timed out during latency check")
+            logger.warning(f"[TIMEOUT] Proxy {proxy_key} timed out during latency check")
             return None
         except Exception as e:
             self._record_failure(proxy_key)
-            logger.warning(f"❌ Proxy {proxy_key} latency check failed: {e}")
+            logger.warning(f"[ERROR] Proxy {proxy_key} latency check failed: {e}")
             return None
 
     def _record_failure(self, proxy_key: str):
@@ -120,7 +123,7 @@ class ProxyManager:
         if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
             if proxy_key not in self.dead_proxies:
                 self.dead_proxies.append(proxy_key)
-                logger.error(f"☠️ Proxy {proxy_key} marked as DEAD after {self.DEAD_PROXY_FAILURE_COUNT} failures")
+                logger.error(f"[DEAD] Proxy {proxy_key} marked as DEAD after {self.DEAD_PROXY_FAILURE_COUNT} failures")
 
     def get_proxy_stats(self, proxy: Proxy) -> Dict:
         """
@@ -159,7 +162,7 @@ class ProxyManager:
         if not self.proxies:
             return {"total": 0, "healthy": 0, "dead": 0}
         
-        logger.info(f"🏥 Running health check on {len(self.proxies)} proxies...")
+        logger.info(f"[HEALTH] Running health check on {len(self.proxies)} proxies...")
         
         semaphore = asyncio.Semaphore(10)
         
@@ -179,7 +182,7 @@ class ProxyManager:
             "avg_latency_ms": sum(r for r in results if r) / max(healthy, 1)
         }
         
-        logger.info(f"🏥 Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
+        logger.info(f"[HEALTH] Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
         return summary
 
     def remove_dead_proxies(self) -> int:
@@ -195,7 +198,7 @@ class ProxyManager:
         
         removed = before_count - len(self.proxies)
         if removed > 0:
-            logger.info(f"🗑️ Removed {removed} dead proxies from pool")
+            logger.info(f"[CLEANUP] Removed {removed} dead proxies from pool")
         return removed
 
     async def validate_proxy(self, proxy: Proxy) -> bool:
@@ -218,16 +221,16 @@ class ProxyManager:
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        logger.debug(f"✅ Proxy {proxy.ip}:{proxy.port} validated (origin: {data.get('origin', 'unknown')})")
+                        logger.debug(f"[OK] Proxy {proxy.ip}:{proxy.port} validated (origin: {data.get('origin', 'unknown')})")
                         return True
                     else:
-                        logger.warning(f"⚠️ Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")
+                        logger.warning(f"[WARN] Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")
                         return False
         except asyncio.TimeoutError:
-            logger.warning(f"⏱️ Proxy {proxy.ip}:{proxy.port} timed out during validation")
+            logger.warning(f"[TIMEOUT] Proxy {proxy.ip}:{proxy.port} timed out during validation")
             return False
         except Exception as e:
-            logger.warning(f"❌ Proxy {proxy.ip}:{proxy.port} validation failed: {e}")
+            logger.warning(f"[ERROR] Proxy {proxy.ip}:{proxy.port} validation failed: {e}")
             return False
 
     async def validate_all_proxies(self) -> int:
@@ -240,7 +243,7 @@ class ProxyManager:
         if not self.proxies:
             return 0
             
-        logger.info(f"🔍 Validating {len(self.proxies)} proxies...")
+        logger.info(f"[VALIDATE] Validating {len(self.proxies)} proxies...")
         
         # Validate concurrently (max 10 at a time to avoid overwhelming)
         semaphore = asyncio.Semaphore(10)
@@ -255,106 +258,102 @@ class ProxyManager:
         self.validated_proxies = [p for p in results if p is not None]
         
         valid_count = len(self.validated_proxies)
-        logger.info(f"✅ {valid_count}/{len(self.proxies)} proxies passed validation")
+        logger.info(f"[OK] {valid_count}/{len(self.proxies)} proxies passed validation")
         return valid_count
+
+    def load_proxies_from_file(self) -> int:
+        """
+        Loads proxies from the configured proxy file (default: proxies.txt).
+        Expected format per line:
+        - http://user:pass@host:port (Standard)
+        - user:pass@host:port (Short)
+        """
+        import os
+        file_path = self.settings.residential_proxies_file
+        
+        if not os.path.exists(file_path):
+            logger.warning(f"[WARN] Proxy file not found: {file_path}. Creating template.")
+            try:
+                with open(file_path, "w") as f:
+                    f.write("# Add your proxies here, one per line\n")
+                    f.write("# Format: user:pass@host:port\n")
+                    f.write("# Example: user123:pass456@192.168.1.1:8080\n")
+            except Exception as e:
+                logger.error(f"[ERROR] Could not create proxy template: {e}")
+            return 0
+
+        logger.info(f"[LOAD] Loading proxies from {file_path}...")
+        count = 0
+        new_proxies = []
+        
+        try:
+            with open(file_path, "r") as f:
+                lines = f.readlines()
+                
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                    
+                proxy = self._parse_proxy_string(line)
+                if proxy:
+                    new_proxies.append(proxy)
+                    count += 1
+            
+            self.proxies = new_proxies
+            logger.info(f"[OK] Loaded {count} proxies from file.")
+            return count
+            
+        except Exception as e:
+            logger.error(f"[ERROR] Error loading proxies from file: {e}")
+            return 0
+
+    def _parse_proxy_string(self, proxy_str: str) -> Optional[Proxy]:
+        """Parses a proxy string into a Proxy object."""
+        try:
+            # Strip protocol if present for easier parsing
+            if "://" in proxy_str:
+                protocol, rest = proxy_str.split("://", 1)
+            else:
+                protocol = "http"
+                rest = proxy_str
+            
+            # Check for auth
+            username = ""
+            password = ""
+            if "@" in rest:
+                auth, endpoint = rest.split("@", 1)
+                if ":" in auth:
+                    username, password = auth.split(":", 1)
+            else:
+                endpoint = rest
+            
+            # Parse host:port
+            if ":" not in endpoint:
+                logger.warning(f"Invalid proxy format (no port): {proxy_str}")
+                return None
+                
+            ip, port = endpoint.split(":", 1)
+            
+            return Proxy(
+                ip=ip,
+                port=int(port),
+                username=username,
+                password=password,
+                protocol=protocol
+            )
+        except Exception as e:
+            logger.error(f"Failed to parse proxy string '{proxy_str}': {e}")
+            return None
 
     async def fetch_proxies(self, count: int = 100) -> bool:
         """
-        Generates proxies from 2Captcha's Proxy API.
-        
-        This uses the `generate_white_list_connections` endpoint which requires:
-        1. Your API key
-        2. Your server's public IP to be whitelisted
-        3. Desired number of connections (1-2000)
-        
-        Returns True if proxies were successfully generated.
+        DEPRECATED: 2Captcha Whitelist API is incompatible with worker-based solving.
+        Redirects to file loader.
         """
-        if not self.api_key:
-            logger.error("❌ Cannot generate proxies: No 2Captcha API key provided.")
-            return False
-
-        logger.info(f"🔄 Generating {count} proxies from 2Captcha...")
-        
-        async with aiohttp.ClientSession() as session:
-            try:
-                # Step 1: Get our public IP
-                async with session.get("https://api.ipify.org?format=json") as resp:
-                    ip_data = await resp.json()
-                    public_ip = ip_data.get("ip")
-                    logger.info(f"📍 Detected Public IP: {public_ip}")
-                
-                # Step 2: Verify API key balance first
-                async with session.get(f"https://2captcha.com/res.php?key={self.api_key}&action=getbalance&json=1") as resp:
-                    data = await resp.json()
-                    if data.get('status') != 1:
-                        logger.error(f"❌ 2Captcha API Check Failed: {data}")
-                        return False
-                    logger.info(f"✅ 2Captcha Balance: ${data.get('request')}")
-                
-                # Step 3: Generate proxies using the whitelist API
-                # Note: The IP must already be whitelisted in your 2Captcha dashboard for this to work
-                gen_url = "https://api.2captcha.com/proxy/generate_white_list_connections"
-                params = {
-                    "key": self.api_key,
-                    "ip": public_ip,
-                    "protocol": "http",
-                    "connection_count": min(count, 2000),  # API max is 2000
-                    "json": 1
-                }
-                
-                async with session.get(gen_url, params=params) as resp:
-                    text = await resp.text()
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        logger.error(f"❌ Failed to parse 2Captcha Proxy API response as JSON. Raw response: {text}")
-                        # Fallback parsing for text format if needed
-                        if "OK|" in text or (":" in text and "\n" in text):
-                             logger.info("ℹ️ Attempting to parse text-format proxy response")
-                             # OK|ip:port\nip:port... or just ip:port\nip:port
-                             clean_text = text.replace("OK|", "")
-                             proxy_list = [p.strip() for p in clean_text.split("\n") if p.strip()]
-                             data = {"status": 1, "request": proxy_list}
-                        else:
-                            return False
-                    
-                    if data.get("status") != 1:
-                        error_msg = data.get("request", "Unknown error")
-                        if "NOT_IN_WHITE_LIST" in str(error_msg).upper() or "WHITELIST" in str(error_msg).upper():
-                            logger.error(f"❌ Your IP {public_ip} is not whitelisted in 2Captcha.")
-                            logger.error("👉 Go to https://2captcha.com/proxy and add this IP to your whitelist.")
-                        else:
-                            logger.error(f"❌ Proxy generation failed: {error_msg}")
-                        return False
-                    
-                    # Parse the proxy list from response
-                    proxy_list = data.get("request", [])
-                    if isinstance(proxy_list, str):
-                        # Sometimes returned as newline-separated string
-                        proxy_list = [p.strip() for p in proxy_list.split("\n") if p.strip()]
-                    
-                    if not proxy_list:
-                        logger.warning("⚠️ No proxies returned from API.")
-                        return False
-                    
-                    # Parse ip:port format into Proxy objects (whitelist = no auth needed)
-                    for proxy_str in proxy_list:
-                        if ":" in proxy_str:
-                            parts = proxy_str.split(":")
-                            self.proxies.append(Proxy(
-                                ip=parts[0],
-                                port=int(parts[1]),
-                                username="",  # Whitelist proxies don't need auth
-                                password="",
-                                protocol="http"
-                            ))
-                    
-                    logger.info(f"✅ Generated {len(self.proxies)} proxies from 2Captcha!")
-                    return True
-                    
-            except Exception as e:
-                logger.error(f"❌ Error generating proxies: {e}")
-                return False
+        logger.warning("[WARN] 'fetch_proxies' is deprecated. Loading from file instead.")
+        res = self.load_proxies_from_file()
+        return res > 0
 
     def assign_proxies(self, profiles: List[AccountProfile]):
         """
@@ -362,10 +361,10 @@ class ProxyManager:
         If we have proxies, we overwrite the profile.proxy field.
         """
         if not self.proxies:
-            logger.warning("⚠️ No 2Captcha proxies loaded. Creating fallback assignments from config.")
+            logger.warning("No 2Captcha proxies loaded. Creating fallback assignments from config.")
             return
 
-        logger.info(f"🔄 Assigning {len(self.proxies)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
+        logger.info(f"Assigning {len(self.proxies)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
         
         for i, profile in enumerate(profiles):
             # Round-robin assignment
@@ -377,8 +376,7 @@ class ProxyManager:
             # INJECT into profile
             profile.proxy = proxy.to_string()
             profile.residential_proxy = True # Assume 2Captcha proxies are residential
-            
-            logger.info(f"   📌 Profile '{profile.username}' -> Proxy {proxy.ip}:{proxy.port}")
+            logger.info(f"   Profile '{profile.username}' -> Proxy {proxy.ip}:{proxy.port}")
 
     def get_proxy_for_solver(self, username: str) -> Optional[str]:
         """
