@@ -143,6 +143,65 @@ class JobScheduler:
         """Record that we just accessed this faucet domain."""
         self.domain_last_access[faucet_type] = time.time()
 
+    def is_off_peak_time(self) -> bool:
+        """
+        Check if current time is optimal for withdrawals (lower network fees).
+        
+        Based on research, network fees are typically lowest during:
+        - Late night / early morning UTC (22:00 - 05:00)
+        - Weekends (especially Sunday)
+        
+        Returns:
+            True if current time is off-peak for withdrawals
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        
+        # Check hour (late night / early morning UTC)
+        off_peak_hours = [0, 1, 2, 3, 4, 5, 22, 23]
+        if now.hour in off_peak_hours:
+            return True
+        
+        # Also consider weekends as off-peak
+        if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            return True
+        
+        return False
+
+    def get_faucet_priority(self, faucet_type: str) -> float:
+        """
+        Calculate dynamic priority based on historical profitability.
+        
+        Higher scores = higher priority. Uses success rate and earnings
+        to rank faucets. Used for intelligent job scheduling.
+        
+        Args:
+            faucet_type: The faucet identifier (e.g., 'firefaucet', 'coinpayu')
+            
+        Returns:
+            Priority multiplier (0.1 to 2.0). Higher = more profitable.
+        """
+        from core.analytics import get_tracker
+        
+        try:
+            stats = get_tracker().get_faucet_stats(24)
+            hourly = get_tracker().get_hourly_rate(hours=24)
+            
+            if faucet_type in stats:
+                success_rate = stats[faucet_type].get('success_rate', 50) / 100
+                earnings_per_hour = hourly.get(faucet_type, 0)
+                
+                # Normalize earnings (assume 100 satoshi/hour is baseline)
+                earnings_factor = min(1 + (earnings_per_hour / 100), 2.0)
+                
+                # Combine factors: success rate weighted 60%, earnings 40%
+                priority = (success_rate * 0.6) + (earnings_factor * 0.4)
+                return max(0.1, min(priority, 2.0))
+        except Exception as e:
+            logger.debug(f"Priority calculation failed for {faucet_type}: {e}")
+        
+        return 0.5  # Default mid-priority
+
     def add_job(self, job: Job):
         """Add a job to the priority queue."""
         self.queue.append(job)

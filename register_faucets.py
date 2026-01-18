@@ -30,40 +30,30 @@ from dataclasses import dataclass
 from core.config import BotSettings
 from core.logging_setup import setup_logging
 from browser.instance import BrowserManager
-from faucets.litepick import LitePickBot
-from faucets.tronpick import TronPickBot
-from faucets.dogepick import DogePickBot
-from faucets.solpick import SolPickBot
-from faucets.binpick import BinPickBot
-from faucets.bchpick import BchPickBot
-from faucets.tonpick import TonPickBot
-from faucets.polygonpick import PolygonPickBot
-from faucets.dashpick import DashPickBot
-from faucets.ethpick import EthPickBot
-from faucets.usdpick import UsdPickBot
+from faucets.pick import PickFaucetBot
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class RegistrationConfig:
     """Configuration for faucet registration."""
-    bot_class: type
     coin_symbol: str
     faucet_name: str
+    base_url: str
 
 # Registry of all Pick.io faucets
 PICK_FAUCETS = [
-    RegistrationConfig(LitePickBot, "LTC", "LitePick"),
-    RegistrationConfig(TronPickBot, "TRX", "TronPick"),
-    RegistrationConfig(DogePickBot, "DOGE", "DogePick"),
-    RegistrationConfig(SolPickBot, "SOL", "SolPick"),
-    RegistrationConfig(BinPickBot, "BNB", "BinPick"),
-    RegistrationConfig(BchPickBot, "BCH", "BchPick"),
-    RegistrationConfig(TonPickBot, "TON", "TonPick"),
-    RegistrationConfig(PolygonPickBot, "MATIC", "PolygonPick"),
-    RegistrationConfig(DashPickBot, "DASH", "DashPick"),
-    RegistrationConfig(EthPickBot, "ETH", "EthPick"),
-    RegistrationConfig(UsdPickBot, "USDT", "UsdPick"),
+    RegistrationConfig("LTC", "LitePick", "https://litepick.io"),
+    RegistrationConfig("TRX", "TronPick", "https://tronpick.io"),
+    RegistrationConfig("DOGE", "DogePick", "https://dogepick.io"),
+    RegistrationConfig("SOL", "SolPick", "https://solpick.io"),
+    RegistrationConfig("BNB", "BinPick", "https://binpick.io"),
+    RegistrationConfig("BCH", "BchPick", "https://bchpick.io"),
+    RegistrationConfig("TON", "TonPick", "https://tonpick.io"),
+    RegistrationConfig("MATIC", "PolygonPick", "https://polygonpick.io"),
+    RegistrationConfig("DASH", "DashPick", "https://dashpick.io"),
+    RegistrationConfig("ETH", "EthPick", "https://ethpick.io"),
+    RegistrationConfig("USDT", "UsdPick", "https://usdpick.io"),
 ]
 
 
@@ -104,14 +94,18 @@ async def register_single_faucet(
         )
         page = await browser_manager.new_page(context=context)
         
-        # Initialize bot
-        bot = config.bot_class(settings, page)
+        # Initialize bot using consolidated PickFaucetBot
+        bot = PickFaucetBot(settings, page, config.faucet_name, config.base_url)
         
         # Get wallet address for this coin if available
         wallet_address = None
         if hasattr(settings, 'wallet_addresses') and settings.wallet_addresses:
             # wallet_addresses is Dict[str, str] mapping coin symbol to address
-            wallet_address = settings.wallet_addresses.get(config.coin_symbol)
+            wallet_info = settings.wallet_addresses.get(config.coin_symbol)
+            if isinstance(wallet_info, dict):
+                wallet_address = wallet_info.get('address')
+            elif isinstance(wallet_info, str):
+                wallet_address = wallet_info
         
         # Perform registration
         success = await bot.register(email, password, wallet_address)

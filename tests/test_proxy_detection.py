@@ -224,8 +224,15 @@ async def test_proxy_rotation_on_detection(mock_settings, mock_browser_manager):
         proxy_rotation_strategy="round_robin"
     )
     
-    async def job_with_proxy_detection(page):
-        return ClaimResult(success=False, status="Proxy Detected", next_claim_minutes=0)
+    # Create a mock bot class and instance
+    mock_bot_class = MagicMock()
+    mock_bot_instance = AsyncMock()
+    mock_bot_class.return_value = mock_bot_instance
+    
+    # Configure the mock bot to return Proxy Detected
+    mock_bot_instance.claim_wrapper = AsyncMock(return_value=ClaimResult(
+        success=False, status="Proxy Detected", next_claim_minutes=0
+    ))
     
     job = Job(
         priority=1,
@@ -236,13 +243,18 @@ async def test_proxy_rotation_on_detection(mock_settings, mock_browser_manager):
         job_type="claim_wrapper"
     )
 
-    
-    # Execute job (will detect proxy)
-    await scheduler._run_job_wrapper(job)
+    with patch("core.registry.get_faucet_class", return_value=mock_bot_class):
+        # Execute job (will detect proxy via mock)
+        await scheduler._run_job_wrapper(job)
     
     # Check that proxy failure was recorded
-    # The first proxy used should have a failure recorded
     assert len(scheduler.proxy_failures) > 0
+    # Verify it was marked as burned
+    first_proxy = profile.proxy_pool[0] # Round robin starts at index 0 or cached index
+    # We don't strictly know which one if index was non-zero, but here it's new.
+    # scheduler.proxy_failures is Keyed by proxy URL.
+    found_burned = any(info.get('burned') for info in scheduler.proxy_failures.values())
+    assert found_burned is True
 
 
 @pytest.mark.asyncio

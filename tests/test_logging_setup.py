@@ -16,12 +16,14 @@ class TestCompressedRotatingFileHandler:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = os.path.join(tmpdir, "test.log")
             handler = CompressedRotatingFileHandler(log_file, maxBytes=1024, backupCount=3)
-            
-            result = handler.rotation_filename("test.log.1")
-            assert result == "test.log.1.gz"
-            
-            result = handler.rotation_filename("/path/to/file.log.2")
-            assert result == "/path/to/file.log.2.gz"
+            try:
+                result = handler.rotation_filename("test.log.1")
+                assert result == "test.log.1.gz"
+                
+                result = handler.rotation_filename("/path/to/file.log.2")
+                assert result == "/path/to/file.log.2.gz"
+            finally:
+                handler.close()
     
     def test_rotate_compresses_file(self):
         """Test that rotate() compresses source file and removes original."""
@@ -37,18 +39,21 @@ class TestCompressedRotatingFileHandler:
             # Create handler and rotate
             log_file = os.path.join(tmpdir, "test.log")
             handler = CompressedRotatingFileHandler(log_file, maxBytes=1024, backupCount=3)
-            handler.rotate(source_file, dest_file)
-            
-            # Verify source is removed
-            assert not os.path.exists(source_file)
-            
-            # Verify dest exists and is compressed
-            assert os.path.exists(dest_file)
-            
-            # Verify content is correct after decompression
-            with gzip.open(dest_file, 'rb') as f:
-                decompressed = f.read()
-            assert decompressed == test_content
+            try:
+                handler.rotate(source_file, dest_file)
+                
+                # Verify source is removed
+                assert not os.path.exists(source_file)
+                
+                # Verify dest exists and is compressed
+                assert os.path.exists(dest_file)
+                
+                # Verify content is correct after decompression
+                with gzip.open(dest_file, 'rb') as f:
+                    decompressed = f.read()
+                assert decompressed == test_content
+            finally:
+                handler.close()
     
     def test_rotate_creates_valid_gzip(self):
         """Test that rotated files are valid gzip archives."""
@@ -63,13 +68,16 @@ class TestCompressedRotatingFileHandler:
             
             log_file = os.path.join(tmpdir, "test.log")
             handler = CompressedRotatingFileHandler(log_file, maxBytes=1024, backupCount=3)
-            handler.rotate(source_file, dest_file)
-            
-            # Verify it's a valid gzip file
-            with gzip.open(dest_file, 'rt') as f:
-                decompressed_lines = f.readlines()
-            
-            assert decompressed_lines == lines
+            try:
+                handler.rotate(source_file, dest_file)
+                
+                # Verify it's a valid gzip file
+                with gzip.open(dest_file, 'rt') as f:
+                    decompressed_lines = f.readlines()
+                
+                assert decompressed_lines == lines
+            finally:
+                handler.close()
 
 
 class TestSetupLogging:
@@ -94,6 +102,10 @@ class TestSetupLogging:
                     assert call_kwargs['level'] == logging.INFO
             finally:
                 os.chdir(original_dir)
+                logging.shutdown()
+                for h in logging.getLogger().handlers[:]:
+                    h.close()
+                    logging.getLogger().removeHandler(h)
                 logging.getLogger().handlers.clear()
     
     def test_setup_logging_custom_level(self):
@@ -112,6 +124,10 @@ class TestSetupLogging:
                     assert call_kwargs['level'] == logging.DEBUG
             finally:
                 os.chdir(original_dir)
+                logging.shutdown()
+                for h in logging.getLogger().handlers[:]:
+                    h.close()
+                    logging.getLogger().removeHandler(h)
                 logging.getLogger().handlers.clear()
     
     def test_setup_logging_invalid_level_defaults_to_info(self):
@@ -129,6 +145,10 @@ class TestSetupLogging:
                     assert call_kwargs['level'] == logging.INFO
             finally:
                 os.chdir(original_dir)
+                logging.shutdown()
+                for h in logging.getLogger().handlers[:]:
+                    h.close()
+                    logging.getLogger().removeHandler(h)
                 logging.getLogger().handlers.clear()
     
     def test_setup_logging_creates_two_handlers(self):
@@ -149,6 +169,10 @@ class TestSetupLogging:
                     assert len(call_kwargs['handlers']) == 2
             finally:
                 os.chdir(original_dir)
+                logging.shutdown()
+                for h in logging.getLogger().handlers[:]:
+                    h.close()
+                    logging.getLogger().removeHandler(h)
                 logging.getLogger().handlers.clear()
     
     def test_setup_logging_format(self):
@@ -172,6 +196,10 @@ class TestSetupLogging:
                     assert '%(message)s' in format_str
             finally:
                 os.chdir(original_dir)
+                logging.shutdown()
+                for h in logging.getLogger().handlers[:]:
+                    h.close()
+                    logging.getLogger().removeHandler(h)
                 logging.getLogger().handlers.clear()
     
 

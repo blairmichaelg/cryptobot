@@ -15,22 +15,37 @@ def settings():
 async def test_fetch_proxies_success(settings):
     manager = ProxyManager(settings)
     
-    # Mock aiohttp response
-    mock_response = {
-        "status": 1,
-        "request": "dummy_balance" # Simulate successful balance check for now as per implementation
-    }
+    # Mock aiohttp responses for multiple calls:
+    # 1. ipify (detector)
+    # 2. balance check
+    # 3. proxy generate
     
-    # Since our implementation currently just checks connectivity due to API ambiguity,
-    # we expect it to return False but log success for connection.
-    # WAIT, looking at implementation: it returns False if it can't find the explicit list.
-    # So we should verify it handles the "False" gracefully without crashing.
+    mock_ip_resp = {"ip": "1.2.3.4"}
+    mock_balance_resp = {"status": 1, "request": "10.00"}
+    mock_proxy_resp = {"status": 1, "request": ["1.1.1.1:8080", "2.2.2.2:8080"]}
+    
+    mock_responses = [
+        {"json": mock_ip_resp, "text": "{\"ip\": \"1.2.3.4\"}"},
+        {"json": mock_balance_resp, "text": "{\"status\": 1, \"request\": \"10.00\"}"},
+        {"json": mock_proxy_resp, "text": "{\"status\": 1, \"request\": [\"1.1.1.1:8080\", \"2.2.2.2:8080\"]}"}
+    ]
     
     with patch("aiohttp.ClientSession.get") as mock_get:
-        mock_get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response)
+        # Side effect to handle multiple calls
+        class MockResponse:
+            def __init__(self, data):
+                self._data = data
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): pass
+            async def json(self): return self._data["json"]
+            async def text(self): return self._data["text"]
         
-        success = await manager.fetch_proxies()
-        assert success is False # As per our safe implementation
+        mock_get.side_effect = [MockResponse(r) for r in mock_responses]
+        
+        success = await manager.fetch_proxies(count=2)
+        assert success is True
+        assert len(manager.proxies) == 2
+        assert manager.proxies[0].ip == "1.1.1.1"
         
 def test_assign_proxies_fallback(settings):
     manager = ProxyManager(settings)

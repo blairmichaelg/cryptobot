@@ -21,6 +21,32 @@ class PickFaucetBot(FaucetBot):
         # Use locator for consistency with tests and modern Playwright
         return await self.page.locator("a[href*='logout'], a[href*='dashboard']").count() > 0
 
+    def get_jobs(self):
+        """Standard job definition for the pick family."""
+        from core.orchestrator import Job
+        import time
+        
+        f_type = self.faucet_name.lower()
+        
+        return [
+            Job(
+                priority=2, # Higher than PTC/Shortlinks, lower than main faucets like Dutchy
+                next_run=time.time(),
+                name=f"{self.faucet_name} Claim",
+                profile=None,
+                faucet_type=f_type,
+                job_type="claim_wrapper"
+            ),
+            Job(
+                priority=5,
+                next_run=time.time() + 3600,
+                name=f"{self.faucet_name} Withdraw",
+                profile=None,
+                faucet_type=f_type,
+                job_type="withdraw_wrapper"
+            )
+        ]
+
     async def login(self) -> bool:
         creds = self.get_credentials(self.faucet_name.lower())
         if not creds:
@@ -86,6 +112,63 @@ class PickFaucetBot(FaucetBot):
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Claim failed: {e}")
             return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=15)
+
+    async def register(self, email: str, password: str, wallet_address: str = None) -> bool:
+        """Standard registration for .io pick family."""
+        register_url = f"{self.base_url}/register"
+        logger.info(f"[{self.faucet_name}] Registering at {register_url}")
+        
+        try:
+            await self.page.goto(register_url)
+            await self.handle_cloudflare()
+            await self.close_popups()
+
+            # Fill registration form
+            email_field = self.page.locator('input[type="email"], input[name="email"], input#email')
+            pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
+            confirm_pass_field = self.page.locator('input[name="password2"], input[name="confirm_password"], input#password2, input[name="password_confirmation"]')
+            
+            await self.page.fill(email_field, email)
+            await self.page.fill(pass_field, password)
+            
+            # Fill confirm password if it exists
+            if await confirm_pass_field.count() > 0:
+                await self.page.fill(confirm_pass_field, password)
+            
+            # Fill wallet address if provided and field exists
+            if wallet_address:
+                wallet_field = self.page.locator('input[name="address"], input[name="wallet"], input#address')
+                if await wallet_field.count() > 0:
+                    val = await wallet_field.get_attribute("value")
+                    if not val:
+                        await self.page.fill(wallet_field, wallet_address)
+            
+            # Check for and solve hCaptcha or Turnstile
+            await self.solver.solve_captcha(self.page)
+            await asyncio.sleep(2)
+
+            # Find and click register button
+            register_btn = self.page.locator('button[type="submit"], #register_btn, button:has-text("Register"), button:has-text("Sign Up")')
+            await self.human_like_click(register_btn)
+            
+            await self.page.wait_for_load_state("networkidle", timeout=30000)
+            
+            # Check for success indicators
+            if await self.is_logged_in() or "success" in self.page.url.lower():
+                logger.info(f"[{self.faucet_name}] Registration successful for {email}")
+                return True
+            
+            # Check for verification message
+            content = (await self.page.content()).lower()
+            if "check your email" in content or "verification" in content or "confirm" in content:
+                logger.info(f"[{self.faucet_name}] Registration successful (verification required).")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Registration error: {e}")
+            return False
 
     async def withdraw(self) -> ClaimResult:
         """Automated withdrawal for Pick family."""

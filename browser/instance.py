@@ -2,6 +2,7 @@ from playwright.async_api import Browser, BrowserContext, Page
 from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
+from .stealth_scripts import get_full_stealth_script
 import logging
 import random
 import os
@@ -127,20 +128,9 @@ class BrowserManager:
         logger.info(f"Creating isolated stealth context (Profile: {profile_name or 'Anonymous'}, Proxy: {proxy or 'None'}, Resolution: {dims[0]}x{dims[1]})")
         context = await self.browser.new_context(**context_args)
         
-        # WebRTC Leak Prevention: Critical for proxy-based stealth
-        # We use evaluate_on_new_document to poison the WebRTC API
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            if (window.RTCPeerConnection) {
-                const orig = window.RTCPeerConnection;
-                window.RTCPeerConnection = function(config) {
-                    if (config && config.iceServers) {
-                        config.iceServers = []; // Remove TURN/STUN servers to prevent leak
-                    }
-                    return new orig(config);
-                };
-            }
-        """)
+        # Comprehensive Anti-Fingerprinting Suite
+        # Includes: WebRTC leak prevention, Canvas/WebGL/Audio evasion, Navigator spoofing
+        await context.add_init_script(get_full_stealth_script())
 
         # Apply Resource Blocker
         blocker = ResourceBlocker(block_images=True, block_media=True)

@@ -145,6 +145,34 @@ class EarningsTracker:
         
         return dict(by_faucet)
     
+    def get_hourly_rate(self, faucet: str = None, hours: int = 24) -> Dict[str, float]:
+        """
+        Calculate earnings per hour by faucet or overall.
+        
+        This is useful for profitability analysis and dynamic job priority
+        adjustments based on which faucets generate the best returns.
+        
+        Args:
+            faucet: Optional specific faucet to check. If None, returns all.
+            hours: Number of hours to analyze (default 24)
+            
+        Returns:
+            Dict mapping faucet names to their hourly earning rate
+        """
+        cutoff = time.time() - (hours * 3600)
+        recent = [c for c in self.claims if c["timestamp"] >= cutoff and c["success"]]
+        
+        by_faucet = defaultdict(float)
+        for c in recent:
+            if faucet is None or c["faucet"] == faucet:
+                by_faucet[c["faucet"]] += c.get("amount", 0)
+        
+        # Convert to hourly rate
+        for f in by_faucet:
+            by_faucet[f] = by_faucet[f] / max(hours, 1)
+        
+        return dict(by_faucet)
+    
     def get_daily_summary(self) -> str:
         """Generate a human-readable daily summary."""
         stats = self.get_faucet_stats(24)

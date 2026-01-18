@@ -74,3 +74,38 @@ async def test_browser_restart_logic():
     await bm.restart()
     assert bm.close.called
     assert bm.launch.called
+
+@pytest.mark.asyncio
+async def test_simulate_reading():
+    """Test reading simulation with scrolling."""
+    page = AsyncMock()
+    page.viewport_size = {'width': 1920, 'height': 1080}
+    page.mouse.wheel = AsyncMock()
+    page.mouse.move = AsyncMock()
+    settings = MagicMock()
+    settings.captcha_provider = "2captcha"
+    settings.twocaptcha_api_key = "test"
+    
+    bot = FaucetBot(settings, page)
+    
+    await bot.simulate_reading(duration=0.5)
+    
+    # Should have scrolled at least once
+    assert page.mouse.wheel.called
+
+@pytest.mark.asyncio  
+async def test_random_focus_blur():
+    """Test focus/blur event simulation."""
+    page = AsyncMock()
+    page.evaluate = AsyncMock()
+    settings = MagicMock()
+    settings.captcha_provider = "2captcha"
+    settings.twocaptcha_api_key = "test"
+    
+    bot = FaucetBot(settings, page)
+    
+    await bot.random_focus_blur()
+    
+    assert page.evaluate.called
+    call_arg = page.evaluate.call_args[0][0]
+    assert "blur" in call_arg or "focus" in call_arg

@@ -12,6 +12,12 @@ from core.config import BotSettings, AccountProfile
 from faucets.base import ClaimResult
 
 
+@pytest.fixture(autouse=True)
+def clean_scheduler_session():
+    """Ensure tests start with a clean scheduler state."""
+    with patch("os.path.exists", return_value=False):
+        yield
+
 @pytest.fixture
 def mock_settings():
     """Create mock bot settings."""

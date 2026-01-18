@@ -145,11 +145,25 @@ class ProxyManager:
                     "key": self.api_key,
                     "ip": public_ip,
                     "protocol": "http",
-                    "connection_count": min(count, 2000)  # API max is 2000
+                    "connection_count": min(count, 2000),  # API max is 2000
+                    "json": 1
                 }
                 
                 async with session.get(gen_url, params=params) as resp:
-                    data = await resp.json()
+                    text = await resp.text()
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        logger.error(f"❌ Failed to parse 2Captcha Proxy API response as JSON. Raw response: {text}")
+                        # Fallback parsing for text format if needed
+                        if "OK|" in text or (":" in text and "\n" in text):
+                             logger.info("ℹ️ Attempting to parse text-format proxy response")
+                             # OK|ip:port\nip:port... or just ip:port\nip:port
+                             clean_text = text.replace("OK|", "")
+                             proxy_list = [p.strip() for p in clean_text.split("\n") if p.strip()]
+                             data = {"status": 1, "request": proxy_list}
+                        else:
+                            return False
                     
                     if data.get("status") != 1:
                         error_msg = data.get("request", "Unknown error")

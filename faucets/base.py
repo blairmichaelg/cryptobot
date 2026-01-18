@@ -243,6 +243,54 @@ class FaucetBot:
             await self.page.mouse.move(x, y, steps=random.randint(5, 20))
             await asyncio.sleep(random.uniform(0.1, 0.5))
 
+    async def simulate_reading(self, duration: float = 2.0):
+        """
+        Simulate a user reading content with natural scrolling behavior.
+        
+        Combines idle mouse movement with randomized scrolling to mimic
+        real user interaction patterns while consuming content.
+        
+        Args:
+            duration: Approximate duration in seconds to simulate reading
+        """
+        start = time.time()
+        while time.time() - start < duration:
+            # Small random scrolls (mostly down, sometimes up)
+            direction = random.choice([1, 1, 1, -1])  # 75% down, 25% up
+            delta = random.randint(30, 100) * direction
+            await self.page.mouse.wheel(0, delta)
+            
+            # Natural pause between scrolls
+            await asyncio.sleep(random.uniform(0.4, 1.2))
+            
+            # Occasional small mouse movement
+            if random.random() < 0.3:
+                vp = self.page.viewport_size
+                if vp:
+                    x = random.randint(int(vp['width'] * 0.2), int(vp['width'] * 0.8))
+                    y = random.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.7))
+                    await self.page.mouse.move(x, y, steps=random.randint(3, 8))
+
+    async def random_focus_blur(self):
+        """
+        Simulate tab switching/focus events to appear more human.
+        
+        Dispatches blur/focus events with realistic timing to mimic
+        a user switching between tabs or windows.
+        """
+        await self.page.evaluate("""() => {
+            // Dispatch blur event (user switched away)
+            document.dispatchEvent(new Event('blur'));
+            window.dispatchEvent(new FocusEvent('blur'));
+            
+            // Schedule focus event after random delay (user came back)
+            const delay = Math.random() * 2000 + 500;  // 0.5-2.5 seconds
+            setTimeout(() => {
+                document.dispatchEvent(new Event('focus'));
+                window.dispatchEvent(new FocusEvent('focus'));
+            }, delay);
+        }""")
+
     async def handle_cloudflare(self) -> bool:
         """
         Detects and waits for Cloudflare 'Just a moment' or Turnstile challenges.

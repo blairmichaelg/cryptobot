@@ -60,8 +60,32 @@ async def get_balance(self, selector: str) -> str:
 
 #### AdBTC ([adbtc.py](file:///c:/Users/azureuser/Repositories/cryptobot/faucets/adbtc.py))
 - Balance: `.nomargbot > div.col.s6.l3.m3.left.hide-on-small-only > p > b, .balance-value, .user-balance`
-- **Special Features**: Math captcha solver
+- **Special Features**: Math captcha solver, withdrawal support
 - **Status**: ✅ Fully standardized
+
+#### Pick Family ([pick.py](file:///c:/Users/azureuser/Repositories/cryptobot/faucets/pick.py))
+- **Faucets**: LitePick, TronPick, DogePick, SolPick, BinPick, BchPick, TonPick, PolygonPick, DashPick, EthPick, UsdPick
+- **Features**: Consolidated implementation, standardized registration, login, claim, and withdrawal
+- **Status**: ✅ Fully standardized & consolidated
+
+---
+
+## Stealth and Persistence Enhancements
+
+### Sticky Session Logic ([instance.py](file:///c:/Users/azureuser/Repositories/cryptobot/browser/instance.py))
+- **Profile Persistence**: Browser contexts are bound to profiles (usernames)
+- **Cookie Storage**: Encrypted cookie persistence for avoiding repeated logins
+- **Proxy Binding**: Proxies are "stuck" to profiles in `proxy_bindings.json` to ensure IP consistency
+
+### Anti-Detection Primitives ([base.py](file:///c:/Users/azureuser/Repositories/cryptobot/faucets/base.py))
+- **Human Typing**: `human_type` with randomized delays between keystrokes
+- **Idle Mouse**: `idle_mouse` mimics natural user behavior during waits
+- **WebRTC Leak Prevention**: Automatically poisons WebRTC APIs to prevent real IP exposure through proxies
+
+### Browser Health Monitoring
+- **Auto-Restart**: Scheduler triggers browser restart after 5 consecutive job failures
+- **Pulse Check**: Periodic health checks via `check_health()` verify browser responsiveness
+- **Memory Management**: Restarting clears memory and hung processes from long-duration runs
 
 ---
 
@@ -159,8 +183,8 @@ async def get_balance(self, selector: str) -> str:
 
 ### Proxy Detection
 - **Affected Sites**: DutchyCorp, CoinPayU, AdBTC
-- **Workaround**: Residential proxy rotation (not yet implemented)
-- **Impact**: These sites may be inaccessible from cloud/VPS environments
+- **Solution**: Residential proxy rotation and sticky session management
+- **Status**: 🛠️ Implemented! Now supports 2Captcha residential proxies with IP persistence.
 
 ### Image Captchas
 - **Current Status**: Manual solving required
