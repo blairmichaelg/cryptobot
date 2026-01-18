@@ -624,7 +624,9 @@ class FaucetBot:
         return jobs
 
     async def withdraw_wrapper(self, page: Page) -> ClaimResult:
-        """Wrapper for withdrawal with threshold checking."""
+        """Wrapper for withdrawal with threshold checking and analytics tracking."""
+        from core.withdrawal_analytics import get_analytics
+        
         self.page = page
         
         # 1. Ensure logged in
@@ -633,17 +635,89 @@ class FaucetBot:
         
         # 2. Check balance against threshold
         current_balance = await self.get_balance(getattr(self, 'balance_selector', '.balance'))
+        balance_before = 0.0
         try:
-            val = float(current_balance.replace(',', ''))
+            balance_before = float(current_balance.replace(',', ''))
             threshold = getattr(self.settings, f"{self.faucet_name.lower()}_min_withdraw", 1000)
-            if val < threshold:
-                logger.info(f"[{self.faucet_name}] Balance {val} below threshold {threshold}. Skipping.")
+            if balance_before < threshold:
+                logger.info(f"[{self.faucet_name}] Balance {balance_before} below threshold {threshold}. Skipping.")
                 return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
         except (ValueError, AttributeError) as e:
             logger.debug(f"[{self.faucet_name}] Balance parsing failed: {e}. Proceeding with withdrawal.")
             pass  # Continue if parsing fails
-            
-        return await self.withdraw()
+        
+        # 3. Execute withdrawal
+        result = await self.withdraw()
+        
+        # 4. Track withdrawal in analytics (if successful)
+        if result.success:
+            try:
+                # Get balance after withdrawal
+                balance_after_str = result.balance if result.balance != "0" else await self.get_balance(getattr(self, 'balance_selector', '.balance'))
+                balance_after = 0.0
+                try:
+                    balance_after = float(balance_after_str.replace(',', ''))
+                except (ValueError, AttributeError):
+                    pass
+                
+                # Calculate withdrawn amount
+                amount_withdrawn = float(result.amount.replace(',', '')) if result.amount != "0" else (balance_before - balance_after)
+                
+                # Determine cryptocurrency from faucet name or settings
+                crypto = self._get_cryptocurrency_for_faucet()
+                
+                # Record withdrawal (fees are typically platform-side for faucets)
+                analytics = get_analytics()
+                analytics.record_withdrawal(
+                    faucet=self.faucet_name,
+                    cryptocurrency=crypto,
+                    amount=amount_withdrawn,
+                    network_fee=0.0,  # Most faucets don't charge network fees
+                    platform_fee=0.0,  # Can be updated by subclass if known
+                    withdrawal_method="faucetpay" if self.settings.use_faucetpay else "direct",
+                    status="success",
+                    balance_before=balance_before,
+                    balance_after=balance_after,
+                    notes=result.status
+                )
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Failed to record withdrawal analytics: {e}")
+        
+        return result
+    
+    def _get_cryptocurrency_for_faucet(self) -> str:
+        """
+        Determine the cryptocurrency for this faucet.
+        Subclasses can override this method.
+        """
+        # Try to infer from faucet name
+        name_lower = self.faucet_name.lower()
+        if "btc" in name_lower or "bitcoin" in name_lower:
+            return "BTC"
+        elif "ltc" in name_lower or "lite" in name_lower:
+            return "LTC"
+        elif "doge" in name_lower:
+            return "DOGE"
+        elif "trx" in name_lower or "tron" in name_lower:
+            return "TRX"
+        elif "eth" in name_lower:
+            return "ETH"
+        elif "bnb" in name_lower or "bin" in name_lower:
+            return "BNB"
+        elif "sol" in name_lower:
+            return "SOL"
+        elif "ton" in name_lower:
+            return "TON"
+        elif "matic" in name_lower or "polygon" in name_lower:
+            return "MATIC"
+        elif "dash" in name_lower:
+            return "DASH"
+        elif "bch" in name_lower:
+            return "BCH"
+        elif "usdt" in name_lower or "usd" in name_lower:
+            return "USDT"
+        else:
+            return "UNKNOWN"
              
     async def claim_wrapper(self, page: Page) -> ClaimResult:
         self.page = page

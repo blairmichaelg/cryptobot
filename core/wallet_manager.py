@@ -181,6 +181,8 @@ class WalletDaemon:
         Returns:
             Transaction ID on success, None on failure
         """
+        from core.withdrawal_analytics import get_analytics
+        
         if not outputs:
             logger.warning("No outputs provided for batch withdrawal")
             return None
@@ -192,13 +194,36 @@ class WalletDaemon:
                 logger.error(f"Invalid address in batch: {out['address']}")
                 return None
         
+        # Get network fee estimate
+        fee_rate = await self.get_network_fee_estimate(coin, fee_priority)
+        estimated_network_fee = (fee_rate * 250 / 100000000) if fee_rate else 0.0  # Estimate for typical tx size
+        
         # Format for sendmany RPC call
         amounts = {out["address"]: out["amount"] for out in outputs}
+        total_amount = sum(out["amount"] for out in outputs)
         
         result = await self._rpc_call(coin, "sendmany", ["", amounts])
         
         if result:
             logger.info(f"Batch withdrawal submitted: txid={result}")
+            
+            # Record in analytics
+            try:
+                analytics = get_analytics()
+                analytics.record_withdrawal(
+                    faucet="WalletDaemon",
+                    cryptocurrency=coin,
+                    amount=total_amount,
+                    network_fee=estimated_network_fee,
+                    platform_fee=0.0,
+                    withdrawal_method="wallet_daemon",
+                    status="success",
+                    tx_id=result,
+                    notes=f"Batch withdrawal with {len(outputs)} outputs"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record batch withdrawal analytics: {e}")
+            
             return result
         
         logger.error("Batch withdrawal failed")
