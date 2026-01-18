@@ -66,24 +66,95 @@ class FireFaucetBot(FaucetBot):
             creds = self.settings.get_account("fire_faucet")
             
         if not creds: 
+            logger.error(f"[{self.faucet_name}] No credentials found")
             return False
 
         try:
-            await self.page.goto(f"{self.base_url}/login")
-            await self.page.fill('input[name="email"]', creds['username'])
-            await self.page.fill('input[name="password"]', creds['password'])
+            logger.info(f"[{self.faucet_name}] Navigating to login page...")
+            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=60000)
             
+            # Handle Cloudflare if present
+            await self.handle_cloudflare(max_wait_seconds=30)
+            
+            # Wait for login form to appear
+            await self.page.wait_for_selector('#username', timeout=15000)
+            
+            # Updated selectors (as of 2026-01)
+            logger.info(f"[{self.faucet_name}] Filling login form...")
+            
+            # Use fill() for speed during testing, then human delay
+            await self.page.fill('#username', creds['username'])
+            await self.random_delay(0.3, 0.7)
+            await self.page.fill('#password', creds['password'])
+            await self.random_delay(0.5, 1.0)
+            
+            # Handle CAPTCHA - site offers reCAPTCHA by default
+            logger.info(f"[{self.faucet_name}] Solving CAPTCHA...")
             await self.solver.solve_captcha(self.page)
             
-            submit = self.page.locator('button[type="submit"]')
-            await self.human_like_click(submit)
+            # Small delay to let token injection settle
+            await self.random_delay(0.5, 1.0)
             
-            await self.page.wait_for_url("**/dashboard", timeout=15000)
-            return True
+            # Submit form via JavaScript (bypasses overlay blockers)
+            logger.info(f"[{self.faucet_name}] Submitting form...")
+            await self.page.evaluate("""() => {
+                const submitBtn = document.querySelector('button.submitbtn');
+                if (submitBtn) submitBtn.click();
+                // Also try submitting the form directly
+                const form = document.querySelector('form');
+                if (form) form.submit();
+            }""")
+
+
+            
+            
+            # Wait for dashboard elements instead of URL change
+            try:
+                logger.info(f"[{self.faucet_name}] Waiting for dashboard elements...")
+                
+                # Poll for success (max 30 seconds)
+                start_time = asyncio.get_event_loop().time()
+                while (asyncio.get_event_loop().time() - start_time) < 30:
+                    try:
+                        # 1. Check URL
+                        if "/dashboard" in self.page.url:
+                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard URL detected)!")
+                            return True
+                            
+                        # 2. Check elements
+                        if await self.page.locator(".user-balance, .level-progress").count() > 0:
+                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard elements detected)!")
+                            return True
+                            
+                        # 3. Check text
+                        if await self.page.locator("a[href*='logout']").count() > 0:
+                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Logout link detected)!")
+                            return True
+                            
+                        # Check for errors periodically
+                        if await self.page.locator('.alert-danger, .error-message, .toast-error').count() > 0:
+                            error_text = await self.page.locator('.alert-danger, .error-message, .toast-error').first.text_content()
+                            logger.error(f"[{self.faucet_name}] Login error: {error_text}")
+                            return False
+                            
+                    except Exception:
+                        pass # Ignore transient errors during polling
+                        
+                    await asyncio.sleep(1)
+                
+                logger.warning(f"[{self.faucet_name}] Login verification timed out. URL: {self.page.url}")
+                await self.page.screenshot(path=f"login_check_failed_{self.faucet_name}.png", full_page=True)
+                return False
+            finally:
+                pass
+                
         except Exception as e:
             logger.error(f"FireFaucet login failed: {e}")
             return False
+
+
     
+
     def get_jobs(self):
         """
         Returns FireFaucet-specific jobs including daily bonus and shortlinks.
