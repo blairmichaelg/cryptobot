@@ -54,7 +54,7 @@ class SecureCookieStorage:
             # Generate a new key if none exists
             new_key = Fernet.generate_key()
             logger.warning(
-                f"⚠️ No cookie encryption key found. Generated new key.\n"
+                f"No cookie encryption key found. Generated new key.\n"
                 f"Add this to your .env file:\n"
                 f"{COOKIE_KEY_ENV}={new_key.decode()}"
             )
@@ -65,7 +65,7 @@ class SecureCookieStorage:
             keys = [Fernet(primary_key.encode())]
             if old_key:
                 keys.append(Fernet(old_key.encode()))
-                logger.info("🔑 Using key rotation with MultiFernet")
+                logger.info("Using key rotation with MultiFernet")
             return MultiFernet(keys) if len(keys) > 1 else keys[0]
         except Exception as e:
             logger.error(f"Failed to initialize encryption: {e}")
@@ -104,7 +104,7 @@ class SecureCookieStorage:
             with open(cookie_path, 'wb') as f:
                 f.write(encrypted_data)
             
-            logger.debug(f"🔐 Saved {len(cookies)} encrypted cookies for {profile_name}")
+            logger.debug(f"Saved {len(cookies)} encrypted cookies for {profile_name}")
             return True
             
         except Exception as e:
@@ -142,7 +142,7 @@ class SecureCookieStorage:
             # Deserialize
             cookies = json.loads(decrypted_data.decode('utf-8'))
             
-            logger.info(f"🔓 Loaded {len(cookies)} encrypted cookies for {profile_name}")
+            logger.info(f"Loaded {len(cookies)} encrypted cookies for {profile_name}")
             return cookies
             
         except InvalidToken:
@@ -178,7 +178,7 @@ class SecureCookieStorage:
             cookie_path = self._get_cookie_path(profile_name)
             if os.path.exists(cookie_path):
                 os.remove(cookie_path)
-                logger.debug(f"🗑️ Deleted encrypted cookies for {profile_name}")
+                logger.debug(f"Deleted encrypted cookies for {profile_name}")
                 return True
             return False
         except Exception as e:

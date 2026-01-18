@@ -111,11 +111,11 @@ async def register_single_faucet(
         success = await bot.register(email, password, wallet_address)
         
         if success:
-            logger.info(f"✅ {config.faucet_name} registration successful!")
+            logger.info(f"{config.faucet_name} registration successful!")
             # Save cookies/session is handled by sticky session logic in create_context/save_cookies
             await browser_manager.save_cookies(context, profile_name)
         else:
-            logger.error(f"❌ {config.faucet_name} registration failed")
+            logger.info(f"{config.faucet_name} registration failed")
             
         # Small delay before next registration
         await asyncio.sleep(2)
@@ -160,10 +160,10 @@ async def register_all_faucets(
     
     try:
         await browser_manager.launch()
-        logger.info("🚀 Starting Pick.io Faucet Registration Process")
-        logger.info(f"📧 Email: {email}")
-        logger.info(f"🔐 Password: {'*' * len(password)}")
-        logger.info(f"🌐 Headless Mode: {headless}")
+        logger.info("Starting Pick.io Faucet Registration Process")
+        logger.info(f"Email: {email}")
+        logger.info(f"Password: {'*' * len(password)}")
+        logger.info(f"Headless Mode: {headless}")
         logger.info("")
         
         # Filter faucets if specified
@@ -175,7 +175,7 @@ async def register_all_faucets(
                 if f.faucet_name.lower() in faucet_filter_lower
             ]
         
-        logger.info(f"📝 Registering {len(faucets_to_register)} faucet(s)")
+        logger.info(f"Registering {len(faucets_to_register)} faucet(s)")
         
         # Register each faucet
         for config in faucets_to_register:
@@ -196,12 +196,12 @@ async def register_all_faucets(
         successful = [name for name, success in results.items() if success]
         failed = [name for name, success in results.items() if not success]
         
-        logger.info(f"✅ Successful: {len(successful)}/{len(results)}")
+        logger.info(f"Successful: {len(successful)}/{len(results)}")
         for name in successful:
             logger.info(f"   - {name}")
             
         if failed:
-            logger.info(f"\n❌ Failed: {len(failed)}/{len(results)}")
+            logger.info(f"\nFailed: {len(failed)}/{len(results)}")
             for name in failed:
                 logger.info(f"   - {name}")
         

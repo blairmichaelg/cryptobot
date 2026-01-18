@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("Verifier")
 
 async def verify_faucet(name: str):
-    logger.info(f"🔍 Verifying {name}...")
+    logger.info(f"Verifying {name}...")
     
     settings = BotSettings()
     # Force Visible
@@ -32,24 +32,27 @@ async def verify_faucet(name: str):
             bot = AdBTCBot(settings, page)
         elif name.lower() == "faucetcrypto":
             bot = FaucetCryptoBot(settings, page)
+        elif name.lower() == "firefaucet":
+             from faucets.firefaucet import FireFaucetBot
+             bot = FireFaucetBot(settings, page)
         else:
             logger.error(f"Unknown faucet: {name}")
             return
 
-        logger.info(f"🚀 Starting {name} Bot Logic...")
+        logger.info(f"Starting {name} Bot Logic...")
         
         # Test Login
         if await bot.login():
-            logger.info("✅ Login Verified!")
+            logger.info("Login Verified!")
             
             # Test Claim/PTC
-            logger.info("👉 Attempting Claim/PTC (Ctrl+C to stop)...")
+            logger.info("Attempting Claim/PTC (Ctrl+C to stop)...")
             await bot.claim()
             if hasattr(bot, 'view_ptc_ads'):
                 await bot.view_ptc_ads()
                 
         else:
-            logger.error("❌ Login Failed. Check credentials in .env")
+            logger.error("Login Failed. Check credentials in .env")
 
     except Exception as e:
         logger.error(f"Runtime Error: {e}")
