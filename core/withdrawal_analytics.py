@@ -9,7 +9,7 @@ import sqlite3
 import logging
 import time
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from collections import defaultdict
@@ -382,7 +382,6 @@ class WithdrawalAnalytics:
             return recommendation
         
         # Rule 3: Check if off-peak hours (lower network fees)
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         hour = now.hour
         is_off_peak = hour >= 22 or hour < 5

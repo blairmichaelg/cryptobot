@@ -143,20 +143,18 @@ class TestWithdrawalAnalytics:
         
         result = analytics.calculate_effective_rate(hours=24)
         
-        # 0.0001 + 0.0002 = 0.0003 total earned
-        assert result["total_earned"] == pytest.approx(0.0003)
+        # Expected values
+        expected_total_earned = 0.0001 + 0.0002  # 0.0003
+        expected_total_fees = 0.00001 + 0.000005 + 0.00002 + 0.00001  # 0.000045
+        expected_net_profit = expected_total_earned - expected_total_fees  # 0.000255
+        expected_hourly_rate = expected_net_profit / 24
+        expected_fee_percentage = (expected_total_fees / expected_total_earned) * 100  # 15.0%
         
-        # 0.00001 + 0.000005 + 0.00002 + 0.00001 = 0.000045 total fees
-        assert result["total_fees"] == pytest.approx(0.000045)
-        
-        # 0.0003 - 0.000045 = 0.000255 net profit
-        assert result["net_profit"] == pytest.approx(0.000255)
-        
-        # Net profit / 24 hours
-        assert result["hourly_rate"] == pytest.approx(0.000255 / 24)
-        
-        # Fee percentage
-        assert result["fee_percentage"] == pytest.approx(15.0)
+        assert result["total_earned"] == pytest.approx(expected_total_earned)
+        assert result["total_fees"] == pytest.approx(expected_total_fees)
+        assert result["net_profit"] == pytest.approx(expected_net_profit)
+        assert result["hourly_rate"] == pytest.approx(expected_hourly_rate)
+        assert result["fee_percentage"] == pytest.approx(expected_fee_percentage)
     
     def test_calculate_effective_rate_filtered(self, analytics):
         """Test effective rate calculation with filters."""
