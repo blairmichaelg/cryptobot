@@ -1,6 +1,3 @@
-#!/bin/bash
-# Deployment script for Cryptobot on Azure VM
-# Usage: ./deploy.sh [vm_name] [resource_group]
 
 #!/bin/bash
 # Deployment script for Cryptobot on Azure VM
@@ -82,7 +79,7 @@ cd /home/azureuser/Repositories/cryptobot
 # Update Code
 echo '🔄 Pulling latest code...'
 git reset --hard
-git pull origin main
+git pull origin master
 
 # Pre-flight Check
 echo '🔍 Checking Environment...'
@@ -99,6 +96,10 @@ pip install -r requirements.txt
 
 
 echo '⚙️  Updating systemd service...'
+# Cleanup old service if exists
+sudo systemctl stop faucet_bot || true
+sudo systemctl disable faucet_bot || true
+
 sudo cp deploy/faucet_worker.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
