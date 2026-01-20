@@ -74,18 +74,17 @@ class TestProxyManagerExtra:
     @pytest.mark.asyncio
     async def test_fetch_proxies_wrapper(self, mock_settings):
         """
-        Cover fetch_proxies wrapper (lines 349-356).
-        The old complex logic is deprecated/removed, so we just test that it delegates to load_proxies_from_file.
+        Cover fetch_proxies wrapper (lines 448-453).
         """
         with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
             manager = ProxyManager(mock_settings)
 
-        # 1. Success (loaded > 0)
-        with patch.object(ProxyManager, "load_proxies_from_file", return_value=5):
+        # 1. Success (fetched > 0)
+        with patch.object(manager, "fetch_proxies_from_api", return_value=5):
             assert await manager.fetch_proxies() is True
         
-        # 2. Failure (loaded == 0)
-        with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
+        # 2. Failure (fetched == 0)
+        with patch.object(manager, "fetch_proxies_from_api", return_value=0):
             assert await manager.fetch_proxies() is False
 
     def test_assign_proxies_fallback(self, mock_settings):
