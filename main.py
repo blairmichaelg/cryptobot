@@ -58,7 +58,8 @@ async def main():
         headless=settings.headless,
         block_images=settings.block_images,
         block_media=settings.block_media,
-        timeout=settings.timeout
+        timeout=settings.timeout,
+        user_agents=settings.user_agents
     )
     
     proxy_manager = None

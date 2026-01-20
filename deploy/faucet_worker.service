@@ -5,13 +5,13 @@ After=network.target
 [Service]
 Type=simple
 User=azureuser
-WorkingDirectory=/home/azureuser/cryptobot
-EnvironmentFile=/home/azureuser/cryptobot/.env
-ExecStart=/usr/bin/python3 main.py
+WorkingDirectory=/home/azureuser/Repositories/cryptobot
+EnvironmentFile=/home/azureuser/Repositories/cryptobot/.env
+ExecStart=/home/azureuser/Repositories/cryptobot/.venv/bin/python main.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/home/azureuser/cryptobot/logs/production_run.log
-StandardError=append:/home/azureuser/cryptobot/logs/production_run.log
+StandardOutput=append:/home/azureuser/Repositories/cryptobot/logs/production_run.log
+StandardError=append:/home/azureuser/Repositories/cryptobot/logs/production_run.log
 
 [Install]
 WantedBy=multi-user.target

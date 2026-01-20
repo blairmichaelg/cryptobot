@@ -18,7 +18,7 @@ class BrowserManager:
     Manages the lifecycle of a stealthy Camoufox browser instance.
     Handles context creation, page management, and cleanup.
     """
-    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True, timeout: int = 60000):
+    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True, timeout: int = 60000, user_agents: Optional[List[str]] = None):
         """
         Initialize the BrowserManager.
 
@@ -29,12 +29,14 @@ class BrowserManager:
             block_media: Whether to block media (video/audio).
             use_encrypted_cookies: Whether to use encrypted cookie storage. Defaults to True.
             timeout: Default timeout in milliseconds.
+            user_agents: Optional list of User-Agent strings to rotate through.
         """
         self.headless = headless
         self.proxy = proxy
         self.block_images = block_images
         self.block_media = block_media
         self.timeout = timeout
+        self.user_agents = user_agents or []
         self.browser = None
         self.context = None
         self.playwright = None
@@ -87,7 +89,7 @@ class BrowserManager:
         dims = (stealth_data["width"], stealth_data["height"])
 
         context_args = {
-            "user_agent": user_agent or StealthHub.get_human_ua(),
+            "user_agent": user_agent or StealthHub.get_human_ua(self.user_agents),
             "viewport": {"width": dims[0], "height": dims[1]},
             "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],

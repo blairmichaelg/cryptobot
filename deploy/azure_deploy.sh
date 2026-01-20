@@ -84,46 +84,35 @@ set -e
 echo "Starting CryptoBot deployment..."
 
 # Navigate to app directory
-cd ~/Repositories/cryptobot || exit 1
+# Default to Repositories/cryptobot as established
+TARGET_DIR="/home/azureuser/Repositories/cryptobot"
 
-# Pull latest changes
-echo "Pulling latest changes from Git..."
-git fetch origin
-git checkout feature/consolidated-production-upgrade
-git pull
-
-# Install/update dependencies
-echo "Updating Python dependencies..."
-source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt --quiet
-
-# Stop any running instances (gracefully)
-echo "Stopping existing bot processes..."
-pkill -f "python.*main.py" || true
-sleep 2
-
-# Run tests (optional, can be skipped in production)
-# echo "Running quick health tests..."
-# pytest tests/test_analytics.py -v --tb=short || echo "Tests failed but continuing..."
-
-# Start the bot in background with nohup
-echo "Starting CryptoBot..."
-nohup python main.py --headless > faucet_bot.log 2>&1 &
-
-# Get PID
-BOT_PID=$!
-echo "Bot started with PID: $BOT_PID"
-
-# Wait briefly and check if still running
-sleep 3
-if ps -p $BOT_PID > /dev/null; then
-    echo "✓ Bot is running successfully"
-    exit 0
-else
-    echo "✗ Bot failed to start, check faucet_bot.log"
-    tail -20 faucet_bot.log
-    exit 1
+if [ ! -d "$TARGET_DIR" ]; then
+    echo "Directory $TARGET_DIR not found. Cloning..."
+    mkdir -p /home/azureuser/Repositories
+    cd /home/azureuser/Repositories
+    git clone https://github.com/blairmichaelg/cryptobot.git
 fi
+
+cd "$TARGET_DIR"
+
+# Ensure we are on the right branch
+# For production, we might want 'main' or 'feature/consolidated-production-upgrade'
+# Using current checked out for now or forcing checkout
+BRANCH="feature/consolidated-production-upgrade"
+echo "Switching to branch $BRANCH..."
+git fetch
+git checkout $BRANCH
+git pull origin $BRANCH
+
+# Make deploy script executable
+chmod +x deploy/deploy.sh
+
+# Run the unified deployment script
+# passing --install-service to ensure systemd is set up
+echo "Invoking local deploy script..."
+./deploy/deploy.sh --install-service
+
 DEPLOY_EOF
 
 chmod +x /tmp/deploy_cryptobot.sh

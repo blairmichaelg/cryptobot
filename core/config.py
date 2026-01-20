@@ -41,11 +41,7 @@ class BotSettings(BaseSettings):
     block_media: bool = True
 
     # Registration Defaults
-    registration_email: str = "blazefoley97@gmail.com"
-    registration_password: str = "silverFox420!"
-    registration_username: str = "blazefoley97"
-    # Unified proxy string format: protocol://user:pass@host:port
-    registration_proxy: Optional[str] = Field(default=None, alias="REGISTRATION_PROXY")
+    # (Moved to lines 141-146 to avoid duplication)
 
     # Wallet Infrastructure (Multi-Coin Support)
     # Mapping of coin -> RPC URL
@@ -138,9 +134,10 @@ class BotSettings(BaseSettings):
                 ]
 
     # Registration Defaults
-    registration_email: str = "blazefoley97@gmail.com"
-    registration_password: str = "silverFox420!"
-    registration_username: str = "blazefoley97"
+    # Registration Defaults - Moved to ensure single definition
+    registration_email: Optional[str] = Field(default=None, alias="REGISTRATION_EMAIL")
+    registration_password: Optional[str] = Field(default=None, alias="REGISTRATION_PASSWORD")
+    registration_username: Optional[str] = Field(default=None, alias="REGISTRATION_USERNAME")
     # Unified proxy string format: protocol://user:pass@host:port
     registration_proxy: Optional[str] = Field(default=None, alias="REGISTRATION_PROXY")
 

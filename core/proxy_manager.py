@@ -164,6 +164,70 @@ class ProxyManager:
             logger.warning(f"📉 Proxy pool critically low ({active_count}). Triggering replenishment...")
             asyncio.create_task(self.fetch_proxies_from_api(20))
 
+    def get_proxy_stats(self, proxy: Proxy) -> Dict:
+        """
+        Get statistics for a specific proxy.
+        
+        Returns:
+            Dict with avg_latency, min_latency, max_latency, measurement_count, is_dead
+        """
+        proxy_key = self._proxy_key(proxy)
+        latencies = self.proxy_latency.get(proxy_key, [])
+        
+        if not latencies:
+            return {
+                "avg_latency": None,
+                "min_latency": None,
+                "max_latency": None,
+                "measurement_count": 0,
+                "is_dead": proxy_key in self.dead_proxies
+            }
+        
+        return {
+            "avg_latency": sum(latencies) / len(latencies),
+            "min_latency": min(latencies),
+            "max_latency": max(latencies),
+            "measurement_count": len(latencies),
+            "is_dead": proxy_key in self.dead_proxies
+        }
+
+    async def health_check_all_proxies(self) -> Dict[str, Any]:
+        """
+        Perform health check on all assigned proxies, measuring latency.
+        
+        Returns:
+            Summary of health check results
+        """
+        if not self.proxies:
+            return {"total": 0, "healthy": 0, "dead": 0}
+        
+        logger.info(f"[HEALTH] Running health check on {len(self.proxies)} proxies...")
+        
+        semaphore = asyncio.Semaphore(10)
+        
+        async def check_with_semaphore(proxy: Proxy):
+            async with semaphore:
+                return await self.measure_proxy_latency(proxy)
+        
+        results = await asyncio.gather(*[check_with_semaphore(p) for p in self.proxies])
+        
+        healthy = sum(1 for r in results if r is not None)
+        dead = len(self.dead_proxies)
+        
+        # Calculate average latency of HEALTHY proxies
+        valid_latencies = [r for r in results if r is not None]
+        avg_latency = sum(valid_latencies) / len(valid_latencies) if valid_latencies else 0
+        
+        summary = {
+            "total": len(self.proxies),
+            "healthy": healthy,
+            "dead": dead,
+            "avg_latency_ms": avg_latency
+        }
+        
+        logger.info(f"[HEALTH] Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
+        return summary
+
     def remove_dead_proxies(self) -> int:
         """
         Remove dead or slow proxies from the active pool.
@@ -455,7 +519,10 @@ class ProxyManager:
         Since 2Captcha (and similar providers) use a single gateway with session-based rotation,
         we generate unique sessions from the base configured proxy.
         """
-        # We need a base proxy to work from.
+        if not self.api_key:
+            logger.error("2Captcha API key missing.")
+            return 0
+            
         # Try to load from file first if empty
         if not self.proxies:
             self.load_proxies_from_file()

@@ -66,16 +66,8 @@ This project is a sophisticated, modular automation system designed to harvest h
 git clone https://github.com/your-repo/crypto-bot-gen3.git
 cd crypto-bot-gen3
 
-# Install dependencies (includes camoufox, aiohttp, pytest)
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-
-# Install development/testing dependencies
-pip install pytest pytest-cov pytest-asyncio pytest-mock flake8 pylint
-
-# Download Camoufox Browser (One-time setup)
-camoufox fetch
+# One-step setup (installs dependencies, venv, and logs)
+./deploy/deploy.sh
 ```
 
 ### 3. Running Tests
@@ -210,6 +202,29 @@ python main.py --wallet-check
 ```
 
 ---
+
+### 5. Deployment (Azure VM / Linux)
+
+For production deployment on an Azure VM or Linux server, use the unified deployment script with the service installation flag.
+
+```bash
+# Installs systemd service, logrotate, and starts the bot
+./deploy/deploy.sh --install-service
+```
+
+This will:
+
+1. Update dependencies
+2. Install/Update `faucet_worker.service`
+3. Configure `logrotate`
+4. Start the service
+5. Tail the logs to confirm startup
+
+**Check Service Status:**
+
+```bash
+python meta.py health
+```
 
 ## 🧠 Architecture Overview
 

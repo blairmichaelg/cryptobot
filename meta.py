@@ -396,6 +396,9 @@ def main():
     register_parser.add_argument("--faucets", nargs="+", help="Specific faucets to register")
     register_parser.add_argument("--visible", action="store_true", help="Run browser in visible mode")
 
+    # Health
+    subparsers.add_parser("health", help="Run comprehensive system health check")
+
     args = parser.parse_args()
     meta = CryptobotMeta()
 

@@ -1,59 +1,43 @@
 #!/bin/bash
-# Cryptobot Automated Deployment Script
-# Optimized for Azure VM (DevNode01)
+# Deployment script for Cryptobot on Azure VM
+# Usage: ./deploy.sh [vm_name] [resource_group]
 
+VM_NAME="${1:-DevNode01}"
+RESOURCE_GROUP="${2:-APPSERVRG}"
+
+echo "🚀 Deploying Cryptobot to $VM_NAME ($RESOURCE_GROUP)..."
+
+# Command to run on the VM
+REMOTE_SCRIPT="
 set -e
+echo '📥 Pulling latest changes...'
+cd /home/azureuser/Repositories/cryptobot
+git fetch origin
+git reset --hard origin/master
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_NAME="faucet_worker.service"
+echo '📦 Installing dependencies...'
+source .venv/bin/activate
+pip install -r requirements.txt
 
-echo "🚀 Starting Cryptobot Deployment at $PROJECT_ROOT..."
-
-cd "$PROJECT_ROOT"
-
-# 1. Pull latest changes
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-echo "📥 Pulling latest changes from $CURRENT_BRANCH..."
-git pull origin "$CURRENT_BRANCH"
-
-# 2. Update dependencies
-echo "📦 Updating dependencies..."
-pip install -r requirements.txt --quiet
-
-# 3. Validate .env
-if [ ! -f .env ]; then
-    echo "❌ Error: .env file missing!"
-    exit 1
-fi
-
-if ! grep -q "CRYPTOBOT_COOKIE_KEY" .env; then
-    echo "⚠️ Warning: CRYPTOBOT_COOKIE_KEY not found in .env"
-    # The bot will generate it on first run if missing, now safely
-fi
-
-# 4. Ensure proxy bindings file exists
-mkdir -p config
-if [ ! -f config/proxy_bindings.json ]; then
-    echo "{}" > config/proxy_bindings.json
-fi
-
-# 5. Restart service
-echo "🔄 Restarting $SERVICE_NAME..."
+echo '⚙️  Updating systemd service...'
+sudo cp deploy/faucet_worker.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl restart $SERVICE_NAME
 
-# 6. Verify startup
-echo "🕒 Waiting for startup..."
-sleep 5
+echo '🔄 Restarting service...'
+sudo systemctl restart faucet_worker
+sudo systemctl status faucet_worker --no-pager
+"
 
-if systemctl is-active --quiet $SERVICE_NAME; then
-    echo "✅ Service is active!"
-    echo "📝 Recent logs:"
-    sudo journalctl -u $SERVICE_NAME -n 20 --no-pager
+# Execute via Azure CLI
+az vm run-command invoke \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$VM_NAME" \
+  --command-id RunShellScript \
+  --scripts "$REMOTE_SCRIPT"
+
+if [ $? -eq 0 ]; then
+    echo "✅ Deployment Successful!"
 else
-    echo "❌ Service failed to start!"
-    sudo journalctl -u $SERVICE_NAME -n 50 --no-pager
+    echo "❌ Deployment Failed!"
     exit 1
 fi
-
-echo "✨ Deployment complete!"
