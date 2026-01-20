@@ -45,7 +45,7 @@ class BotSettings(BaseSettings):
     registration_password: str = "silverFox420!"
     registration_username: str = "blazefoley97"
     # Unified proxy string format: protocol://user:pass@host:port
-    registration_proxy: Optional[str] = Field(default=None, validation_alias="REGISTRATION_PROXY")
+    registration_proxy: Optional[str] = Field(default=None, alias="REGISTRATION_PROXY")
 
     # Wallet Infrastructure (Multi-Coin Support)
     # Mapping of coin -> RPC URL
@@ -124,8 +124,8 @@ class BotSettings(BaseSettings):
             try:
                 from fake_useragent import UserAgent
                 ua = UserAgent(browsers=['chrome', 'edge', 'firefox', 'safari'])
-                # Generate a pool of 50 random modern UAs
-                self.user_agents = [ua.random for _ in range(50)]
+                # Generate a pool of 100 random modern UAs
+                self.user_agents = [ua.random for _ in range(100)]
             except ImportError:
                 # Fallback list if fake-useragent is not installed
                 self.user_agents = [
@@ -142,7 +142,7 @@ class BotSettings(BaseSettings):
     registration_password: str = "silverFox420!"
     registration_username: str = "blazefoley97"
     # Unified proxy string format: protocol://user:pass@host:port
-    registration_proxy: Optional[str] = None
+    registration_proxy: Optional[str] = Field(default=None, alias="REGISTRATION_PROXY")
 
     # Legacy Single Account Credentials (for backward compat)
     firefaucet_username: Optional[str] = None

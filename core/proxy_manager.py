@@ -153,12 +153,12 @@ class ProxyManager:
             self.proxy_cooldowns[proxy_key] = time.time() + self.DETECTION_COOLDOWN
             logger.error(f"[BURNED] Proxy session detected by site. Cooldown for {self.DETECTION_COOLDOWN/60:.0f}m: {proxy_key}")
         else:
-            # Connection failure: Put on short cooldown if threshold reached
-            if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
-                self.proxy_cooldowns[proxy_key] = time.time() + self.FAILURE_COOLDOWN
-                logger.warning(f"[TIMEOUT] Proxy {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooldown for {self.FAILURE_COOLDOWN/60:.0f}m")
+        # Check if we need to remove from ALL pool if truly dead
+        if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT * 2:
+            if proxy_key not in self.dead_proxies:
+                self.dead_proxies.append(proxy_key)
+                logger.error(f"[DEAD] Proxy {proxy_key} removed permanently after multiple cooldowns.")
 
-        # Check if we need to remove from active pool
         self.remove_dead_proxies()
         
         if len(self.proxies) < 5 and self.settings.use_2captcha_proxies:
@@ -437,17 +437,14 @@ class ProxyManager:
         session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
         return f"{pure_username}-session-{session_id}"
 
-    async def generate_whitelist_proxies(self, country: str = "all", count: int = 10) -> bool:
+    async def generate_whitelist_proxies(self, country: str = "all", count: int = 20) -> bool:
         """
         Whitelists the current VM IP with 2Captcha and generates proxies.
-        
-        API: https://api.2captcha.com/proxy/generate_white_list_connections
         """
         if not self.api_key:
-            logger.error("2Captcha API key missing for whitelist generation.")
+            logger.error("2Captcha API key missing.")
             return False
 
-        # Get current IP
         current_ip = ""
         try:
             async with aiohttp.ClientSession() as session:
@@ -457,49 +454,45 @@ class ProxyManager:
         except Exception as e:
             logger.warning(f"Could not detect current IP: {e}")
 
-        params = {
-            "key": self.api_key,
-            "country": country,
-            "protocol": "http",
-            "connection_count": count
-        }
-        if current_ip:
-            params["ip"] = current_ip
-            logger.info(f"[WHITELIST] Attempting to whitelist IP: {current_ip}")
+        # Try multiple parameter names for IP whitelisting as per research
+        params_to_try = [
+            {"key": self.api_key, "country": country, "protocol": "http", "connection_count": count, "ip": current_ip},
+            {"key": self.api_key, "country": country, "protocol": "http", "connection_count": count, "ip_address": current_ip},
+            {"key": self.api_key, "country": country, "protocol": "http", "connection_count": count, "ips": current_ip}
+        ]
 
-        try:
-            url = "https://api.2captcha.com/proxy/generate_white_list_connections"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("status") == "OK":
-                            proxy_list = data.get("data", [])
-                            logger.info(f"[OK] Successfully whitelisted and received {len(proxy_list)} proxies.")
-                            
-                            # Convert to Proxy objects
-                            new_proxies = []
-                            for p_str in proxy_list:
-                                # 2Captcha whitelist proxies often don't need auth if IP whitelisted
-                                proxy = self._parse_proxy_string(f"http://{p_str}")
-                                if proxy:
-                                    new_proxies.append(proxy)
-                            
-                            if new_proxies:
-                                self.all_proxies = new_proxies
-                                self.proxies = list(new_proxies)
-                                # Save to proxies.txt
-                                abs_path = os.path.abspath(self.settings.residential_proxies_file)
-                                with open(abs_path, "w") as f:
-                                    f.write("# whitelisted-proxies\n")
-                                    f.write("\n".join([p.to_string() for p in new_proxies]))
-                                return True
-                        else:
-                            logger.error(f"[ERROR] 2Captcha whitelist failed: {data.get('request', 'Unknown error')}")
-                    else:
-                        logger.error(f"[ERROR] 2Captcha API returned status {resp.status}")
-        except Exception as e:
-            logger.error(f"[ERROR] Whitelist API request failed: {e}")
+        url = "https://api.2captcha.com/proxy/generate_white_list_connections"
+        async with aiohttp.ClientSession() as session:
+            for params in params_to_try:
+                if not params.get("ip") and not params.get("ip_address") and not params.get("ips"):
+                    continue
+                    
+                logger.info(f"[WHITELIST] Attempting whitelist with params: {params}")
+                try:
+                    async with session.get(url, params=params) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("status") == "OK":
+                                proxy_list = data.get("data", [])
+                                logger.info(f"[OK] Successfully whitelisted and received {len(proxy_list)} proxies.")
+                                
+                                new_proxies = []
+                                for p_str in proxy_list:
+                                    proxy = self._parse_proxy_string(f"http://{p_str}")
+                                    if proxy:
+                                        new_proxies.append(proxy)
+                                
+                                if new_proxies:
+                                    self.all_proxies = new_proxies
+                                    self.proxies = list(new_proxies)
+                                    abs_path = os.path.abspath(self.settings.residential_proxies_file)
+                                    with open(abs_path, "w") as f:
+                                        f.write("# whitelisted-proxies\n")
+                                        f.write("\n".join([p.to_string() for p in new_proxies]))
+                                    return True
+                        logger.warning(f"[WHITELIST] Param set failed: {params}")
+                except Exception as e:
+                    logger.error(f"[ERROR] Whitelist request failed: {e}")
             
         return False
 
@@ -620,7 +613,7 @@ class ProxyManager:
         """
         current_proxy_str = profile.proxy
         # Normalize current key to match _proxy_key format (user:pass@ip:port)
-        current_key = current_proxy_str
+        current_key = current_proxy_str or ""
         if "://" in current_key:
              current_key = current_key.split("://", 1)[1]
                 

@@ -55,11 +55,12 @@ class SecureCookieStorage:
             # Try loading .env one more time in case it wasn't loaded yet
             try:
                 from dotenv import load_dotenv
-                # Use find_dotenv if possible, or just default
-                load_dotenv(override=False) 
+                # Load .env from project root
+                env_path = os.path.join(os.getcwd(), ".env")
+                load_dotenv(env_path, override=False) 
                 primary_key = os.environ.get(COOKIE_KEY_ENV)
                 if primary_key:
-                    logger.info(f"Successfully loaded {COOKIE_KEY_ENV} after explicit load_dotenv()")
+                    logger.info(f"Successfully loaded {COOKIE_KEY_ENV} after explicit load_dotenv() from {env_path}")
             except Exception as e:
                 logger.debug(f"Auxiliary dotenv load failed: {e}")
                 pass
@@ -70,25 +71,24 @@ class SecureCookieStorage:
             if key_file.exists():
                 try:
                     primary_key = key_file.read_text().strip()
-                    logger.info(f"Loaded {COOKIE_KEY_ENV} from persistent fallback file.")
+                    logger.info(f"Loaded {COOKIE_KEY_ENV} from persistent fallback file: {key_file}")
+                    # Update environment for other modules
+                    os.environ[COOKIE_KEY_ENV] = primary_key
                 except Exception as e:
                     logger.warning(f"Failed to read fallback key file: {e}")
 
         if not primary_key:
-            # Generate a new key if still none exists - but DO NOT use it silently
-            # This avoids the "lost cookies" issue with regenerating keys
-            logger.error(
-                f"❌ CRITICAL: No cookie encryption key found in environment variable '{COOKIE_KEY_ENV}'.\n"
-                f"Please add it to your .env file or environment.\n"
-                f"A temporary key has been created, and cookies will NOT persist across restarts."
-            )
-            # Fix: Return the key so we can try to save it
+            # Generate a new key if still none exists
             generated_key = Fernet.generate_key().decode()
+            logger.warning(
+                f"⚠️ Generated new cookie encryption key. Persistence will depend on saving this key."
+            )
             
             # 1. Save to fallback file
             try:
-                (CONFIG_DIR / ".cookie_key").write_text(generated_key)
-                logger.info(f"Persisted newly generated key to {CONFIG_DIR}/.cookie_key")
+                key_file = CONFIG_DIR / ".cookie_key"
+                key_file.write_text(generated_key)
+                logger.info(f"Persisted newly generated key to {key_file}")
             except Exception as e:
                 logger.warning(f"Could not persist new key to fallback: {e}")
                 
@@ -98,11 +98,16 @@ class SecureCookieStorage:
                 if os.path.exists(env_path):
                     with open(env_path, "a") as f:
                         f.write(f"\n{COOKIE_KEY_ENV}={generated_key}\n")
-                    logger.info("✅ Also appended key to .env file.")
+                    logger.info(f"✅ Appended new key to {env_path}")
+                else:
+                    with open(env_path, "w") as f:
+                        f.write(f"{COOKIE_KEY_ENV}={generated_key}\n")
+                    logger.info(f"✅ Created new {env_path} with key")
             except Exception as e:
                 logger.debug(f"Could not append to .env: {e}")
 
-            return Fernet(generated_key.encode())
+            primary_key = generated_key
+            os.environ[COOKIE_KEY_ENV] = primary_key
         
         try:
             # Support key rotation with MultiFernet
@@ -110,8 +115,6 @@ class SecureCookieStorage:
             if old_key:
                 keys.append(Fernet(old_key.encode()))
                 logger.info("Using key rotation with MultiFernet")
-            else:
-                logger.debug(f"Cookie encryption key loaded successfully (first 8 chars: {primary_key[:8]}...)")
             return MultiFernet(keys) if len(keys) > 1 else keys[0]
         except Exception as e:
             logger.error(f"Failed to initialize encryption: {e}")
