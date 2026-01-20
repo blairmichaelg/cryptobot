@@ -55,9 +55,13 @@ class SecureCookieStorage:
             # Try loading .env one more time in case it wasn't loaded yet
             try:
                 from dotenv import load_dotenv
-                load_dotenv()
+                # Use find_dotenv if possible, or just default
+                load_dotenv(override=False) 
                 primary_key = os.environ.get(COOKIE_KEY_ENV)
-            except ImportError:
+                if primary_key:
+                    logger.info(f"Successfully loaded {COOKIE_KEY_ENV} after explicit load_dotenv()")
+            except Exception as e:
+                logger.debug(f"Auxiliary dotenv load failed: {e}")
                 pass
         
         if not primary_key:

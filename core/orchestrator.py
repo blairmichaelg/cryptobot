@@ -210,10 +210,33 @@ class JobScheduler:
         return 0.5  # Default mid-priority
 
     def add_job(self, job: Job):
-        """Add a job to the priority queue."""
+        """
+        Add a job to the priority queue with deduplication.
+        
+        Prevents duplicate pending jobs for the same profile + faucet + job_type.
+        """
+        username = job.profile.username
+        job_key = f"{username}:{job.job_type}:{job.faucet_type}"
+        
+        # 1. Check if an identical job is already in the queue
+        for pending_job in self.queue:
+             if (pending_job.profile.username == username and 
+                 pending_job.job_type == job.job_type and 
+                 pending_job.faucet_type == job.faucet_type):
+                 logger.debug(f"⏭️ Skipping duplicate job add: {job.name} for {username}")
+                 return
+        
+        # 2. Check if an identical job is currently running
+        for running_key in self.running_jobs:
+             # running_key is username + job.name, but we want more granular check
+             # If job.name matches, it's likely the same job_type/faucet_type
+             if running_key.startswith(f"{username}:") and job.name in running_key:
+                  logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
+                  return
+
         self.queue.append(job)
         self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
-        logger.debug(f"Added job: {job.name} for {job.profile.username} (Prio: {job.priority}, Time: {job.next_run})")
+        logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")
 
     
     def get_next_proxy(self, profile: AccountProfile) -> Optional[str]:
@@ -295,13 +318,15 @@ class JobScheduler:
             )
             page = await self.browser_manager.new_page(context=context)
             
+            # Check for legacy/test jobs BEFORE attempting to instantiate
+            if job.faucet_type.lower() == "test":
+                logger.debug(f"⏭️ Skipping legacy/test faucet job: {job.name}")
+                return  # Silently complete without rescheduling
+            
             # Instantiate Bot dynamically
             from core.registry import get_faucet_class
             bot_class = get_faucet_class(job.faucet_type)
             if not bot_class:
-                if job.faucet_type.lower() == "test":
-                    logger.warning(f"⚠️ Skipping legacy/test faucet type: {job.faucet_type}")
-                    return  # Just finish the job without error or reschedule
                 raise ValueError(f"Unknown faucet type: {job.faucet_type}")
             
             bot = bot_class(self.settings, page)
@@ -311,10 +336,7 @@ class JobScheduler:
             }
             # Ensure bot knows about proxy
             if current_proxy:
-                 p_str = current_proxy
-                 if "://" in p_str:
-                     p_str = p_str.split("://")[1]
-                 bot.set_proxy(p_str)
+                 bot.set_proxy(current_proxy)
 
             # Execute the job function
             logger.info(f"🚀 Executing {job.name} ({job.job_type}) for {username}... (Proxy: {current_proxy or 'None'})")
@@ -397,6 +419,13 @@ class JobScheduler:
             if now - self.last_persist_time >= SESSION_PERSIST_INTERVAL:
                 self._persist_session()
                 self.last_persist_time = now
+                
+                # Check for performance alerts every persist interval (5 mins)
+                # This ensures we don't spam logs but stay updated on drops
+                from core.analytics import get_tracker
+                alerts = get_tracker().check_performance_alerts(hours=2)
+                for alert in alerts:
+                    logger.warning(f"🔔 ALERT: {alert}")
             
             if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
                 logger.info("Performing browser health check...")

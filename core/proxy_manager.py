@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 import random
 import string
+import os
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from core.config import AccountProfile, BotSettings
@@ -149,6 +150,11 @@ class ProxyManager:
                 logger.error(f"[DEAD] Proxy {proxy_key} marked as DEAD after threshold reached")
                 # Auto-remove from active pool
                 self.remove_dead_proxies()
+                
+                # Replenish if we are running low (e.g. < 5 proxies left)
+                if len(self.proxies) < 5 and self.settings.use_2captcha_proxies:
+                    logger.warning("📉 Proxy pool low (< 5). Triggering background replenishment...")
+                    asyncio.create_task(self.fetch_proxies(100))
 
     def get_proxy_stats(self, proxy: Proxy) -> Dict:
         """
@@ -392,6 +398,71 @@ class ProxyManager:
             
         session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
         return f"{pure_username}-session-{session_id}"
+
+    async def generate_whitelist_proxies(self, country: str = "all", count: int = 10) -> bool:
+        """
+        Whitelists the current VM IP with 2Captcha and generates proxies.
+        
+        API: https://api.2captcha.com/proxy/generate_white_list_connections
+        """
+        if not self.api_key:
+            logger.error("2Captcha API key missing for whitelist generation.")
+            return False
+
+        # Get current IP
+        current_ip = ""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://api64.ipify.org?format=json") as resp:
+                    if resp.status == 200:
+                        current_ip = (await resp.json()).get("ip")
+        except Exception as e:
+            logger.warning(f"Could not detect current IP: {e}")
+
+        params = {
+            "key": self.api_key,
+            "country": country,
+            "protocol": "http",
+            "connection_count": count
+        }
+        if current_ip:
+            params["ip"] = current_ip
+            logger.info(f"[WHITELIST] Attempting to whitelist IP: {current_ip}")
+
+        try:
+            url = "https://api.2captcha.com/proxy/generate_white_list_connections"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("status") == "OK":
+                            proxy_list = data.get("data", [])
+                            logger.info(f"[OK] Successfully whitelisted and received {len(proxy_list)} proxies.")
+                            
+                            # Convert to Proxy objects
+                            new_proxies = []
+                            for p_str in proxy_list:
+                                # 2Captcha whitelist proxies often don't need auth if IP whitelisted
+                                proxy = self._parse_proxy_string(f"http://{p_str}")
+                                if proxy:
+                                    new_proxies.append(proxy)
+                            
+                            if new_proxies:
+                                self.proxies = new_proxies
+                                # Save to proxies.txt
+                                abs_path = os.path.abspath(self.settings.residential_proxies_file)
+                                with open(abs_path, "w") as f:
+                                    f.write("# whitelisted-proxies\n")
+                                    f.write("\n".join([p.to_string() for p in new_proxies]))
+                                return True
+                        else:
+                            logger.error(f"[ERROR] 2Captcha whitelist failed: {data.get('request', 'Unknown error')}")
+                    else:
+                        logger.error(f"[ERROR] 2Captcha API returned status {resp.status}")
+        except Exception as e:
+            logger.error(f"[ERROR] Whitelist API request failed: {e}")
+            
+        return False
 
     async def fetch_proxies_from_api(self, quantity: int = 10) -> int:
         """
