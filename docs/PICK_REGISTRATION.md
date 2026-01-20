@@ -111,18 +111,26 @@ To include wallet addresses during registration, configure them in your `.env` f
 
 ```python
 # In core/config.py or .env
+# Note: wallet_addresses uses a nested structure with 'address' key
+WALLET_ADDRESSES = {
+    "LTC": {"address": "your_litecoin_address"},
+    "TRX": {"address": "your_tron_address"},
+    "DOGE": {"address": "your_dogecoin_address"},
+    "SOL": {"address": "your_solana_address"},
+    "BNB": {"address": "your_binance_address"},
+    "BCH": {"address": "your_bitcoin_cash_address"},
+    "TON": {"address": "your_ton_address"},
+    "MATIC": {"address": "your_polygon_address"},
+    "DASH": {"address": "your_dash_address"},
+    "ETH": {"address": "your_ethereum_address"},
+    "USDT": {"address": "your_tether_address"},
+}
+
+# Alternatively, simple string format is also supported:
 WALLET_ADDRESSES = {
     "LTC": "your_litecoin_address",
     "TRX": "your_tron_address",
-    "DOGE": "your_dogecoin_address",
-    "SOL": "your_solana_address",
-    "BNB": "your_binance_address",
-    "BCH": "your_bitcoin_cash_address",
-    "TON": "your_ton_address",
-    "MATIC": "your_polygon_address",
-    "DASH": "your_dash_address",
-    "ETH": "your_ethereum_address",
-    "USDT": "your_tether_address",
+    # ... etc
 }
 ```
 
@@ -302,12 +310,12 @@ Our implementation handles these with:
 
 Potential improvements:
 
-- [ ] Email verification automation
-- [ ] Parallel registration (currently sequential)
-- [ ] Registration status database
-- [ ] Automatic retry for failed registrations
-- [ ] Integration with password managers
-- [ ] Multi-account support
+- Email verification automation
+- Parallel registration (currently sequential)
+- Registration status database
+- Automatic retry for failed registrations
+- Integration with password managers
+- Multi-account support
 
 ## Support
 
