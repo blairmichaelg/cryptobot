@@ -93,71 +93,59 @@ class FireFaucetBot(FaucetBot):
             await self.solver.solve_captcha(self.page)
             
             # Small delay to let token injection settle
-            await self.random_delay(0.5, 1.0)
+            await self.random_delay(1.0, 2.0)
             
-            # Submit form via JavaScript (bypasses overlay blockers)
-            logger.info(f"[{self.faucet_name}] Submitting form...")
-            await self.page.evaluate("""() => {
-                const submitBtn = document.querySelector('button.submitbtn, button[type="submit"]');
-                if (submitBtn) {
-                     submitBtn.click();
-                } else {
-                    const form = document.querySelector('form');
-                    if (form) form.submit();
-                }
-            }""")
+            # Check for button before trying to click
+            submit_btn = self.page.locator('button.submitbtn, button[type="submit"]')
+            if await submit_btn.count() > 0:
+                 logger.info(f"[{self.faucet_name}] Submit button found. Clicking...")
+                 # Ensure it's not disabled
+                 if await submit_btn.is_disabled():
+                     logger.warning(f"[{self.faucet_name}] Submit button is disabled! Waiting...")
+                     await self.page.wait_for_function("document.querySelector('button.submitbtn, button[type=\"submit\"]').disabled === false", timeout=5000)
 
-            # Fallback: physical click if evaluate didn't navigate
-            await asyncio.sleep(2)
-            if "/login" in self.page.url:
-                submit_btn = self.page.locator('button.submitbtn, button[type="submit"]')
-                if await submit_btn.count() > 0:
-                    logger.info(f"[{self.faucet_name}] Submission fallback: physical click")
-                    await self.human_like_click(submit_btn)
+                 await self.human_like_click(submit_btn)
+            else:
+                 logger.warning(f"[{self.faucet_name}] Submit button NOT found via locator. Trying generic form submit...")
+                 await self.page.evaluate("document.forms[0].submit()")
 
-
+            # Wait for navigation or dashboard elements
+            logger.info(f"[{self.faucet_name}] Waiting for post-login state...")
             
-            
-            # Wait for dashboard elements instead of URL change
-            try:
-                logger.info(f"[{self.faucet_name}] Waiting for dashboard elements...")
-                
-                # Poll for success (max 30 seconds)
-                start_time = asyncio.get_event_loop().time()
-                while (asyncio.get_event_loop().time() - start_time) < 30:
-                    try:
-                        # 1. Check URL
-                        if "/dashboard" in self.page.url:
-                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard URL detected)!")
-                            return True
-                            
-                        # 2. Check elements
-                        if await self.page.locator(".user-balance, .level-progress").count() > 0:
-                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard elements detected)!")
-                            return True
-                            
-                        # 3. Check text
-                        if await self.page.locator("a[href*='logout']").count() > 0:
-                            logger.info(f"[{self.faucet_name}] ✅ Login successful (Logout link detected)!")
-                            return True
-                            
-                        # Check for errors periodically
-                        if await self.page.locator('.alert-danger, .error-message, .toast-error').count() > 0:
-                            error_text = await self.page.locator('.alert-danger, .error-message, .toast-error').first.text_content()
-                            logger.error(f"[{self.faucet_name}] Login error: {error_text}")
-                            return False
-                            
-                    except Exception:
-                        pass # Ignore transient errors during polling
+            # Poll for success (max 30 seconds)
+            start_time = asyncio.get_event_loop().time()
+            while (asyncio.get_event_loop().time() - start_time) < 30:
+                try:
+                    url = self.page.url
+                    # 1. Check URL
+                    if "/dashboard" in url:
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard URL detected)!")
+                        return True
                         
-                    await asyncio.sleep(1)
-                
-                logger.warning(f"[{self.faucet_name}] Login verification timed out. URL: {self.page.url}")
-                await self.page.screenshot(path=f"login_check_failed_{self.faucet_name}.png", full_page=True)
-                return False
-            finally:
-                pass
-                
+                    # 2. Check elements
+                    if await self.page.locator(".user-balance, .level-progress").count() > 0:
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (Dashboard elements detected)!")
+                        return True
+                        
+                    # 3. Check for specific error messages
+                    if await self.page.locator('.alert-danger, .error-message, .toast-error').count() > 0:
+                        error_text = await self.page.locator('.alert-danger, .error-message, .toast-error').first.text_content()
+                        logger.error(f"[{self.faucet_name}] Login error: {error_text}")
+                        return False
+
+                    # 4. Check if we are still on login page
+                    if "/login" in url and (asyncio.get_event_loop().time() - start_time) > 10:
+                         # If stuck on login for 10s, try verify button again
+                         logger.debug(f"[{self.faucet_name}] Still on login page...")
+                         
+                except Exception:
+                    pass 
+                    
+                await asyncio.sleep(1)
+            
+            logger.warning(f"[{self.faucet_name}] Login verification timed out. URL: {self.page.url}")
+            return False
+
         except Exception as e:
             logger.error(f"FireFaucet login failed: {e}")
             return False
@@ -428,7 +416,7 @@ class FireFaucetBot(FaucetBot):
                 # Let the solver take over for the external link
                 # We need to detect when we've left FireFaucet or when the actual shortlink starts
                 # For now, simplistic approach: call solve on current URL
-                if await solver.solve(self.page.url):
+                if await solver.solve(self.page.url, success_patterns=["firefaucet.win/shortlinks", "/shortlinks"]):
                     logger.info(f"[{self.faucet_name}] Shortlink {i+1} Solved!")
                     await self.page.goto(f"{self.base_url}/shortlinks")
                 else:

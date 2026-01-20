@@ -33,10 +33,21 @@ class ShortlinkSolver:
         self.blocker = blocker
         self.captcha_solver = captcha_solver
         
-    async def solve(self, url: str) -> bool:
+    async def solve(self, url: str, success_patterns: list = None) -> bool:
+        """
+        Traverse a shortlink until a success pattern is found in the URL.
+        
+        Args:
+            url: The starting URL.
+            success_patterns: List of string patterns to check in the URL to confirm success.
+                              If None, defaults to common return URLs.
+        """
         try:
             logger.info(f"🔗 Starting Shortlink: {url}")
             
+            if not success_patterns:
+                success_patterns = ["dutchycorp.space/shortlinks-wall.php", "firefaucet.win/shortlinks", "/shortlinks"]
+
             # Disable blocker if present to avoid adblock detection
             if self.blocker:
                 logger.info("🔓 Disabling Resource Blocker for Shortlink...")
@@ -45,57 +56,77 @@ class ShortlinkSolver:
             await self.page.goto(url)
             
             # Attempt generic traverse loop
-            for step in range(12): # Increased steps for complex links
-                # 1. Check for common 'Success' indicators
-                if any(x in self.page.url for x in ["dutchycorp.space/shortlinks-wall.php", "firefaucet.win/shortlinks"]):
-                    logger.info("✅ Returned to Shortlinks Wall!")
+            for step in range(20): # Increased steps for complex links
+                # 1. Check for 'Success' indicators
+                current_url = self.page.url
+                if any(p in current_url for p in success_patterns):
+                    logger.info(f"✅ Returned to Success URL: {current_url}")
                     return True
                 
                 # 2. Wait for Timer
-                # Use standardized extraction logic
                 try:
-                    timer_selectors = ["#timer", ".timer", "#countdown", "div[id*='time']", "span[id*='time']", ".timer-text"]
+                    timer_selectors = [
+                        "#timer", ".timer", "#countdown", "div[id*='time']", 
+                        "span[id*='time']", ".timer-text", "#please-wait",
+                        "strong[id*='timer']", "b[id*='timer']"
+                    ]
                     timer_found = False
                     for sel in timer_selectors:
-                        # We use the page object since we don't have a FaucetBot instance easily here,
-                        # or we can just import the logic.
                         timer_el = self.page.locator(sel)
                         if await timer_el.count() > 0 and await timer_el.first.is_visible():
                             text = await timer_el.first.text_content()
                             from core.extractor import DataExtractor
                             wait_min = DataExtractor.parse_timer_to_minutes(text)
                             if wait_min > 0:
-                                wait_s = min(wait_min * 60, 45)  # Wait up to 45s
+                                wait_s = min(wait_min * 60, 65)  # Cap wait at 65s
                                 logger.info(f"⏳ Timer found ({text}), waiting {wait_s:.1f}s...")
                                 await asyncio.sleep(wait_s)
                                 timer_found = True
                                 break
                     if not timer_found:
-                        logger.debug(f"No timer found on step {step}, continuing...")
-                        await asyncio.sleep(2)
+                        # Sometimes timer is hidden or just "Please Wait" text
+                        if "please wait" in (await self.page.content()).lower():
+                             await asyncio.sleep(5)
                 except Exception as e:
                     logger.debug(f"Timer detection error: {e}")
 
                 # 3. Check for Captcha
-                if self.captcha_solver and await self.page.query_selector("iframe[src*='recaptcha'], iframe[src*='turnstile'], iframe[src*='hcaptcha'], .cf-turnstile"):
-                    logger.info("🧩 Captcha detected in shortlink. Attempting to solve...")
-                    await self.captcha_solver.solve_captcha(self.page)
-                    await asyncio.sleep(3)
+                if self.captcha_solver:
+                    # Check for visible captcha frames or containers
+                    if await self.page.locator("iframe[src*='recaptcha'], iframe[src*='turnstile'], iframe[src*='hcaptcha'], .cf-turnstile").count() > 0:
+                        logger.info("🧩 Captcha detected in shortlink. Attempting to solve...")
+                        await self.captcha_solver.solve_captcha(self.page)
+                        await asyncio.sleep(2)
 
-                # 4. Click 'Next' / 'Get Link'
-                # Common patterns with priorities, avoiding obvious ads
+                # 4. Click 'Next' / 'Get Link' / 'Continue'
+                # Expanded priorities
                 buttons = [
+                    # ID based (Highest confidence)
+                    "a#invisibleCaptchaShortlink", 
+                    "button#submit-button",
+                    "button#method_free",
+                    "a#go-link",
+                    
+                    # Text based (High confidence)
                     "button:has-text('Get Link')",
                     "a:has-text('Get Link')",
                     "button:has-text('Continue')",
                     "a:has-text('Continue')",
-                    "button:has-text('Next')",
+                    "button:has-text('Next')", 
                     "a:has-text('Next')",
-                    "button:has-text('Verify')",
-                    "a:id('go-link')", # Specific common id
+                    "button:has-text('Click here to continue')",
+                    "a:has-text('Click here to continue')",
+                    "div:has-text('Click here to continue')",
+                    
+                    # Class based (Medium confidence)
                     ".btn-success",
-                    "#submit-button",
-                    ".next-button"
+                    ".btn-primary", 
+                    "input[type='submit']",
+                    
+                    # Image based (Low confidence, but necessary for some)
+                    "img[alt='continue']",
+                    "img[src*='continue']",
+                    "img[src*='next']"
                 ]
                 
                 clicked = False
@@ -108,20 +139,37 @@ class ShortlinkSolver:
                             if await target.is_visible() and await target.is_enabled():
                                 # Heuristic: Ignore suspicious small boxes or hidden elements
                                 box = await target.bounding_box()
-                                if box and (box['width'] < 10 or box['height'] < 10):
+                                if box and (box['width'] < 5 or box['height'] < 5):
                                     continue
                                     
+                                # Heuristic: Ignore if covered by another element (simple check)
+                                # Playwright handles this mostly, but good to be explicit if needed
+                                
                                 logger.info(f"👆 Clicking {sel} (instance {i})...")
                                 
-                                # Standard click with popup removal
+                                # Standard click with popup handling
                                 try:
-                                    async with self.page.context.expect_page(timeout=4000) as new_page_info:
-                                        await target.click(timeout=3000)
-                                    p = await new_page_info.value
-                                    logger.info("🗑️ Closing popup window.")
-                                    await p.close()
+                                    # Expect navigation or new page or just action
+                                    # We don't strictly expect a new page, sometimes it is same page reload
+                                    await target.click(timeout=3000)
+                                    
+                                    # Handling Popups:
+                                    # Shortlinks AGGRESSIVELY open popups.
+                                    # We can try to close the *new* page if it's not the target, 
+                                    # but distinguishing popup vs next step is hard.
+                                    # Best bet: Keep focus on the tab that initiated the click if possible,
+                                    # or check if we were redirected.
+                                    
+                                    wait_start = asyncio.get_event_loop().time()
+                                    while len(self.page.context.pages) > 1 and (asyncio.get_event_loop().time() - wait_start) < 5:
+                                        # Close all pages except current one
+                                        for p in self.page.context.pages:
+                                            if p != self.page:
+                                                await p.close()
+                                        await asyncio.sleep(0.5)
+
                                 except Exception:
-                                    # No popup or timed out, assume click worked
+                                    # Force click if blocked
                                     await target.click(timeout=3000, force=True)
                                 
                                 clicked = True
@@ -134,8 +182,8 @@ class ShortlinkSolver:
                 
                 if not clicked:
                     await asyncio.sleep(2)
-                    # Check if we moved anyway
-                    if any(x in self.page.url for x in ["dutchycorp.space", "firefaucet.win"]):
+                    # Check if we moved anyway (auto-redirect)
+                    if any(p in self.page.url for p in success_patterns):
                         continue
 
             return False
