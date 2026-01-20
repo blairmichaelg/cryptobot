@@ -584,6 +584,17 @@ class FaucetBot:
             
         return await self.login()
 
+    async def view_ptc_ads(self):
+        """
+        Generic PTC Ad viewing logic.
+        1. Finds ad links (selector provided by subclass)
+        2. Clicks and handles new tab
+        3. Waits for timer (time provided by subclass or element)
+        4. Solves captcha if needed
+        """
+        logger.warning(f"[{self.faucet_name}] PTC logic not fully implemented in subclass.")
+        await asyncio.sleep(1)
+
     def get_earning_tasks(self):
         """
         Returns a list of async methods (tasks) to execute for earnings.
@@ -593,7 +604,8 @@ class FaucetBot:
         tasks.append({"func": self.claim, "name": "Faucet Claim"})
         
         # Add PTC if available
-        if hasattr(self, "view_ptc_ads"):
+        # Note: We now define view_ptc_ads in base, so we check if subclass overrides or configured
+        if hasattr(self, "ptc_ads_selector") or self.faucet_name in ["CoinPayU", "AdBTC"]:
              tasks.append({"func": self.view_ptc_ads, "name": "PTC Ads"})
         
         return tasks
@@ -760,6 +772,21 @@ class FaucetBot:
         await self.view_ptc_ads()
         return ClaimResult(success=True, status="PTC Done", next_claim_minutes=self.settings.exploration_frequency_minutes)
 
+    async def _record_analytics(self, result: ClaimResult):
+        """Helper to record analytics for a result."""
+        try:
+            tracker = get_tracker()
+            amount = float(result.amount) if result.amount else 0.0
+            tracker.record_claim(
+                faucet=self.faucet_name,
+                success=result.success,
+                amount=amount,
+                currency=getattr(self, 'coin', 'unknown'),
+                balance_after=float(result.balance) if result.balance else 0.0
+            )
+        except Exception as analytics_err:
+            logger.warning(f"Analytics tracking failed: {analytics_err}")
+
     async def run(self) -> ClaimResult:
         """
         Main execution flow. 
@@ -774,7 +801,9 @@ class FaucetBot:
         try:
             if not await self.login():
                 logger.error(f"[{self.faucet_name}] Login Failed")
-                return ClaimResult(success=False, status="Login Failed", next_claim_minutes=30)
+                res = ClaimResult(success=False, status="Login Failed", next_claim_minutes=30)
+                await self._record_analytics(res)
+                return res
             
             await self.close_popups()
             
@@ -796,20 +825,7 @@ class FaucetBot:
                     if isinstance(res, ClaimResult):
                         final_result = res
                         logger.info(f"[{self.faucet_name}] {name} Result: {res.status} (Wait: {res.next_claim_minutes}m)")
-                        
-                        # Track in earnings analytics
-                        try:
-                            tracker = get_tracker()
-                            amount = float(res.amount) if res.amount else 0.0
-                            tracker.record_claim(
-                                faucet=self.faucet_name,
-                                success=res.success,
-                                amount=amount,
-                                currency=getattr(self, 'coin', 'unknown'),
-                                balance_after=float(res.balance) if res.balance else 0.0
-                            )
-                        except Exception as analytics_err:
-                            logger.debug(f"Analytics tracking failed: {analytics_err}")
+                        await self._record_analytics(res)
                             
                     elif res:
                         logger.info(f"[{self.faucet_name}] {name} Successful")
@@ -825,13 +841,16 @@ class FaucetBot:
                      # If the primary claim fails with an exception, update final_result
                      if name == "Faucet Claim":
                          final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
+                         await self._record_analytics(final_result)
                      
                      # We continue to the next task even if this one failed!
+            
+            return final_result
 
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Runtime Fatal Error: {e}")
             final_result = ClaimResult(success=False, status=f"Fatal: {e}", next_claim_minutes=10)
+            await self._record_analytics(final_result)
+            return final_result
         finally:
             await self.solver.close()
-            
-        return final_result

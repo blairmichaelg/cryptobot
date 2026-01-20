@@ -107,7 +107,7 @@ class TestProxyHealthMonitoring:
         
         # Record failures up to threshold
         for _ in range(pm.DEAD_PROXY_FAILURE_COUNT):
-            pm._record_failure(proxy_key)
+            pm.record_failure(proxy_key)
         
         assert proxy_key in pm.dead_proxies
     

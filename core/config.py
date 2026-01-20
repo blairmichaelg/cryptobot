@@ -29,7 +29,7 @@ class BotSettings(BaseSettings):
     # Security / API
     captcha_provider: str = "2captcha"
     twocaptcha_api_key: Optional[str] = None
-    use_2captcha_proxies: bool = False  # Set to True to enable 2Captcha proxy integration
+    use_2captcha_proxies: bool = True  # Set to True to enable 2Captcha proxy integration
     capsolver_api_key: Optional[str] = None
     
     # Proxy Configuration
@@ -115,34 +115,33 @@ class BotSettings(BaseSettings):
     exploration_frequency_minutes: int = 30
     
     # Browser / stealth - Diverse UA pool for fingerprint rotation
-    user_agents: List[str] = [
-        # Chrome Windows
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-        # Chrome Mac
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        # Chrome Linux
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        # Firefox Windows
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-        # Firefox Mac
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-        # Firefox Linux
-        "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        # Edge Windows
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-        # Safari Mac
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-        # Opera
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
-        # Brave (reports as Chrome)
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        # Vivaldi (reports as Chrome)
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ]
+    user_agents: List[str] = Field(default_factory=list)
+
+    def model_post_init(self, __context: Any) -> None:
+        """Initialize dynamic user agents if empty."""
+        if not self.user_agents:
+            try:
+                from fake_useragent import UserAgent
+                ua = UserAgent(browsers=['chrome', 'edge', 'firefox', 'safari'])
+                # Generate a pool of 50 random modern UAs
+                self.user_agents = [ua.random for _ in range(50)]
+            except ImportError:
+                # Fallback list if fake-useragent is not installed
+                self.user_agents = [
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
+                ]
+
+    # Registration Defaults
+    registration_email: str = "blazefoley97@gmail.com"
+    registration_password: str = "silverFox420!"
+    registration_username: str = "blazefoley97"
+    # Unified proxy string format: protocol://user:pass@host:port
+    registration_proxy: Optional[str] = None
 
     # Legacy Single Account Credentials (for backward compat)
     firefaucet_username: Optional[str] = None

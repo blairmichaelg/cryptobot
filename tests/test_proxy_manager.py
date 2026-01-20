@@ -31,12 +31,22 @@ class TestProxyManager:
 
     @patch("builtins.open", new_callable=mock_open, read_data="http://u1:p1@1.1.1.1:8080")
     @patch("os.path.exists", return_value=True)
-    async def test_fetch_proxies_calls_load(self, mock_exists, mock_file, settings):
+    async def test_fetch_proxies_generates_sessions(self, mock_exists, mock_file, settings):
         manager = ProxyManager(settings)
-        # fetch_proxies is deprecated but should still work by calling load
-        result = await manager.fetch_proxies()
-        assert result is True
+        # Should start with 1 proxy
         assert len(manager.proxies) == 1
+        
+        # Calling fetch_proxies should generate sessions and increase count
+        # method returns total count of proxies (base + generated) or just generated?
+        # My implementation returns len(new_proxies) which includes base.
+        success = await manager.fetch_proxies(count=5)
+        
+        # fetch_proxies returns bool
+        assert success is True
+        # Base (1) + Generated (5) = 6
+        assert len(manager.proxies) == 6
+        assert manager.proxies[0].username == "u1"
+        assert "-session-" in manager.proxies[1].username
         
 def test_assign_proxies_fallback(settings):
     manager = ProxyManager(settings)

@@ -39,6 +39,11 @@ class EarningsTracker:
     def __init__(self):
         self.claims: list = []
         self.session_start = time.time()
+        
+        # Ensure file exists and is writable
+        if not os.path.exists(ANALYTICS_FILE):
+             self._save()
+             
         self._load()
     
     def _load(self):
@@ -88,9 +93,9 @@ class EarningsTracker:
         self.claims.append(asdict(record))
         logger.info(f"📈 Recorded: {faucet} {'✓' if success else '✗'} {amount} {currency}")
         
-        # Save periodically (every 10 claims)
-        if len(self.claims) % 10 == 0:
-            self._save()
+        
+        # Save immediately to ensure data persistence
+        self._save()
     
     def get_session_stats(self) -> Dict[str, Any]:
         """Get statistics for the current session."""

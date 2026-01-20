@@ -61,6 +61,12 @@ class JobScheduler:
         self.proxy_manager = proxy_manager
         self.queue: List[Job] = []
         self.running_jobs: Dict[str, asyncio.Task] = {}  # Key: profile.username + job.name
+        
+        # Startup Checks
+        if self.proxy_manager:
+             if len(self.proxy_manager.proxies) < 3:
+                 logger.warning(f"⚠️ LOW PROXY COUNT: Only {len(self.proxy_manager.proxies)} proxies detected. Recommended: 3+ for stealth.")
+        
         self.profile_concurrency: Dict[str, int] = {}  # Key: profile.username
         self._stop_event = asyncio.Event()
         
@@ -218,12 +224,37 @@ class JobScheduler:
         if self.proxy_manager:
             return self.proxy_manager.rotate_proxy(profile)
             
-        # Fallback to local logic if no ProxyManager
         if not profile.proxy_pool or len(profile.proxy_pool) == 0:
             return profile.proxy
         
-        # ... (rest of legacy logic remains as fallback)
-        return profile.proxy or profile.proxy_pool[0]
+        # Filter out failed proxies
+        healthy_pool = [
+            p for p in profile.proxy_pool 
+            if self.proxy_failures.get(p, {}).get('failures', 0) < MAX_PROXY_FAILURES 
+            and not self.proxy_failures.get(p, {}).get('burned', False)
+        ]
+
+        if not healthy_pool:
+             return profile.proxy
+
+        # Determine strategy
+        strategy = getattr(profile, 'proxy_rotation_strategy', 'round_robin')
+
+        if strategy == "random":
+            return random.choice(healthy_pool)
+        
+        # Default: Round Robin
+        username = profile.username
+        if username not in self.proxy_index:
+            self.proxy_index[username] = 0
+            
+        current_index = self.proxy_index[username]
+        proxy = healthy_pool[current_index % len(healthy_pool)]
+        
+        # Advance index
+        self.proxy_index[username] = (current_index + 1) % len(healthy_pool)
+        
+        return proxy
 
     def record_proxy_failure(self, proxy: str, detected: bool = False):
         """Record a proxy failure, delegating to ProxyManager if available."""

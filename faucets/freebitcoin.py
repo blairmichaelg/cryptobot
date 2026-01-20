@@ -89,8 +89,11 @@ class FreeBitcoinBot(FaucetBot):
                 result = self.page.locator("#winnings")
                 if await result.is_visible():
                     won = await result.text_content()
-                    logger.info(f"FreeBitcoin Claimed! Won: {won}")
-                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=60, amount=str(won), balance=balance)
+                    # Clean amount string (remove ' BTC', commas, etc)
+                    import re
+                    clean_amount = re.sub(r'[^\d.]', '', won)
+                    logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
+                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=60, amount=clean_amount, balance=balance)
             else:
                  logger.warning("Roll button not found (or hidden)")
                  return ClaimResult(success=False, status="Roll Button Not Found", next_claim_minutes=15, balance=balance)

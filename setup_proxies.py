@@ -40,10 +40,21 @@ async def main():
         await asyncio.sleep(5)
         
     else:
-        print("\n[WARN] No proxies found in proxies.txt")
-        print(f"-> Please edit {settings.residential_proxies_file}")
-        print("   Add your proxies in format: user:pass@ip:port")
-        print("   Get them from: https://2captcha.com/proxies (Residential)")
+        print("\n[WARN] No proxies found in file. Attempting to fetch from 2Captcha API...")
+        
+        # Attempt fetch
+        fetched = await manager.fetch_proxies_from_api()
+        
+        if fetched > 0:
+            print(f"\n[OK] Successfully fetched {fetched} proxies from API!")
+            print("Validating connectivity...")
+            asyncio.create_task(manager.validate_all_proxies())
+            await asyncio.sleep(5)
+        else:
+            print("\n[FAIL] Could not fetch proxies from API.")
+            print(f"-> Please manually edit {settings.residential_proxies_file}")
+            print("   Add your proxies in format: user:pass@ip:port")
+            print("   Get them from: https://2captcha.com/proxies (Residential)")
 
 if __name__ == "__main__":
     asyncio.run(main())

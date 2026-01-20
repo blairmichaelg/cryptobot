@@ -31,6 +31,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Gen 3.0 Smart Crypto Farm - Job Scheduler")
     parser.add_argument("--visible", action="store_true", help="Show browser")
     parser.add_argument("--wallet-check", action="store_true", help="Check Electrum")
+    parser.add_argument("--single", type=str, help="Run only a specific faucet (e.g. 'firefaucet')")
     args = parser.parse_args()
 
     settings = BotSettings()
@@ -90,7 +91,18 @@ async def main():
                 profiles.append(AccountProfile(faucet="fire_faucet", username=settings.firefaucet_username, password=settings.firefaucet_password))
             if settings.cointiply_username:
                 profiles.append(AccountProfile(faucet="cointiply", username=settings.cointiply_username, password=settings.cointiply_password))
-            # ... add others as needed for legacy ...
+            if settings.freebitcoin_username:
+                profiles.append(AccountProfile(faucet="freebitcoin", username=settings.freebitcoin_username, password=settings.freebitcoin_password))
+            if settings.dutchy_username:
+                profiles.append(AccountProfile(faucet="dutchy", username=settings.dutchy_username, password=settings.dutchy_password))
+        
+        # Filter if --single provided
+        if args.single:
+            target = args.single.lower().replace("_", "")
+            profiles = [p for p in profiles if target in p.faucet.lower().replace("_", "")]
+            if not profiles:
+                logger.warning(f"No profiles found matching '{args.single}'")
+                return
 
         # 2Captcha Proxy Integration (Sticky Sessions)
         if proxy_manager:

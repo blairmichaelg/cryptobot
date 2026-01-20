@@ -6,9 +6,10 @@ After=network.target
 Type=simple
 User=azureuser
 WorkingDirectory=/home/azureuser/backend_service
-Environment="PATH=/home/azureuser/backend_service/venv/bin:/usr/bin:/usr/local/bin"
-Environment="DISPLAY=:99"
+EnvironmentFile=/home/azureuser/backend_service/.env
+# Override HEADLESS if needed, though .env should handle it
 Environment="HEADLESS=true"
+Environment="DISPLAY=:99"
 # Headless X11 support via xvfb-run
 ExecStart=/usr/bin/xvfb-run -a --server-args="-screen 0 1280x1024x24 -ac" /home/azureuser/backend_service/venv/bin/python main.py
 Restart=always
