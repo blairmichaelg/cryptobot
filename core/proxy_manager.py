@@ -130,111 +130,44 @@ class ProxyManager:
             logger.warning(f"[ERROR] Proxy {proxy_key} latency check failed: {e}")
             return None
 
-    def record_failure(self, proxy_str: str, detected: bool = False):
+    def record_failure(self, proxy_str: str, detected: bool = False, status_code: int = 0):
         """
-        Record a proxy failure.
-        
-        Args:
-            proxy_str: The full proxy URL string
-            detected: Whether the proxy was specifically detected as a bot by a site
+        Record a proxy failure with conservative cooldowns.
+        Handles session-based proxies by only cooling down the specific session,
+        unless a true IP block is confirmed (which is hard to know for sure).
         """
-        # Use FULL proxy string as key (including session ID) to track each session independently
-        # This prevents burning all sessions when one session is detected
         proxy_key = proxy_str
-        
-        # Normalize the key: remove protocol prefix but keep everything else (including session)
         if "://" in proxy_key:
-            proxy_key = proxy_key.split("://", 1)[1]  # Remove http:// or https://
+            proxy_key = proxy_key.split("://", 1)[1]
             
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
         
-        if detected:
-            # Detection: Put on long cooldown
-            self.proxy_cooldowns[proxy_key] = time.time() + self.DETECTION_COOLDOWN
-            logger.error(f"[BURNED] Proxy session detected by site. Cooldown for {self.DETECTION_COOLDOWN/60:.0f}m: {proxy_key}")
-        else:
-        # Check if we need to remove from ALL pool if truly dead
-        if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT * 2:
-            if proxy_key not in self.dead_proxies:
-                self.dead_proxies.append(proxy_key)
-                logger.error(f"[DEAD] Proxy {proxy_key} removed permanently after multiple cooldowns.")
+        now = time.time()
+        if detected or status_code == 403:
+            # 403 or detection: 1 hour cooldown for THIS session
+            self.proxy_cooldowns[proxy_key] = now + self.DETECTION_COOLDOWN
+            logger.error(f"[COOLDOWN] Proxy session {proxy_key} detected/403. Cooling down for 1h.")
+            
+            # If we see MANY sessions from the same IP failing, we could ban the IP,
+            # but for now, let's just rotate sessions.
+        elif self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
+            # Consistent connection failure: 5 min cooldown
+            self.proxy_cooldowns[proxy_key] = now + self.FAILURE_COOLDOWN
+            logger.warning(f"[COOLDOWN] Proxy session {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooling down for 5m.")
 
+        # Trigger cleanup
         self.remove_dead_proxies()
         
-        if len(self.proxies) < 5 and self.settings.use_2captcha_proxies:
-            logger.warning("📉 Proxy pool low (< 5). Triggering background replenishment...")
-            asyncio.create_task(self.fetch_proxies_from_api(100))
-
-    def get_proxy_stats(self, proxy: Proxy) -> Dict:
-        """
-        Get statistics for a specific proxy.
-        
-        Returns:
-            Dict with avg_latency, min_latency, max_latency, measurement_count, is_dead
-        """
-        proxy_key = self._proxy_key(proxy)
-        latencies = self.proxy_latency.get(proxy_key, [])
-        
-        if not latencies:
-            return {
-                "avg_latency": None,
-                "min_latency": None,
-                "max_latency": None,
-                "measurement_count": 0,
-                "is_dead": proxy_key in self.dead_proxies
-            }
-        
-        return {
-            "avg_latency": sum(latencies) / len(latencies),
-            "min_latency": min(latencies),
-            "max_latency": max(latencies),
-            "measurement_count": len(latencies),
-            "is_dead": proxy_key in self.dead_proxies
-        }
-
-    async def health_check_all_proxies(self) -> Dict[str, Any]:
-        """
-        Perform health check on all assigned proxies, measuring latency.
-        
-        Returns:
-            Summary of health check results
-        """
-        if not self.proxies:
-            return {"total": 0, "healthy": 0, "dead": 0}
-        
-        logger.info(f"[HEALTH] Running health check on {len(self.proxies)} proxies...")
-        
-        semaphore = asyncio.Semaphore(10)
-        
-        async def check_with_semaphore(proxy: Proxy):
-            async with semaphore:
-                return await self.measure_proxy_latency(proxy)
-        
-        results = await asyncio.gather(*[check_with_semaphore(p) for p in self.proxies])
-        
-        healthy = sum(1 for r in results if r is not None)
-        dead = len(self.dead_proxies)
-        
-        # Calculate average latency of HEALTHY proxies
-        valid_latencies = [r for r in results if r is not None]
-        avg_latency = sum(valid_latencies) / len(valid_latencies) if valid_latencies else 0
-        
-        summary = {
-            "total": len(self.proxies),
-            "healthy": healthy,
-            "dead": dead,
-            "avg_latency_ms": avg_latency
-        }
-        
-        logger.info(f"[HEALTH] Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
-        return summary
+        # Check pool health - Only fetch if we are critically low
+        active_count = len(self.proxies)
+        if active_count < 3 and self.settings.use_2captcha_proxies:
+            logger.warning(f"📉 Proxy pool critically low ({active_count}). Triggering replenishment...")
+            asyncio.create_task(self.fetch_proxies_from_api(20))
 
     def remove_dead_proxies(self) -> int:
         """
         Remove dead or slow proxies from the active pool.
-        
-        Returns:
-            Number of proxies removed
+        Refreshes self.proxies based on self.all_proxies minus cooldowns.
         """
         before_count = len(self.proxies)
         now = time.time()
@@ -245,32 +178,52 @@ class ProxyManager:
             del self.proxy_cooldowns[k]
             if k in self.proxy_failures:
                 self.proxy_failures[k] = 0 # Reset failures after cooldown
-            logger.info(f"[RESTORE] Proxy {k} finished cooldown and is now active.")
+            logger.debug(f"[RESTORE] Proxy {k} finished cooldown.")
 
-        # 2. Filter active proxies: must NOT be in cooldown and must NOT be slow from the master list
+        # 2. Filter active proxies
+        # We start with ALL proxies and exclude ONLY those that are currently cooling down
         current_cooldowns = set(self.proxy_cooldowns.keys())
         
-        # Filter proxies based on master list to allow restoration
-        self.proxies = [p for p in self.all_proxies if self._proxy_key(p) not in current_cooldowns]
-        self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in current_cooldowns]
+        # Safety check: If all proxies are in cooldown, we might want to release the oldest one
+        # or just force a fetch. For now, we respect the cooldowns.
         
-        # 3. Filter out slow proxies (avg latency > threshold)
-        slow_proxies = []
-        for p in self.proxies:
+        active_proxies = []
+        for p in self.all_proxies:
+            key = self._proxy_key(p)
+            if key not in current_cooldowns:
+                active_proxies.append(p)
+                
+        # 3. Filter out slow proxies (latency check)
+        # Only check latency if we have measurements
+        final_proxies = []
+        slow_proxies_keys = []
+        
+        for p in active_proxies:
             key = self._proxy_key(p)
             latencies = self.proxy_latency.get(key, [])
-            if latencies and (sum(latencies) / len(latencies)) > self.DEAD_PROXY_THRESHOLD_MS:
-                slow_proxies.append(key)
-                self.proxy_cooldowns[key] = now + self.FAILURE_COOLDOWN # Trigger cooldown for slow ones too
+            # Only consider slow if we have enough data points (e.g. > 2)
+            if len(latencies) >= 3 and (sum(latencies) / len(latencies)) > self.DEAD_PROXY_THRESHOLD_MS:
+                slow_proxies_keys.append(key)
+                # Add to cooldown so we don't re-add it immediately
+                self.proxy_cooldowns[key] = now + self.FAILURE_COOLDOWN 
+            else:
+                final_proxies.append(p)
         
-        if slow_proxies:
-            logger.warning(f"Removing {len(slow_proxies)} SLOW proxies from pool (cooldown): {slow_proxies}")
-            self.proxies = [p for p in self.proxies if self._proxy_key(p) not in slow_proxies]
-            self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in slow_proxies]
+        if slow_proxies_keys:
+             logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {slow_proxies_keys[:3]}...")
+
+        # Update the active list
+        self.proxies = final_proxies
+        self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in current_cooldowns and self._proxy_key(p) not in slow_proxies_keys]
             
         removed = before_count - len(self.proxies)
         if removed > 0:
-            logger.info(f"[CLEANUP] Removed {removed} total dead/slow proxies from pool. Remaining: {len(self.proxies)}")
+            logger.info(f"[CLEANUP] Removed {removed} proxies (Dead/Slow). Active: {len(self.proxies)} / Total: {len(self.all_proxies)}")
+        
+        # If we removed everything, try to salvage at least one if possible, or just let the fetcher handle it
+        if not self.proxies and self.all_proxies:
+             logger.warning("⚠️ All proxies are currently in cooldown or slow!")
+             
         return removed
 
     async def validate_proxy(self, proxy: Proxy) -> bool:
