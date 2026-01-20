@@ -15,8 +15,8 @@ class TestAnalytics:
     
     def test_tracker_init_and_load(self, temp_analytics_file):
         """Test tracker initialization and loading from file (lines 39-55)."""
-        # 1. No file
-        tracker = EarningsTracker()
+        # 1. No file (storage_file is passed but doesn't exist yet)
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         assert tracker.claims == []
         
         # 2. Existing file
@@ -24,7 +24,7 @@ class TestAnalytics:
         with open(temp_analytics_file, "w") as f:
             json.dump(data, f)
             
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         assert len(tracker.claims) == 1
         assert tracker.claims[0]["faucet"] == "test"
         
@@ -32,31 +32,32 @@ class TestAnalytics:
         with open(temp_analytics_file, "w") as f:
             f.write("invalid json")
             
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         assert tracker.claims == []
 
     def test_record_claim_and_save(self, temp_analytics_file):
-        """Test recording claims and periodic saving (lines 68-94)."""
-        tracker = EarningsTracker()
+        """Test recording claims and immediate saving (lines 73-99)."""
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         
-        # Record 9 claims (no save yet)
-        for i in range(9):
-            tracker.record_claim(f"f{i}", True, 1.0, "BTC")
+        # Record 1 claim (should save immediately)
+        tracker.record_claim("f1", True, 1.0, "BTC")
         
-        assert len(tracker.claims) == 9
-        assert not os.path.exists(temp_analytics_file)
-        
-        # 10th claim triggers save (92-93)
-        tracker.record_claim("f9", True, 1.0, "BTC")
         assert os.path.exists(temp_analytics_file)
         
         with open(temp_analytics_file, "r") as f:
             data = json.load(f)
-            assert len(data["claims"]) == 10
+            assert len(data["claims"]) == 1
+            assert data["claims"][0]["faucet"] == "f1"
 
-    def test_get_session_stats(self):
+        # Record another (should also save)
+        tracker.record_claim("f2", True, 0.5, "LTC")
+        with open(temp_analytics_file, "r") as f:
+            data = json.load(f)
+            assert len(data["claims"]) == 2
+
+    def test_get_session_stats(self, temp_analytics_file):
         """Test session statistics calculation (lines 95-117)."""
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         tracker.session_start = time.time() - 3600 # 1h ago
         
         # Pre-session claim
@@ -71,9 +72,9 @@ class TestAnalytics:
         assert stats["success_rate"] == 50.0
         assert stats["earnings_by_currency"]["BTC"] == 5
 
-    def test_get_faucet_stats(self):
+    def test_get_faucet_stats(self, temp_analytics_file):
         """Test per-faucet statistics (lines 119-146)."""
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         now = time.time()
         tracker.claims = [
             {"timestamp": now - 3600, "faucet": "f1", "success": True, "amount": 100},
@@ -93,9 +94,9 @@ class TestAnalytics:
         stats_short = tracker.get_faucet_stats(hours=1)
         assert "f2" not in stats_short
 
-    def test_get_hourly_rate(self):
+    def test_get_hourly_rate(self, temp_analytics_file):
         """Test hourly rate calculation (lines 148-174)."""
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         now = time.time()
         tracker.claims = [
             {"timestamp": now - 1800, "faucet": "f1", "success": True, "amount": 100},
@@ -111,9 +112,9 @@ class TestAnalytics:
         assert list(rate_f1.keys()) == ["f1"]
         assert rate_f1["f1"] == 100 / 1
 
-    def test_get_daily_summary(self):
+    def test_get_daily_summary(self, temp_analytics_file):
         """Test human-readable summary (lines 176-200)."""
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         tracker.record_claim("test_faucet", True, 0.0001, "BTC")
         summary = tracker.get_daily_summary()
         assert "test_faucet" in summary
@@ -127,7 +128,7 @@ class TestAnalytics:
 
     def test_save_error(self, temp_analytics_file):
         """Test save error handling (lines 65-66)."""
-        tracker = EarningsTracker()
+        tracker = EarningsTracker(storage_file=str(temp_analytics_file))
         # Mock open to fail
         with patch("builtins.open", side_effect=PermissionError("Denied")):
             tracker._save() # Should log warning instead of crashing

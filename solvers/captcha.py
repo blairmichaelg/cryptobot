@@ -510,32 +510,46 @@ class CaptchaSolver:
         return None
 
     async def _inject_token(self, page, method, token):
-        if method == "hcaptcha":
-            await page.evaluate(f'document.querySelector("[name=h-captcha-response]").innerHTML = "{token}"')
-            await page.evaluate(f'document.querySelector("[name=g-recaptcha-response]").innerHTML = "{token}"')
-        elif method == "userrecaptcha":
-            await page.evaluate(f'document.getElementById("g-recaptcha-response").innerHTML = "{token}"')
-        elif method == "turnstile":
-            await page.evaluate(f'document.querySelector("[name=cf-turnstile-response]").value = "{token}"')
-        
-        # Trigger generic callbacks that many sites use to proceed after token injection
-        await page.evaluate("""(token) => {
-            const callbacks = ['onCaptchaSuccess', 'onhCaptchaSuccess', 'onTurnstileSuccess', 'recaptchaCallback', 'grecaptchaCallback', 'captchaCallback'];
-            callbacks.forEach(cb => {
-                if (typeof window[cb] === 'function') {
-                    try { window[cb](token); } catch(e) { console.error('Callback error:', e); }
-                }
-            });
+        """
+        Injects the solver token into the page's hidden response fields.
+        Uses defensive checks to avoid null-pointer errors.
+        """
+        await page.evaluate(f"""(token) => {{
+            const setVal = (sel, val) => {{
+                const el = document.querySelector(sel);
+                if (el) {{
+                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') el.value = val;
+                    else el.innerHTML = val;
+                }}
+            }};
+
+            if ("{method}" === "hcaptcha") {{
+                setVal('[name="h-captcha-response"]', token);
+                setVal('[name="g-recaptcha-response"]', token);
+            }} else if ("{method}" === "userrecaptcha") {{
+                setVal('#g-recaptcha-response', token);
+                setVal('[name="g-recaptcha-response"]', token);
+            }} else if ("{method}" === "turnstile") {{
+                setVal('[name="cf-turnstile-response"]', token);
+            }}
             
-            // For hCaptcha specifically, sometimes they listen for 'verify' event or change
-            ['h-captcha-response', 'g-recaptcha-response', 'cf-turnstile-response'].forEach(name => {
-                const el = document.querySelector(`[name="${name}"]`);
-                if (el) {
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-            });
-        }""", token)
+            // Trigger generic callbacks that many sites use to proceed after token injection
+            const callbacks = ['onCaptchaSuccess', 'onhCaptchaSuccess', 'onTurnstileSuccess', 'recaptchaCallback', 'grecaptchaCallback', 'captchaCallback'];
+            callbacks.forEach(cb => {{
+                if (typeof window[cb] === 'function') {{
+                    try {{ window[cb](token); }} catch(e) {{ console.error('Callback error:', e); }}
+                }}
+            }});
+            
+            // Dispatch events to notify the site of the change
+            ['h-captcha-response', 'g-recaptcha-response', 'cf-turnstile-response'].forEach(name => {{
+                const el = document.querySelector(`[name="${{name}}"]`);
+                if (el) {{
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                }}
+            }});
+        }}""", token)
 
     async def _wait_for_human(self, page, timeout):
         """

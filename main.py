@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+
+# Load environment variables from .env file into os.environ
+load_dotenv()
+
 import asyncio
 import argparse
 import logging
@@ -9,11 +14,6 @@ from dataclasses import dataclass
 
 from core.config import BotSettings, AccountProfile
 from core.logging_setup import setup_logging
-from dotenv import load_dotenv
-
-# Load environment variables from .env file into os.environ
-load_dotenv()
-
 from core.wallet_manager import WalletDaemon
 from browser.instance import BrowserManager
 from faucets.base import ClaimResult

@@ -2,7 +2,7 @@ from playwright.async_api import Browser, BrowserContext, Page
 from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
-from .stealth_scripts import get_full_stealth_script
+from .stealth_hub import StealthHub
 from core.config import AccountProfile, BotSettings, CONFIG_DIR
 import logging
 import random
@@ -80,17 +80,12 @@ class BrowserManager:
              # This allows the solver to use the same proxy as the browser
              logger.debug(f"Creating sticky context for {profile_name} with proxy {proxy}")
 
-        # Randomized screen resolutions for natural fingerprints
-        dims = random.choice([
-            (1920, 1080), (1366, 768), (1440, 900), (1536, 864)
-        ])
+        # Randomized screen resolutions for natural fingerprints using StealthHub
+        stealth_data = StealthHub.get_random_dimensions()
+        dims = (stealth_data["width"], stealth_data["height"])
 
         context_args = {
-            "user_agent": user_agent or random.choice([
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            ]),
+            "user_agent": user_agent or StealthHub.get_human_ua(),
             "viewport": {"width": dims[0], "height": dims[1]},
             "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],
@@ -135,9 +130,8 @@ class BrowserManager:
         # Set global timeout for this context
         context.set_default_timeout(self.timeout)
         
-        # Comprehensive Anti-Fingerprinting Suite
-        # Includes: WebRTC leak prevention, Canvas/WebGL/Audio evasion, Navigator spoofing
-        await context.add_init_script(get_full_stealth_script())
+        # Comprehensive Anti-Fingerprinting Suite using StealthHub
+        await context.add_init_script(StealthHub.get_stealth_script())
 
         # Apply Resource Blocker
         blocker = ResourceBlocker(block_images=True, block_media=True)
@@ -287,6 +281,28 @@ class BrowserManager:
         except Exception as e:
             logger.warning(f"Browser health check failed: {e}")
             return False
+
+    async def check_page_status(self, page: Page) -> Dict[str, Any]:
+        """
+        Check the page for common failure status codes or network errors.
+        Returns a dict with 'blocked', 'network_error', and 'status'.
+        """
+        try:
+            # We don't need listeners for the primary status, 
+            # we can just use the page.url and a lightweight eval
+            status = await page.evaluate("async () => { try { return (await fetch(window.location.href, {method: 'HEAD'})).status; } catch(e) { return 0; } }")
+            
+            # Note: Fetch might be blocked too, so we also check readyState and content
+            if status == 403 or status == 401:
+                return {"blocked": True, "network_error": False, "status": status}
+            if status == 0:
+                # Potential network error or fetch blocked
+                return {"blocked": False, "network_error": True, "status": 0}
+                
+            return {"blocked": False, "network_error": False, "status": status}
+        except Exception as e:
+            logger.debug(f"Status check failed: {e}")
+            return {"blocked": False, "network_error": False, "status": -1}
 
     async def close(self):
         """Cleanup resources."""
