@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-01-20T09:34:06.970528",
+  "period_hours": 24,
+  "earnings_usd": 0.0,
+  "earnings_by_currency": {},
+  "costs": {
+    "captcha_cost": 0.0,
+    "proxy_cost": 0.0,
+    "total_cost": 0.0
+  },
+  "net_profit": 0.0,
+  "roi_percentage": 0.0,
+  "captcha_balance": null
+}
