@@ -8,7 +8,7 @@ import logging
 import random
 import os
 import json
-from typing import Optional
+from typing import Optional, List
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -103,11 +103,15 @@ class BrowserManager:
             saved_proxy = await self.load_proxy_binding(profile_name)
             
             if saved_proxy:
-                # Sticky session: ALWAYS use the saved proxy
+                # Sticky session: Use saved proxy unless a new one is explicitly requested (Rotation)
                 if proxy and proxy != saved_proxy:
-                    logger.warning(f"⚠️ Proxy mismatch for {profile_name}. Requested: {proxy}, Stuck to: {saved_proxy}")
-                    logger.info(f"🔗 Honoring sticky session - using saved proxy {saved_proxy}")
-                proxy = saved_proxy  # Override requested proxy with sticky one
+                    logger.info(f"🔄 Rotation detected for {profile_name}. Updating sticky binding: {saved_proxy} -> {proxy}")
+                    await self.save_proxy_binding(profile_name, proxy)
+                else:
+                    # No specific proxy requested, or same one requested -> Stick to saved
+                    if not proxy:
+                        logger.debug(f"🔗 Using sticky proxy for {profile_name}: {saved_proxy}")
+                    proxy = saved_proxy
             elif proxy:
                 # No existing binding, create one
                 logger.info(f"📌 Binding {profile_name} to proxy {proxy}")
