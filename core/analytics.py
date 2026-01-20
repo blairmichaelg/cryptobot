@@ -36,7 +36,8 @@ class EarningsTracker:
     Persists data to disk for historical analysis.
     """
     
-    def __init__(self):
+    def __init__(self, storage_file: Optional[str] = None):
+        self.storage_file = storage_file or ANALYTICS_FILE
         self.claims: list = []
         self.session_start = time.time()
         
@@ -49,11 +50,11 @@ class EarningsTracker:
     def _load(self):
         """Load existing analytics data from disk."""
         try:
-            if os.path.exists(ANALYTICS_FILE):
-                with open(ANALYTICS_FILE, "r") as f:
+            if os.path.exists(self.storage_file):
+                with open(self.storage_file, "r") as f:
                     data = json.load(f)
                     self.claims = data.get("claims", [])
-                    logger.info(f"📊 Loaded {len(self.claims)} historical claims")
+                    logger.info(f"📊 Loaded {len(self.claims)} historical claims from {self.storage_file}")
         except Exception as e:
             logger.warning(f"Could not load analytics: {e}")
             self.claims = []
@@ -65,7 +66,7 @@ class EarningsTracker:
                 "claims": self.claims[-1000:],  # Keep last 1000 claims
                 "last_updated": time.time()
             }
-            with open(ANALYTICS_FILE, "w") as f:
+            with open(self.storage_file, "w") as f:
                 json.dump(data, f)
         except Exception as e:
             logger.warning(f"Could not save analytics: {e}")
@@ -207,12 +208,6 @@ class EarningsTracker:
     def get_trending_analysis(self, periods: int = 7) -> Dict[str, Any]:
         """
         Analyze earnings trends over multiple periods.
-        
-        Args:
-            periods: Number of 24-hour periods to analyze
-            
-        Returns:
-            Dict with trend data for each faucet
         """
         trends = {}
         now = time.time()
@@ -253,6 +248,33 @@ class EarningsTracker:
             trends[faucet]["avg_daily_earnings"] = sum(trends[faucet]["daily_earnings"]) / periods
         
         return trends
+
+    def check_performance_alerts(self, hours: int = 2) -> List[str]:
+        """
+        Check for significant drops in performance compared to historical averages.
+        Returns a list of alert messages.
+        """
+        alerts = []
+        recent_stats = self.get_faucet_stats(hours)
+        historical_stats = self.get_trending_analysis(7)
+        
+        for faucet, stats in recent_stats.items():
+            if stats['total'] < 2: continue # Not enough data for alert
+            
+            # 1. Success Rate Drop
+            recent_sr = stats['success_rate']
+            
+            if recent_sr < 40:
+                alerts.append(f"⚠️ LOW SUCCESS RATE: {faucet} is at {recent_sr:.0f}% over last {hours}h.")
+            
+            # 2. Earnings Drop
+            recent_hourly = self.get_hourly_rate(faucet, hours).get(faucet, 0)
+            hist_avg_hourly = historical_stats.get(faucet, {}).get('avg_daily_earnings', 0) / 24
+            
+            if hist_avg_hourly > 0 and recent_hourly < (hist_avg_hourly * 0.3):
+                alerts.append(f"📉 EARNINGS DROP: {faucet} earnings are 70% below average.")
+                
+        return alerts
 
     def generate_automated_report(self, save_to_file: bool = True) -> str:
         """
@@ -347,6 +369,50 @@ class EarningsTracker:
                 logger.warning(f"Failed to save report: {e}")
         
         return report
+
+
+        return report
+
+
+class ProfitabilityOptimizer:
+    """
+    Analyzes earnings data to provide optimization recommendations for the bot.
+    Suggests job priorities and identifies low-performing faucets/proxies.
+    """
+    
+    def __init__(self, tracker: EarningsTracker):
+        self.tracker = tracker
+
+    def suggest_job_priorities(self) -> Dict[str, float]:
+        """
+        Calculates a priority multiplier for each faucet based on recent stability and earnings.
+        Returns a mapping of faucet_name -> multiplier (0.5 to 2.0).
+        """
+        stats = self.tracker.get_faucet_stats(24)
+        hourly_rates = self.tracker.get_hourly_rate(hours=24)
+        
+        priorities = {}
+        for faucet, fstats in stats.items():
+            # Success rate component (0.5 to 1.0)
+            sr = fstats.get('success_rate', 50)
+            sr_factor = max(0.5, sr / 100)
+            
+            # Earnings component (base 1.0, increases for top performers)
+            rate = hourly_rates.get(faucet, 0)
+            # Find max rate to normalize
+            max_rate = max(hourly_rates.values()) if hourly_rates else 1
+            rate_factor = 1.0 + (rate / max_rate) if max_rate > 0 else 1.0
+            
+            # Combine sr_factor and rate_factor
+            priority = sr_factor * rate_factor
+            priorities[faucet] = max(0.5, min(priority, 2.0))
+            
+        return priorities
+
+    def get_underperforming_profiles(self, threshold_sr: float = 30.0) -> List[str]:
+        """Identifies profiles/faucets that are consistently failing."""
+        stats = self.tracker.get_faucet_stats(48)
+        return [f for f, s in stats.items() if s['success_rate'] < threshold_sr and s['total'] >= 5]
 
 
 # Global tracker instance

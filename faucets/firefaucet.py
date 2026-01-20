@@ -98,12 +98,22 @@ class FireFaucetBot(FaucetBot):
             # Submit form via JavaScript (bypasses overlay blockers)
             logger.info(f"[{self.faucet_name}] Submitting form...")
             await self.page.evaluate("""() => {
-                const submitBtn = document.querySelector('button.submitbtn');
-                if (submitBtn) submitBtn.click();
-                // Also try submitting the form directly
-                const form = document.querySelector('form');
-                if (form) form.submit();
+                const submitBtn = document.querySelector('button.submitbtn, button[type="submit"]');
+                if (submitBtn) {
+                     submitBtn.click();
+                } else {
+                    const form = document.querySelector('form');
+                    if (form) form.submit();
+                }
             }""")
+
+            # Fallback: physical click if evaluate didn't navigate
+            await asyncio.sleep(2)
+            if "/login" in self.page.url:
+                submit_btn = self.page.locator('button.submitbtn, button[type="submit"]')
+                if await submit_btn.count() > 0:
+                    logger.info(f"[{self.faucet_name}] Submission fallback: physical click")
+                    await self.human_like_click(submit_btn)
 
 
             

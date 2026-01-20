@@ -762,7 +762,13 @@ class FaucetBot:
         # Ensure logged in with new wrapper
         if not await self.login_wrapper():
             return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
-        return await self.claim()
+        
+        result = await self.claim()
+        # Handle cases where claim() might return a boolean (legacy)
+        if isinstance(result, bool):
+            result = ClaimResult(success=result, status="Claimed" if result else "Failed")
+            
+        return result
 
     async def ptc_wrapper(self, page: Page) -> ClaimResult:
         self.page = page
@@ -781,7 +787,7 @@ class FaucetBot:
                 faucet=self.faucet_name,
                 success=result.success,
                 amount=amount,
-                currency=getattr(self, 'coin', 'unknown'),
+                currency=getattr(self, 'coin', self._get_cryptocurrency_for_faucet()),
                 balance_after=float(result.balance) if result.balance else 0.0
             )
         except Exception as analytics_err:
@@ -825,7 +831,7 @@ class FaucetBot:
                     if isinstance(res, ClaimResult):
                         final_result = res
                         logger.info(f"[{self.faucet_name}] {name} Result: {res.status} (Wait: {res.next_claim_minutes}m)")
-                        await self._record_analytics(res)
+                        # NO ANALYTICS HERE - Handled by wrappers or caller
                             
                     elif res:
                         logger.info(f"[{self.faucet_name}] {name} Successful")
@@ -841,7 +847,6 @@ class FaucetBot:
                      # If the primary claim fails with an exception, update final_result
                      if name == "Faucet Claim":
                          final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
-                         await self._record_analytics(final_result)
                      
                      # We continue to the next task even if this one failed!
             
@@ -850,7 +855,6 @@ class FaucetBot:
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Runtime Fatal Error: {e}")
             final_result = ClaimResult(success=False, status=f"Fatal: {e}", next_claim_minutes=10)
-            await self._record_analytics(final_result)
             return final_result
         finally:
             await self.solver.close()

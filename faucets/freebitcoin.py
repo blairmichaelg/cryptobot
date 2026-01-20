@@ -47,7 +47,7 @@ class FreeBitcoinBot(FaucetBot):
 
                 submit = self.page.locator("#login_button")
                 await self.human_like_click(submit)
-                await self.page.wait_for_url(f"{self.base_url}/", timeout=15000)
+                await self.page.wait_for_url(f"{self.base_url}/", timeout=60000)
             
             # Check if logged in (url is base url, and specific element exists)
             if await self.page.locator("#balance").is_visible():
@@ -102,6 +102,7 @@ class FreeBitcoinBot(FaucetBot):
             logger.error(f"FreeBitcoin claim failed: {e}")
             return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=30)
             
+        logger.warning(f"FreeBitcoin claim reached unknown failure path. URL: {self.page.url}")
         return ClaimResult(success=False, status="Unknown Failure", next_claim_minutes=15)
 
     def get_jobs(self):

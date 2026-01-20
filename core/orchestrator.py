@@ -299,6 +299,9 @@ class JobScheduler:
             from core.registry import get_faucet_class
             bot_class = get_faucet_class(job.faucet_type)
             if not bot_class:
+                if job.faucet_type.lower() == "test":
+                    logger.warning(f"⚠️ Skipping legacy/test faucet type: {job.faucet_type}")
+                    return  # Just finish the job without error or reschedule
                 raise ValueError(f"Unknown faucet type: {job.faucet_type}")
             
             bot = bot_class(self.settings, page)
@@ -320,6 +323,15 @@ class JobScheduler:
             method = getattr(bot, job.job_type)
             result = await method(page)
             
+            # Post-execution status check
+            status_info = await self.browser_manager.check_page_status(page)
+            if status_info["blocked"]:
+                 logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
+                 self.record_proxy_failure(current_proxy, detected=True)
+            elif status_info["network_error"]:
+                 logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
+                 self.record_proxy_failure(current_proxy, detected=False)
+
             duration = time.time() - start_time
             logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
 
@@ -360,6 +372,9 @@ class JobScheduler:
         finally:
             try:
                 if context:
+                    # Save cookies before closing if it was a successful or partially successful run
+                    if "withdraw" not in job.job_type: # Skip cookie save for withdrawal-only roles if needed
+                         await self.browser_manager.save_cookies(context, username)
                     await context.close()
             except Exception as cleanup_error:
                 logger.warning(f"Context cleanup failed for {job.name}: {cleanup_error}")
@@ -416,22 +431,35 @@ class JobScheduler:
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
                 
-                # Check Off-Peak and Profitability for Withdrawals
+                # Advanced Withdrawal Scheduling (New Gen 3.0 Logic)
                 if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():
                     from core.withdrawal_analytics import get_analytics
-                    analytics = get_analytics()
+                    from core.analytics import get_tracker
                     
-                    # Note: We don't have the current balance here easily, 
-                    # but we can check if it's generally off-peak
-                    if not self.is_off_peak_time():
-                        logger.debug(f"⏳ Scheduling: Postponing withdrawal {job.name} until off-peak hours.")
-                        job.next_run = now + 1800  # Check again in 30 minutes
+                    analytics = get_analytics()
+                    tracker = get_tracker()
+                    
+                    # Try to get current balance from tracker
+                    cur_balance = 0.0
+                    faucet_stats = tracker.get_faucet_stats(24)
+                    if job.faucet_type.lower() in faucet_stats:
+                        cur_balance = faucet_stats[job.faucet_type.lower()].get("earnings", 0.0)
+                    
+                    # Get recommendation
+                    crypto = "unknown" # FaucetBot subclasses should probably specify this
+                    recommendation = analytics.recommend_withdrawal_strategy(
+                        cur_balance, crypto, job.faucet_type
+                    )
+                    
+                    if recommendation["action"] == "wait":
+                        logger.info(f"⏳ Withdrawal Deferred for {job.name}: {recommendation['reason']}")
+                        job.next_run = time.time() + 3600 # Check again in 1 hour
                         continue
-                        
+                    
                     # We can also check historical performance to skip low-yield faucets
                     f_stats = analytics.get_faucet_performance(hours=168).get(job.faucet_type, {})
                     if f_stats and f_stats.get("success_rate", 100) < 20:
-                        logger.warning(f"⚠️ Scheduling: Skipping {job.name} due to low historical success rate ({f_stats.get('success_rate')}%)")
+                        logger.warning(f"⚠️ Skipping low-performance faucet withdrawal: {job.faucet_type}")
                         job.next_run = now + 86400  # Try again tomorrow
                         continue
 

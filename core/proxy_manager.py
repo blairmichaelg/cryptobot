@@ -376,6 +376,24 @@ class ProxyManager:
             logger.error(f"Failed to parse proxy string '{proxy_str}': {e}")
             return None
 
+    def rotate_session_id(self, base_username: str) -> str:
+        """
+        Generates a fresh 2Captcha session ID for a base username.
+        
+        Args:
+            base_username: The base username without session parameters
+            
+        Returns:
+            New username string with session parameter: user-session-ID
+        """
+        # Remove any existing session params if present
+        pure_username = base_username
+        if "-session-" in base_username:
+            pure_username = base_username.split("-session-")[0]
+            
+        session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        return f"{pure_username}-session-{session_id}"
+
     async def fetch_proxies_from_api(self, quantity: int = 10) -> int:
         """
         Generates residential proxies by rotating session IDs.
@@ -413,11 +431,8 @@ class ProxyManager:
         new_proxies.append(template_proxy)
         
         for i in range(quantity):
-            # Generate random session ID (alphanumeric, 8 chars)
-            session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-            
-            # Construct new username: user-session-ID
-            new_username = f"{base_username}-session-{session_id}"
+            # Construct new username using rotate_session_id helper
+            new_username = self.rotate_session_id(template_proxy.username)
             
             # Create proxy string
             # Format: http://user:pass@ip:port
@@ -433,11 +448,13 @@ class ProxyManager:
             # Update file
             file_path = self.settings.residential_proxies_file
             try:
-                with open(file_path, "w") as f:
+                # Use absolute path for safety
+                abs_path = os.path.abspath(file_path)
+                with open(abs_path, "w") as f:
                     f.write("\n".join(lines_to_write))
                 
                 self.proxies = new_proxies
-                logger.info(f"✅ Generated and saved {len(new_proxies)} unique residential proxies to {file_path}")
+                logger.info(f"✅ Generated and saved {len(new_proxies)} unique residential proxies to {abs_path}")
                 return len(new_proxies)
             except Exception as e:
                 logger.error(f"Failed to save generated proxies: {e}")

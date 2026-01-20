@@ -22,4 +22,9 @@ ssh -i $SshKey $RemoteUser@$VmIp "cd $RemotePath && python3 -m venv venv && sour
 # 3. Restart Service
 ssh -i $SshKey $RemoteUser@$VmIp "sudo cp $RemotePath/deploy/faucet_worker.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart faucet_worker"
 
+# 4. Post-Deployment Health Check
+Write-Host "Verifying deployment..."
+ssh -i $SshKey $RemoteUser@$VmIp "if [ ! -f $RemotePath/.env ]; then echo '⚠️ WARNING: .env file missing on remote!'; fi"
+ssh -i $SshKey $RemoteUser@$VmIp "sleep 5 && sudo systemctl is-active faucet_worker"
+
 Write-Host "Deployment Complete!"
