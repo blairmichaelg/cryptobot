@@ -186,6 +186,7 @@ async def test_coinpayu_claim_success(mock_settings, mock_page, mock_solver):
     balance_locator = MagicMock()
     balance_locator.count = AsyncMock(return_value=1)
     balance_locator.first = MagicMock()
+    balance_locator.first.count = AsyncMock(return_value=1)
     balance_locator.first.inner_text = AsyncMock(return_value="100 coins")
     
     # Setup claim button locators
@@ -196,13 +197,18 @@ async def test_coinpayu_claim_success(mock_settings, mock_page, mock_solver):
     final_btn_locator = MagicMock()
     final_btn_locator.count = AsyncMock(return_value=1)
     
+    confirm_btn_locator = MagicMock()
+    confirm_btn_locator.count = AsyncMock(return_value=1)
+    
     def locator_side_effect(selector):
         if "v2-dashboard-card-value" in selector:
             return balance_locator
-        elif "Claim" in selector and "claim-now" not in selector:
-            return claim_btn_locator
-        elif "claim-now" in selector or "Claim Now" in selector:
+        elif "#claim-now" in selector:
             return final_btn_locator
+        elif "Claim Now" in selector:
+            return confirm_btn_locator
+        elif "Claim" in selector:
+            return claim_btn_locator
         return MagicMock()
     
     mock_page.locator.side_effect = locator_side_effect

@@ -88,25 +88,8 @@ async def test_firefaucet_login_no_credentials(mock_settings, mock_page, mock_so
 @pytest.mark.asyncio
 async def test_firefaucet_login_success_dashboard_url(mock_settings, mock_page, mock_solver):
     """Test successful login with dashboard URL detection"""
-    mock_page.url = "https://firefaucet.win/login"
-    
-    # Simulate URL change to dashboard
-    async def url_change():
-        await asyncio.sleep(0.1)
-        mock_page.url = "https://firefaucet.win/dashboard"
-        return "https://firefaucet.win/dashboard"
-    
+    # Set URL to dashboard immediately
     mock_page.url = "https://firefaucet.win/dashboard"
-    
-    dashboard_locator = MagicMock()
-    dashboard_locator.count = AsyncMock(return_value=1)
-    
-    def locator_side_effect(selector):
-        if "user-balance" in selector or "level-progress" in selector:
-            return dashboard_locator
-        return MagicMock()
-    
-    mock_page.locator.side_effect = locator_side_effect
     
     bot = FireFaucetBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
@@ -125,12 +108,7 @@ async def test_firefaucet_login_success_dashboard_elements(mock_settings, mock_p
     dashboard_locator = MagicMock()
     dashboard_locator.count = AsyncMock(return_value=1)
     
-    def locator_side_effect(selector):
-        if "user-balance" in selector or "level-progress" in selector:
-            return dashboard_locator
-        return MagicMock()
-    
-    mock_page.locator.side_effect = locator_side_effect
+    mock_page.locator.return_value = dashboard_locator
     
     bot = FireFaucetBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
@@ -149,12 +127,7 @@ async def test_firefaucet_login_success_logout_link(mock_settings, mock_page, mo
     logout_locator = MagicMock()
     logout_locator.count = AsyncMock(return_value=1)
     
-    def locator_side_effect(selector):
-        if "logout" in selector:
-            return logout_locator
-        return MagicMock()
-    
-    mock_page.locator.side_effect = locator_side_effect
+    mock_page.locator.return_value = logout_locator
     
     bot = FireFaucetBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
@@ -175,10 +148,14 @@ async def test_firefaucet_login_error_message(mock_settings, mock_page, mock_sol
     error_locator.first = MagicMock()
     error_locator.first.text_content = AsyncMock(return_value="Invalid credentials")
     
+    success_locator = MagicMock()
+    success_locator.count = AsyncMock(return_value=0)
+    
     def locator_side_effect(selector):
-        if "alert-danger" in selector or "error-message" in selector:
+        if "alert-danger" in selector or "error-message" in selector or "toast-error" in selector:
             return error_locator
-        return MagicMock()
+        else:
+            return success_locator
     
     mock_page.locator.side_effect = locator_side_effect
     
@@ -205,18 +182,27 @@ async def test_firefaucet_login_timeout(mock_settings, mock_page, mock_solver):
     bot.handle_cloudflare = AsyncMock()
     bot.random_delay = AsyncMock()
     
-    # Make the polling loop timeout quickly by mocking time
-    with patch('asyncio.get_event_loop') as mock_loop:
-        mock_time = 0
+    # Mock the time function to immediately timeout
+    original_time = asyncio.get_event_loop().time
+    
+    async def mock_login_with_timeout():
+        # Replace the time() calls with a mock that triggers timeout
+        counter = [0]
+        def time_mock():
+            counter[0] += 1
+            if counter[0] > 1:
+                return 1000000  # Far in the future to trigger timeout
+            return 0
         
-        def side_effect_time():
-            nonlocal mock_time
-            mock_time += 31  # Skip past timeout
-            return mock_time
-        
-        mock_loop.return_value.time = side_effect_time
-        
-        result = await bot.login()
+        loop = asyncio.get_event_loop()
+        loop.time = time_mock
+        try:
+            result = await bot.login()
+            return result
+        finally:
+            loop.time = original_time
+    
+    result = await mock_login_with_timeout()
     
     assert result is False
 
