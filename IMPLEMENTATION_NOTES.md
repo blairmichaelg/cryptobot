@@ -270,3 +270,151 @@ async def get_balance(self, selector: str) -> str:
 * **Cross-Platform**: Use `pathlib` for all file paths.
 - **Proxies**: `ProxyManager` dynamically whitelists the current public IP (Dev or Prod) with 2Captcha to fetch usable proxies (`use_2captcha_proxies=True`).
 - **Deployment**: Runs on Azure VM (Linux) via `systemd` service (`faucet_worker.service`). Enforces simple, headless execution.
+
+## Pick.io Faucet Family Registration
+
+### Overview
+
+Automated registration system for all 11 Pick.io faucet sites, sharing a common backend and registration process.
+
+### Supported Sites
+
+1. **LitePick.io** - LTC faucet
+2. **TronPick.io** - TRX faucet
+3. **DogePick.io** - DOGE faucet
+4. **SolPick.io** - SOL faucet
+5. **BinPick.io** - BNB faucet
+6. **BchPick.io** - BCH faucet
+7. **TonPick.io** - TON faucet
+8. **PolygonPick.io** - MATIC faucet
+9. **DashPick.io** - DASH faucet
+10. **EthPick.io** - ETH faucet
+11. **UsdPick.io** - USDT faucet
+
+### Architecture
+
+#### Base Class ([pick_base.py](faucets/pick_base.py))
+
+**PickFaucetBase** provides shared functionality for all Pick family faucets:
+
+- **Registration Method**: `async register(email, password, wallet_address)`
+  - Navigates to `/register.php`
+  - Fills email, password, confirm password fields
+  - Optionally fills wallet address
+  - Solves hCaptcha/Turnstile captchas
+  - Verifies registration success
+  
+- **Connection Retry Logic**: `_navigate_with_retry(url, max_retries=3)`
+  - Handles ERR_CONNECTION_CLOSED and TLS fingerprinting issues
+  - Exponential backoff: 5s, 10s, 20s
+  - Critical for Pick family's aggressive anti-bot measures
+
+- **Login Method**: Standard email/password login with captcha support
+- **Claim Method**: Hourly faucet claims with cooldown detection
+- **Withdraw Method**: Automated withdrawals with balance threshold checks
+
+#### Individual Faucet Classes
+
+Each faucet has a minimal subclass that sets `faucet_name` and `base_url`:
+
+```python
+# Example: faucets/litepick.py
+class LitePickBot(PickFaucetBase):
+    def __init__(self, settings, page, action_lock=None):
+        super().__init__(settings, page, action_lock)
+        self.faucet_name = "LitePick"
+        self.base_url = "https://litepick.io"
+```
+
+#### Dynamic Bot Class ([pick.py](faucets/pick.py))
+
+**PickFaucetBot** enables dynamic instantiation for the registration script:
+
+```python
+class PickFaucetBot(PickFaucetBase):
+    def __init__(self, settings, page, site_name, site_url, **kwargs):
+        super().__init__(settings, page, **kwargs)
+        self.faucet_name = site_name
+        self.base_url = site_url
+        self.coin = site_name.replace("Pick", "").upper()
+```
+
+### Registration Script ([register_faucets.py](register_faucets.py))
+
+#### Usage
+
+```bash
+# Register all 11 Pick.io faucets
+python register_faucets.py --email your@email.com --password yourpass123
+
+# Register specific faucets only
+python register_faucets.py --email your@email.com --password yourpass123 --faucets litepick tronpick
+
+# Show browser during registration (visible mode)
+python register_faucets.py --email your@email.com --password yourpass123 --visible
+```
+
+#### Features
+
+- **Batch Registration**: Registers all 11 faucets with same credentials
+- **Selective Registration**: Use `--faucets` flag to register specific sites
+- **Session Management**: Isolated browser contexts with sticky session support
+- **Cookie Persistence**: Automatically saves cookies for future logins
+- **Summary Report**: Shows success/failure for each faucet
+- **Error Handling**: Continues on individual failures, reports at end
+
+#### Configuration
+
+All faucets configured in `PICK_FAUCETS` registry:
+
+```python
+PICK_FAUCETS = [
+    RegistrationConfig("LTC", "LitePick", "https://litepick.io"),
+    RegistrationConfig("TRX", "TronPick", "https://tronpick.io"),
+    # ... all 11 faucets
+]
+```
+
+### Registration Flow
+
+1. **Initialize Browser**: Launch Camoufox with anti-detection
+2. **For Each Faucet**:
+   - Create isolated browser context with profile name `register_{FaucetName}`
+   - Navigate to `{base_url}/register.php` with retry logic
+   - Handle Cloudflare challenges
+   - Fill registration form fields
+   - Solve hCaptcha/Turnstile if present
+   - Submit registration
+   - Verify success (looks for "successfully registered", "welcome", etc.)
+   - Save cookies for persistent session
+3. **Generate Summary**: Report successful and failed registrations
+
+### Testing
+
+Unit tests in [test_pick_registration.py](tests/test_pick_registration.py):
+
+- Verify all 11 bot classes have correct `base_url`
+- Verify all bots inherit `register()` method
+- Test registration without base_url fails gracefully
+- Validate dynamic bot creation via `PickFaucetBot`
+
+### Key Implementation Details
+
+**Robust Navigation**: Pick family sites use TLS fingerprinting and can fail with `ERR_CONNECTION_CLOSED`. The `_navigate_with_retry()` method provides exponential backoff retry logic.
+
+**Captcha Handling**: All sites use hCaptcha or Turnstile. The base class integrates with `CaptchaSolver` to handle both.
+
+**Success Detection**: Multiple indicators checked:
+- "successfully registered"
+- "registration successful"
+- "account created"
+- "welcome"
+- Auto-login to dashboard after registration
+
+**Wallet Integration**: Optional wallet address can be provided during registration, pulled from `settings.wallet_addresses[coin_symbol]`
+
+### Status
+
+✅ **Complete**: All 11 Pick.io faucets support automated registration
+✅ **Tested**: Registration script verified with help command and dynamic bot creation
+✅ **Documented**: Full implementation notes and usage examples provided
