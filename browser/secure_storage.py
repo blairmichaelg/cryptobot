@@ -11,6 +11,7 @@ import logging
 import base64
 from typing import Optional, List, Dict, Any
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
+from core.config import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,7 @@ class SecureCookieStorage:
             storage_dir: Directory to store encrypted cookies. 
                         Defaults to 'cookies' in project root.
         """
-        self.storage_dir = storage_dir or os.path.join(
-            os.path.dirname(__file__), "..", "cookies_encrypted"
-        )
+        self.storage_dir = storage_dir or str(CONFIG_DIR / "cookies_encrypted")
         os.makedirs(self.storage_dir, exist_ok=True)
         
         self._fernet = self._initialize_fernet()

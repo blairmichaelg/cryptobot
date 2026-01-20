@@ -330,6 +330,13 @@ class FaucetBot:
             checks += 1
             
             try:
+                # Check for page crash/unresponsiveness
+                if not await self.detect_page_crash():
+                    logger.warning(f"[{self.faucet_name}] Page unresponsive during CF check. Refreshing...")
+                    await self.page.reload()
+                    await asyncio.sleep(5)
+                    continue
+
                 # Check page title for Cloudflare indicators
                 title = (await self.page.title()).lower()
                 title_detected = any(indicator in title for indicator in cloudflare_indicators)
@@ -338,8 +345,24 @@ class FaucetBot:
                 element_detected = False
                 for selector in cloudflare_selectors:
                     try:
-                        if await self.page.locator(selector).is_visible(timeout=500):
+                        locator = self.page.locator(selector)
+                        if await locator.is_visible(timeout=500):
                             element_detected = True
+                            
+                            # INTERACTION: Try to click Turnstile checkbox if visible
+                            if "turnstile" in selector:
+                                try:
+                                    # Find the checkbox iframe or element
+                                    # Turnstile usually has a checkbox in an iframe
+                                    if await locator.count() > 0:
+                                        # Random delay and movement before interaction
+                                        await self.idle_mouse(random.uniform(0.5, 1.5))
+                                        # Use human_like_click on the locator
+                                        await self.human_like_click(locator)
+                                        logger.info(f"[{self.faucet_name}] 🖱️ Clicked Turnstile checkbox")
+                                except Exception as click_err:
+                                    logger.debug(f"Failed to click Turnstile: {click_err}")
+                                    
                             break
                     except Exception:
                         continue
@@ -349,12 +372,15 @@ class FaucetBot:
                         logger.info(f"[{self.faucet_name}] ⏳ Cloudflare/Turnstile challenge detected, waiting...")
                     
                     # Simulate human-like behavior while waiting
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(random.uniform(2.0, 4.0))
                     
-                    # Occasionally move mouse to appear active
+                    # Occasionally move mouse or scroll to appear active
                     if checks % 3 == 0:
                         try:
-                            await self.idle_mouse(0.5)
+                            if random.random() < 0.5:
+                                await self.idle_mouse(0.8)
+                            else:
+                                await self.simulate_reading(1.0)
                         except Exception:
                             pass
                 else:

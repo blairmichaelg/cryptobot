@@ -72,7 +72,7 @@ class WithdrawalAnalytics:
         """
         self.db_path = db_path
         self._init_database()
-        logger.info(f"💳 WithdrawalAnalytics initialized with database: {db_path}")
+        logger.info(f"WithdrawalAnalytics initialized with database: {db_path}")
     
     def _init_database(self):
         """Create database schema if it doesn't exist."""
@@ -114,7 +114,7 @@ class WithdrawalAnalytics:
             
             conn.commit()
             conn.close()
-            logger.info("📊 Withdrawal analytics database schema initialized")
+            logger.info("Withdrawal analytics database schema initialized")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
             raise
@@ -192,7 +192,7 @@ class WithdrawalAnalytics:
             total_fee = network_fee + platform_fee
             net_amount = amount - total_fee
             logger.info(
-                f"💰 Withdrawal recorded: {faucet} | {amount:.8f} {cryptocurrency} | "
+                f"Withdrawal recorded: {faucet} | {amount:.8f} {cryptocurrency} | "
                 f"Fees: {total_fee:.8f} | Net: {net_amount:.8f} | {status}"
             )
             
@@ -438,10 +438,10 @@ class WithdrawalAnalytics:
         # Build report
         lines = [
             "=" * 60,
-            f"💳 WITHDRAWAL ANALYTICS REPORT ({period.upper()})",
+            f"WITHDRAWAL ANALYTICS REPORT ({period.upper()})",
             "=" * 60,
             "",
-            "📊 OVERALL PERFORMANCE",
+            "OVERALL PERFORMANCE",
             "-" * 60,
             f"Total Earned:     {overall['total_earned']:.8f}",
             f"Total Fees:       {overall['total_fees']:.8f}",
@@ -449,7 +449,7 @@ class WithdrawalAnalytics:
             f"Fee Percentage:   {overall['fee_percentage']:.2f}%",
             f"Hourly Rate:      {overall['hourly_rate']:.8f}",
             "",
-            "🏆 PER-FAUCET BREAKDOWN",
+            "PER-FAUCET BREAKDOWN",
             "-" * 60,
         ]
         
@@ -473,7 +473,7 @@ class WithdrawalAnalytics:
         if sorted_faucets:
             lines.extend([
                 "",
-                "🥇 BEST PERFORMER",
+                "BEST PERFORMER",
                 "-" * 60,
                 f"{sorted_faucets[0][0]}: {sorted_faucets[0][1]['net_profit']:.8f} net profit",
             ])
@@ -481,7 +481,7 @@ class WithdrawalAnalytics:
             if len(sorted_faucets) > 1:
                 lines.extend([
                     "",
-                    "⚠️  WORST PERFORMER",
+                    "WORST PERFORMER",
                     "-" * 60,
                     f"{sorted_faucets[-1][0]}: {sorted_faucets[-1][1]['net_profit']:.8f} net profit",
                 ])

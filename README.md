@@ -21,12 +21,16 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **`browser/`**: Stealth context management with Camoufox
 - **`faucets/`**: Individual bot modules with standardized base class
 - **`solvers/`**: Unified captcha and shortlink solving interfaces
+- **`config/`**: Centralized configuration, state, and session management
+- **`deploy/`**: Systemd service files and deployment configurations
+- **`logs/`**: Rotating logs and heartbeat monitoring
 
 ### Advanced Features
 - **💰 Golden Tier Targets**: Prioritizes high-yield, direct-deposit or reliable payers
 - **🏦 Wallet Daemon**: (Optional) Ready for **Electrum** JSON-RPC integration
 - **🎯 Zero Idle Time**: Job-based scheduler runs multiple earning methods simultaneously
 - **🔍 Robust Error Handling**: Failure state detection, proxy detection, and automatic retries
+- **🩺 Health Monitoring**: New suite of health check utilities for enterprise-grade uptime
 
 ---
 

@@ -47,13 +47,20 @@ async def main():
              if bal:
                 logger.info(f"💰 {coin} Balance: {bal}")
 
+    # Initialize Managers
     browser_manager = BrowserManager(
         headless=settings.headless,
         block_images=settings.block_images,
         block_media=settings.block_media
     )
     
-    scheduler = JobScheduler(settings, browser_manager)
+    proxy_manager = None
+    if settings.use_2captcha_proxies:
+        from core.proxy_manager import ProxyManager
+        logger.info("🔒 2Captcha Proxies Enabled. Initializing Manager...")
+        proxy_manager = ProxyManager(settings)
+    
+    scheduler = JobScheduler(settings, browser_manager, proxy_manager)
 
     import signal
     
@@ -86,17 +93,13 @@ async def main():
             # ... add others as needed for legacy ...
 
         # 2Captcha Proxy Integration (Sticky Sessions)
-        if settings.use_2captcha_proxies:
-            from core.proxy_manager import ProxyManager
-            logger.info("🔒 2Captcha Proxies Enabled. Initializing Manager...")
-            proxy_manager = ProxyManager(settings)
-            
-            # Attempt fetch
+        if proxy_manager:
+            # Attempt fetch (redirects to file loader in modern versions)
             success = await proxy_manager.fetch_proxies()
             if success:
                 proxy_manager.assign_proxies(profiles)
             else:
-                logger.warning("⚠️ Failed to fetch 2Captcha proxies. Creating fallback assignments or using direct connection.")
+                logger.warning("⚠️ No 2Captcha proxies found in proxies.txt. Using fallback or direct connection.")
 
         for profile in profiles:
             # Initialize bot instance to get its jobs using factory pattern

@@ -105,25 +105,48 @@ class ProxyManager:
                         logger.debug(f"[LATENCY] Proxy {proxy_key} latency: {latency_ms:.0f}ms")
                         return latency_ms
                     else:
-                        self._record_failure(proxy_key)
+                        self.record_failure(proxy_url)
                         return None
                         
         except asyncio.TimeoutError:
-            self._record_failure(proxy_key)
+            self.record_failure(proxy_url)
             logger.warning(f"[TIMEOUT] Proxy {proxy_key} timed out during latency check")
             return None
         except Exception as e:
-            self._record_failure(proxy_key)
+            self.record_failure(proxy_url)
             logger.warning(f"[ERROR] Proxy {proxy_key} latency check failed: {e}")
             return None
 
-    def _record_failure(self, proxy_key: str):
-        """Record a proxy failure and mark as dead if threshold exceeded."""
+    def record_failure(self, proxy_str: str, detected: bool = False):
+        """
+        Record a proxy failure.
+        
+        Args:
+            proxy_str: The full proxy URL string
+            detected: Whether the proxy was specifically detected as a bot by a site
+        """
+        # Extract ip:port for lookup
+        proxy_key = ""
+        if "@" in proxy_str:
+            proxy_key = proxy_str.split("@")[-1]
+        elif "://" in proxy_str:
+            proxy_key = proxy_str.split("://")[-1]
+        else:
+            proxy_key = proxy_str
+            
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
+        
+        if detected:
+            # Detection is a severe failure
+            self.proxy_failures[proxy_key] += self.DEAD_PROXY_FAILURE_COUNT
+            logger.error(f"[BURNED] Proxy {proxy_key} detected by site. Marking as dead.")
+            
         if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
             if proxy_key not in self.dead_proxies:
                 self.dead_proxies.append(proxy_key)
-                logger.error(f"[DEAD] Proxy {proxy_key} marked as DEAD after {self.DEAD_PROXY_FAILURE_COUNT} failures")
+                logger.error(f"[DEAD] Proxy {proxy_key} marked as DEAD after threshold reached")
+                # Auto-remove from active pool
+                self.remove_dead_proxies()
 
     def get_proxy_stats(self, proxy: Proxy) -> Dict:
         """
@@ -385,3 +408,39 @@ class ProxyManager:
         if username in self.assignments:
             return self.assignments[username].to_2captcha_string()
         return None
+
+    def rotate_proxy(self, profile: AccountProfile) -> Optional[str]:
+        """
+        Rotates the proxy for a profile, ensuring it stays on a healthy one.
+        If the current proxy is marked dead, it finds a new one.
+        
+        Returns:
+            The new proxy string, or None if no healthy proxies left
+        """
+        current_proxy_str = profile.proxy
+        current_key = ""
+        if current_proxy_str:
+            if "@" in current_proxy_str:
+                current_key = current_proxy_str.split("@")[-1]
+            elif "://" in current_proxy_str:
+                current_key = current_proxy_str.split("://")[-1]
+                
+        # If current is dead or we just want to rotate
+        if not current_key or current_key in self.dead_proxies or profile.proxy_rotation_strategy == "random":
+            if not self.proxies:
+                return None
+                
+            # Filter out dead ones
+            healthy = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
+            if not healthy:
+                logger.warning(f"No healthy proxies left for {profile.username}")
+                return None
+                
+            # Choose new one
+            new_proxy = random.choice(healthy)
+            profile.proxy = new_proxy.to_string()
+            self.assignments[profile.username] = new_proxy
+            logger.info(f"[ROTATE] {profile.username} rotated to {self._proxy_key(new_proxy)}")
+            return profile.proxy
+            
+        return current_proxy_str

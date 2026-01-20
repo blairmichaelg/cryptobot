@@ -1,6 +1,12 @@
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Base Paths
+BASE_DIR = Path(__file__).parent.parent
+CONFIG_DIR = BASE_DIR / "config"
+LOGS_DIR = BASE_DIR / "logs"
 
 class AccountProfile(BaseModel):
     faucet: str
@@ -27,7 +33,7 @@ class BotSettings(BaseSettings):
     capsolver_api_key: Optional[str] = None
     
     # Proxy Configuration
-    residential_proxies_file: str = "proxies.txt"  # File containing 1 proxy per line (user:pass@ip:port)
+    residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
     
     # Optimization
     block_images: bool = True

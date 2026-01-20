@@ -3,6 +3,7 @@ from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
 from .stealth_scripts import get_full_stealth_script
+from core.config import AccountProfile, BotSettings, CONFIG_DIR
 import logging
 import random
 import os
@@ -160,9 +161,9 @@ class BrowserManager:
                 await self._secure_storage.save_cookies(cookies, profile_name)
             else:
                 # Fallback to unencrypted (backward compatibility)
-                cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
-                os.makedirs(cookies_dir, exist_ok=True)
-                cookies_file = os.path.join(cookies_dir, f"{profile_name}.json")
+                cookies_dir = CONFIG_DIR / "cookies"
+                cookies_dir.mkdir(exist_ok=True)
+                cookies_file = cookies_dir / f"{profile_name}.json"
                 with open(cookies_file, "w") as f:
                     json.dump(cookies, f)
                 logger.debug(f"💾 Saved {len(cookies)} cookies for {profile_name} (unencrypted)")
@@ -190,9 +191,7 @@ class BrowserManager:
             
             # Fallback to unencrypted if no encrypted cookies found
             if not cookies:
-                cookies_file = os.path.join(
-                    os.path.dirname(__file__), "..", "cookies", f"{profile_name}.json"
-                )
+                cookies_file = CONFIG_DIR / "cookies" / f"{profile_name}.json"
                 if os.path.exists(cookies_file):
                     with open(cookies_file, "r") as f:
                         cookies = json.load(f)
@@ -213,7 +212,7 @@ class BrowserManager:
     async def save_proxy_binding(self, profile_name: str, proxy: str):
         """Save the proxy binding for a profile to ensuring sticky sessions."""
         try:
-            bindings_file = os.path.join(os.path.dirname(__file__), "..", "proxy_bindings.json")
+            bindings_file = CONFIG_DIR / "proxy_bindings.json"
             data = {}
             if os.path.exists(bindings_file):
                 with open(bindings_file, "r") as f:
@@ -232,7 +231,7 @@ class BrowserManager:
     async def load_proxy_binding(self, profile_name: str) -> Optional[str]:
         """Load the sticky proxy for a profile."""
         try:
-            bindings_file = os.path.join(os.path.dirname(__file__), "..", "proxy_bindings.json")
+            bindings_file = CONFIG_DIR / "proxy_bindings.json"
             if os.path.exists(bindings_file):
                 with open(bindings_file, "r") as f:
                     try:

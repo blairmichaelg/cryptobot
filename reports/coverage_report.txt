@@ -1,0 +1,362 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\azureuser\Repositories\cryptobot
+configfile: pytest.ini
+testpaths: tests
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 122 items
+
+tests/test_blocker_verification.py::test_blocker PASSED                  [  0%]
+tests/test_browser.py::test_stealth_browser_launch PASSED                [  1%]
+tests/test_captcha_verification.py::test_solver_logic PASSED             [  2%]
+tests/test_core_config.py::test_bot_settings_init PASSED                 [  3%]
+tests/test_core_config.py::test_get_account PASSED                       [  4%]
+tests/test_core_config.py::TestAccountProfile::test_account_profile_creation PASSED [  4%]
+tests/test_core_config.py::TestAccountProfile::test_account_profile_with_proxy PASSED [  5%]
+tests/test_core_config.py::TestAccountProfile::test_account_profile_disabled PASSED [  6%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_default_values PASSED [  7%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_capsolver_api_key PASSED [  8%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_custom_concurrency_settings PASSED [  9%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_custom_user_agents PASSED [  9%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_wallet_addresses PASSED [ 10%]
+tests/test_core_config.py::TestBotSettingsConfiguration::test_dutchy_credentials PASSED [ 11%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_from_profiles PASSED [ 12%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_with_proxy PASSED [ 13%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_disabled_profile_skipped PASSED [ 13%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_case_insensitive PASSED [ 14%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_fallback_to_legacy_firefaucet PASSED [ 15%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_fallback_to_legacy_cointiply PASSED [ 16%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_fallback_to_legacy_freebitcoin PASSED [ 17%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_fallback_to_legacy_dutchy PASSED [ 18%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_profiles_take_priority_over_legacy PASSED [ 18%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_no_match_returns_none PASSED [ 19%]
+tests/test_core_config.py::TestGetAccountMethod::test_get_account_underscore_normalization PASSED [ 20%]
+tests/test_core_wallet.py::test_wallet_connection_success PASSED         [ 21%]
+tests/test_core_wallet.py::test_wallet_get_balance PASSED                [ 22%]
+tests/test_core_wallet.py::TestWalletDaemonMethods::test_get_unused_address_success PASSED [ 22%]
+tests/test_core_wallet.py::TestWalletDaemonMethods::test_validate_address_valid_boolean_response PASSED [ 23%]
+tests/test_core_wallet.py::TestWalletDaemonMethods::test_validate_address_valid_dict_response PASSED [ 24%]
+tests/test_core_wallet.py::TestWalletDaemonMethods::test_validate_address_invalid PASSED [ 25%]
+tests/test_core_wallet.py::TestWalletDaemonErrorHandling::test_http_error_response PASSED [ 26%]
+tests/test_core_wallet.py::TestWalletDaemonErrorHandling::test_rpc_error_response PASSED [ 27%]
+tests/test_core_wallet.py::TestWalletDaemonErrorHandling::test_connection_failure PASSED [ 27%]
+tests/test_core_wallet.py::TestWalletDaemonErrorHandling::test_check_connection_returns_false_on_none_result PASSED [ 28%]
+tests/test_core_wallet.py::TestWalletDaemonAuthentication::test_daemon_with_authentication PASSED [ 29%]
+tests/test_core_wallet.py::TestWalletDaemonAuthentication::test_daemon_without_authentication PASSED [ 30%]
+tests/test_dutchy.py::test_dutchy_structure PASSED                       [ 31%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_with_plus PASSED [ 31%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_without_plus PASSED [ 32%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_multiple_plus PASSED [ 33%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_empty_or_invalid PASSED [ 34%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_preserves_domain PASSED [ 35%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_plus_at_end PASSED [ 36%]
+tests/test_email_alias.py::TestEmailAliasStripping::test_strip_email_alias_preserves_dots_and_special_chars PASSED [ 36%]
+tests/test_extractor.py::test_parse_timer_h_m_s PASSED                   [ 37%]
+tests/test_extractor.py::test_parse_timer_colon_format PASSED            [ 38%]
+tests/test_extractor.py::test_parse_timer_text_format PASSED             [ 39%]
+tests/test_extractor.py::test_extract_balance PASSED                     [ 40%]
+tests/test_extractor.py::test_parse_timer_edge_cases PASSED              [ 40%]
+tests/test_extractor.py::TestTimerParsingDaysFormat::test_parse_timer_days_only PASSED [ 41%]
+tests/test_extractor.py::TestTimerParsingDaysFormat::test_parse_timer_days_with_hours PASSED [ 42%]
+tests/test_extractor.py::TestTimerParsingDaysFormat::test_parse_timer_hours_format PASSED [ 43%]
+tests/test_extractor.py::TestBalanceExtractionEdgeCases::test_extract_balance_no_numbers PASSED [ 44%]
+tests/test_extractor.py::TestBalanceExtractionEdgeCases::test_extract_balance_multiple_numbers PASSED [ 45%]
+tests/test_extractor.py::TestBalanceExtractionEdgeCases::test_extract_balance_with_commas PASSED [ 45%]
+tests/test_extractor.py::TestBalanceExtractionEdgeCases::test_extract_balance_integer_only PASSED [ 46%]
+tests/test_extractor.py::TestBalanceExtractionEdgeCases::test_extract_balance_decimal_only PASSED [ 47%]
+tests/test_extractor.py::TestTimerParsingComplexFormats::test_parse_timer_mixed_formats PASSED [ 48%]
+tests/test_extractor.py::TestTimerParsingComplexFormats::test_parse_timer_seconds_only PASSED [ 49%]
+tests/test_faucet_jobs.py::test_firefaucet_get_jobs PASSED               [ 50%]
+tests/test_faucet_jobs.py::test_faucetcrypto_get_jobs PASSED             [ 50%]
+tests/test_faucet_jobs.py::test_freebitcoin_get_jobs PASSED              [ 51%]
+tests/test_faucet_jobs.py::test_dutchy_get_jobs PASSED                   [ 52%]
+tests/test_faucet_jobs.py::test_cointiply_get_jobs PASSED                [ 53%]
+tests/test_faucet_jobs.py::test_coinpayu_get_jobs PASSED                 [ 54%]
+tests/test_faucet_jobs.py::test_adbtc_get_jobs PASSED                    [ 54%]
+tests/test_faucet_jobs.py::test_all_jobs_have_required_fields PASSED     [ 55%]
+tests/test_faucet_jobs.py::test_job_schedules_are_reasonable PASSED      [ 56%]
+tests/test_logging_setup.py::TestCompressedRotatingFileHandler::test_rotation_filename PASSED [ 57%]
+tests/test_logging_setup.py::TestCompressedRotatingFileHandler::test_rotate_compresses_file PASSED [ 58%]
+tests/test_logging_setup.py::TestCompressedRotatingFileHandler::test_rotate_creates_valid_gzip PASSED [ 59%]
+tests/test_logging_setup.py::TestSetupLogging::test_setup_logging_default_level PASSED [ 59%]
+tests/test_logging_setup.py::TestSetupLogging::test_setup_logging_custom_level PASSED [ 60%]
+tests/test_logging_setup.py::TestSetupLogging::test_setup_logging_invalid_level_defaults_to_info PASSED [ 61%]
+tests/test_logging_setup.py::TestSetupLogging::test_setup_logging_creates_two_handlers PASSED [ 62%]
+tests/test_logging_setup.py::TestSetupLogging::test_setup_logging_format PASSED [ 63%]
+tests/test_orchestrator.py::TestJob::test_job_creation PASSED            [ 63%]
+tests/test_orchestrator.py::TestJob::test_job_ordering_by_priority PASSED [ 64%]
+tests/test_orchestrator.py::TestJob::test_job_ordering_by_next_run_when_priority_equal PASSED [ 65%]
+tests/test_orchestrator.py::TestJob::test_job_default_retry_count PASSED [ 66%]
+tests/test_orchestrator.py::TestJobScheduler::test_scheduler_initialization PASSED [ 67%]
+tests/test_orchestrator.py::TestJobScheduler::test_add_job PASSED        [ 68%]
+tests/test_orchestrator.py::TestJobScheduler::test_run_job_wrapper_success PASSED [ 68%]
+tests/test_orchestrator.py::TestJobScheduler::test_run_job_wrapper_error_retry PASSED [ 69%]
+tests/test_orchestrator.py::TestJobScheduler::test_run_job_wrapper_exponential_backoff PASSED [ 70%]
+tests/test_orchestrator.py::TestJobScheduler::test_scheduler_loop_processes_ready_jobs PASSED [ 71%]
+tests/test_orchestrator.py::TestJobScheduler::test_stop PASSED           [ 72%]
+tests/test_orchestrator.py::TestJobScheduler::test_scheduler_loop_stops_when_event_set PASSED [ 72%]
+tests/test_pick_faucets.py::TestPickFaucets::test_litepick_claim_cooldown PASSED [ 73%]
+tests/test_pick_faucets.py::TestPickFaucets::test_litepick_claim_success PASSED [ 74%]
+tests/test_pick_implementation.py::test_pick_login_success PASSED        [ 75%]
+tests/test_pick_implementation.py::test_pick_claim_success PASSED        [ 76%]
+tests/test_pick_implementation.py::test_pick_withdraw_success PASSED     [ 77%]
+tests/test_pick_registration.py::TestPickFaucetRegistration::test_all_pick_faucets_have_correct_base_urls PASSED [ 77%]
+tests/test_pick_registration.py::TestPickFaucetRegistration::test_all_pick_faucets_have_registration_method PASSED [ 78%]
+tests/test_pick_registration.py::TestPickFaucetRegistration::test_registration_method_exists PASSED [ 79%]
+tests/test_pick_registration.py::TestPickFaucetRegistration::test_registration_without_base_url_fails PASSED [ 80%]
+tests/test_proxy_detection.py::test_proxy_detection_patterns PASSED      [ 81%]
+tests/test_proxy_detection.py::test_account_ban_detection PASSED         [ 81%]
+tests/test_proxy_detection.py::test_maintenance_detection PASSED         [ 82%]
+tests/test_proxy_detection.py::test_proxy_rotation_round_robin PASSED    [ 83%]
+tests/test_proxy_detection.py::test_proxy_rotation_random PASSED         [ 84%]
+tests/test_proxy_detection.py::test_proxy_rotation_health_based PASSED   [ 85%]
+tests/test_proxy_detection.py::test_proxy_pool_exhaustion PASSED         [ 86%]
+tests/test_proxy_detection.py::test_proxy_failure_recording PASSED       [ 86%]
+tests/test_proxy_detection.py::test_proxy_rotation_on_detection PASSED   [ 87%]
+tests/test_proxy_detection.py::test_residential_proxy_flag PASSED        [ 88%]
+tests/test_proxy_manager.py::test_fetch_proxies_success PASSED           [ 89%]
+tests/test_proxy_manager.py::test_assign_proxies_fallback PASSED         [ 90%]
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_executes_all_tasks_even_after_failure PASSED [ 90%]
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_scheduling_update PASSED [ 91%]
+tests/test_scheduler.py::test_job_priority_ordering PASSED               [ 92%]
+tests/test_scheduler.py::test_concurrent_job_execution PASSED            [ 93%]
+tests/test_scheduler.py::test_job_rescheduling PASSED                    [ 94%]
+tests/test_scheduler.py::test_retry_logic PASSED                         [ 95%]
+tests/test_scheduler.py::test_profile_concurrency_limit PASSED           [ 95%]
+tests/test_scheduler.py::test_global_concurrency_limit PASSED            [ 96%]
+tests/test_shortlink_verification.py::test_shortlink_blocker_toggle PASSED [ 97%]
+tests/test_stealth_primitives.py::test_stealth_primitives PASSED         [ 98%]
+tests/test_stealth_primitives.py::test_idle_mouse PASSED                 [ 99%]
+C:\Python314\Lib\site-packages\coverage\report_core.py:107: CoverageWarning: Couldn't parse Python file 'C:\Users\azureuser\Repositories\cryptobot\main.py' (couldnt-parse); see https://coverage.readthedocs.io/en/7.13.1/messages.html#warning-couldnt-parse
+  coverage._warn(msg, slug="couldnt-parse")
+tests/test_stealth_primitives.py::test_browser_restart_logic PASSED      [100%]
+
+============================== warnings summary ===============================
+tests/test_blocker_verification.py::test_blocker
+tests/test_browser.py::test_stealth_browser_launch
+  C:\Python314\Lib\concurrent\futures\thread.py:73: LeakWarning: Blocking image requests has been reported to cause detection issues on major WAFs.
+  If this is intentional, pass `i_know_what_im_doing=True`.
+    return fn(*args, **kwargs)
+
+tests/test_pick_faucets.py::TestPickFaucets::test_litepick_claim_cooldown
+  C:\Users\azureuser\Repositories\cryptobot\faucets\base.py:339: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  Coroutine created at (most recent call last)
+    File "C:\Python314\Lib\asyncio\base_events.py", line 677, in run_forever
+      self._run_once()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 2038, in _run_once
+      handle._run()
+    File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+      self._context.run(self._callback, *self._args)
+    File "C:\Users\azureuser\Repositories\cryptobot\tests\test_pick_faucets.py", line 55, in test_litepick_claim_cooldown
+      result = await bot.claim()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\pick_base.py", line 244, in claim
+      return ClaimResult(success=True, status="Cooldown", next_claim_minutes=minutes, balance=await self.get_balance())
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\pick_base.py", line 187, in get_balance
+      balance = await super().get_balance(selector)
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 337, in get_balance
+      return DataExtractor.extract_balance(text)
+    File "C:\Users\azureuser\Repositories\cryptobot\core\extractor.py", line 123, in extract_balance
+      text = text.replace(",", "")
+    File "C:\Python314\Lib\unittest\mock.py", line 1175, in __call__
+      return self._mock_call(*args, **kwargs)
+    File "C:\Python314\Lib\unittest\mock.py", line 1179, in _mock_call
+      return self._execute_mock_call(*args, **kwargs)
+    logger.debug(f"[{self.faucet_name}] Balance extraction failed: {e}")
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_proxy_detection.py::test_proxy_rotation_on_detection
+  C:\Users\azureuser\Repositories\cryptobot\core\orchestrator.py:255: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    bot.set_proxy(p_str)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_executes_all_tasks_even_after_failure
+  C:\Users\azureuser\Repositories\cryptobot\faucets\base.py:287: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  Coroutine created at (most recent call last)
+    File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+      return self._loop.run_until_complete(task)
+    File "C:\Python314\Lib\asyncio\base_events.py", line 706, in run_until_complete
+      self.run_forever()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 677, in run_forever
+      self._run_once()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 2038, in _run_once
+      handle._run()
+    File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+      self._context.run(self._callback, *self._args)
+    File "C:\Users\azureuser\Repositories\cryptobot\tests\test_robustness.py", line 29, in test_run_executes_all_tasks_even_after_failure
+      result = await self.bot.run()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 547, in run
+      await self.close_popups()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 287, in close_popups
+      el = self.page.locator(sel)
+    File "C:\Python314\Lib\unittest\mock.py", line 1175, in __call__
+      return self._mock_call(*args, **kwargs)
+    File "C:\Python314\Lib\unittest\mock.py", line 1179, in _mock_call
+      return self._execute_mock_call(*args, **kwargs)
+    el = self.page.locator(sel)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_executes_all_tasks_even_after_failure
+  C:\Users\azureuser\Repositories\cryptobot\faucets\base.py:547: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  Coroutine created at (most recent call last)
+    File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+      return self._loop.run_until_complete(task)
+    File "C:\Python314\Lib\asyncio\base_events.py", line 706, in run_until_complete
+      self.run_forever()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 677, in run_forever
+      self._run_once()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 2038, in _run_once
+      handle._run()
+    File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+      self._context.run(self._callback, *self._args)
+    File "C:\Users\azureuser\Repositories\cryptobot\tests\test_robustness.py", line 29, in test_run_executes_all_tasks_even_after_failure
+      result = await self.bot.run()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 547, in run
+      await self.close_popups()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 287, in close_popups
+      el = self.page.locator(sel)
+    File "C:\Python314\Lib\unittest\mock.py", line 1175, in __call__
+      return self._mock_call(*args, **kwargs)
+    File "C:\Python314\Lib\unittest\mock.py", line 1179, in _mock_call
+      return self._execute_mock_call(*args, **kwargs)
+    await self.close_popups()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_scheduling_update
+  C:\Users\azureuser\Repositories\cryptobot\faucets\base.py:287: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  Coroutine created at (most recent call last)
+    File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+      return self._loop.run_until_complete(task)
+    File "C:\Python314\Lib\asyncio\base_events.py", line 706, in run_until_complete
+      self.run_forever()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 677, in run_forever
+      self._run_once()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 2038, in _run_once
+      handle._run()
+    File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+      self._context.run(self._callback, *self._args)
+    File "C:\Users\azureuser\Repositories\cryptobot\tests\test_robustness.py", line 50, in test_run_scheduling_update
+      result = await self.bot.run()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 547, in run
+      await self.close_popups()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 287, in close_popups
+      el = self.page.locator(sel)
+    File "C:\Python314\Lib\unittest\mock.py", line 1175, in __call__
+      return self._mock_call(*args, **kwargs)
+    File "C:\Python314\Lib\unittest\mock.py", line 1179, in _mock_call
+      return self._execute_mock_call(*args, **kwargs)
+    el = self.page.locator(sel)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_robustness.py::TestFaucetBotRobustness::test_run_scheduling_update
+  C:\Users\azureuser\Repositories\cryptobot\faucets\base.py:547: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  Coroutine created at (most recent call last)
+    File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+      return self._loop.run_until_complete(task)
+    File "C:\Python314\Lib\asyncio\base_events.py", line 706, in run_until_complete
+      self.run_forever()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 677, in run_forever
+      self._run_once()
+    File "C:\Python314\Lib\asyncio\base_events.py", line 2038, in _run_once
+      handle._run()
+    File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+      self._context.run(self._callback, *self._args)
+    File "C:\Users\azureuser\Repositories\cryptobot\tests\test_robustness.py", line 50, in test_run_scheduling_update
+      result = await self.bot.run()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 547, in run
+      await self.close_popups()
+    File "C:\Users\azureuser\Repositories\cryptobot\faucets\base.py", line 287, in close_popups
+      el = self.page.locator(sel)
+    File "C:\Python314\Lib\unittest\mock.py", line 1175, in __call__
+      return self._mock_call(*args, **kwargs)
+    File "C:\Python314\Lib\unittest\mock.py", line 1179, in _mock_call
+      return self._execute_mock_call(*args, **kwargs)
+    await self.close_popups()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.2-final-0 _______________
+
+Name                                   Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------
+browser\__init__.py                        0      0   100%
+browser\blocker.py                        30      9    70%   71-72, 80-81, 87-89, 95-96
+browser\instance.py                      163     90    45%   43, 71, 76, 99-112, 116-125, 152, 165-180, 194-221, 225-240, 244-256, 261, 267-270, 285, 292-294, 301-302
+browser\secure_storage.py                 98     68    31%   63-72, 77-78, 91-112, 124-155, 159-165, 177-186, 191, 197-200, 205
+core\__init__.py                           0      0   100%
+core\analytics.py                         82     45    45%   48-54, 58-66, 93, 97-111, 129-146, 150-172
+core\azure_monitor.py                     66     66     0%   8-130
+core\config.py                            84      0   100%
+core\extractor.py                         60      3    95%   94-96
+core\logging_setup.py                     16      0   100%
+core\orchestrator.py                     252     31    88%   54-55, 99-106, 109-110, 123-124, 131-132, 173-176, 254, 292-294, 305-306, 330-331, 346, 351, 381-382
+core\proxy_manager.py                    129     64    50%   23, 27-29, 58-78, 87-106, 120-121, 137-138, 156-166, 169-175, 181, 184-185, 202-204, 212-213, 234-236
+core\registry.py                          18      6    67%   43-49
+core\wallet_manager.py                    47      4    91%   38-39, 69-70
+debug_job.py                              19     19     0%   2-34
+faucets\__init__.py                       20      0   100%
+faucets\adbtc.py                         143    118    17%   15, 18-78, 82-84, 129-182, 186-226, 232-245
+faucets\base.py                          270     95    65%   51-52, 91, 107-141, 172-185, 254-255, 261, 283, 289-291, 293, 305, 314, 320-327, 347, 409-413, 419-427, 448-449, 496-514, 517-521, 524-529, 544-545, 579-580, 585, 599-601
+faucets\bchpick.py                         6      0   100%
+faucets\binpick.py                         6      0   100%
+faucets\coinpayu.py                      179    152    15%   15, 18-67, 73-117, 172-175, 179-218, 222-267, 273-328
+faucets\cointiply.py                      91     76    16%   14, 18-21, 27-71, 74-96, 99-106, 109-141
+faucets\dashpick.py                        6      0   100%
+faucets\dogepick.py                        6      0   100%
+faucets\dutchy.py                        151    128    15%   15, 49-90, 93-107, 111-151, 154-200, 203-258
+faucets\ethpick.py                         6      0   100%
+faucets\faucetcrypto.py                  104     82    21%   14, 17-53, 56-82, 127-191
+faucets\firefaucet.py                    194    167    14%   18-60, 63-85, 150-191, 195-225, 229-239, 246-296, 300-351
+faucets\freebitcoin.py                    66     54    18%   14, 18-60, 63-102
+faucets\litepick.py                        6      0   100%
+faucets\pick.py                          128    128     0%   1-224
+faucets\pick_base.py                     173     66    62%   50-114, 126-127, 138-139, 165-169, 198-203, 257-258, 276-280, 312-313, 325, 330-331, 348-352
+faucets\polygonpick.py                     6      0   100%
+faucets\solpick.py                         6      0   100%
+faucets\tonpick.py                         6      0   100%
+faucets\tronpick.py                        6      0   100%
+faucets\usdpick.py                         6      0   100%
+register_faucets.py                       94     94     0%   24-280
+repro_orch.py                             34     34     0%   1-60
+setup.py                                  44     44     0%   4-70
+setup_proxies.py                          35     35     0%   1-47
+solvers\__init__.py                        0      0   100%
+solvers\captcha.py                       311    213    32%   60-61, 67, 71-76, 80-85, 89-93, 97-98, 115-126, 130, 164-166, 170, 174-180, 184-189, 194-197, 201-215, 219, 225, 229, 239-244, 259-374, 390-392, 394-397, 403-405, 408-409, 423-424, 429-431, 434-503, 507-508, 510, 544-565, 571
+solvers\shortlink.py                      83     40    52%   51-52, 64-72, 76-77, 81-83, 107-129, 131-133, 139, 143-145
+test_2captcha_proxies.py                  20     20     0%   1-27
+test_pick_faucet.py                       27     27     0%   1-44
+test_playwright.py                        19     19     0%   1-28
+tests\conftest.py                         10      3    70%   12-14
+tests\test_blocker_verification.py        25      6    76%   29-35
+tests\test_browser.py                     17      2    88%   21-22
+tests\test_captcha_verification.py        52      1    98%   25
+tests\test_core_config.py                160      0   100%
+tests\test_core_wallet.py                186      0   100%
+tests\test_dutchy.py                      23      2    91%   21-22
+tests\test_email_alias.py                 28      0   100%
+tests\test_extractor.py                   59      0   100%
+tests\test_faucet_jobs.py                124      0   100%
+tests\test_logging_setup.py              138     10    93%   107-108, 129-130, 150-151, 174-175, 201-202
+tests\test_orchestrator.py               169      4    98%   274-275, 294-295
+tests\test_pick_faucets.py                64      1    98%   94
+tests\test_pick_implementation.py        107      2    98%   48, 140
+tests\test_pick_registration.py           56      1    98%   100
+tests\test_proxy_detection.py            111      0   100%
+tests\test_proxy_manager.py               39      0   100%
+tests\test_robustness.py                  32      1    97%   57
+tests\test_scheduler.py                  104      6    94%   102-103, 169-170, 205-206
+tests\test_shortlink_verification.py      31      2    94%   55-56
+tests\test_stealth_primitives.py          50      0   100%
+verify_faucets.py                         46     46     0%   1-66
+verify_setup.py                           58     58     0%   1-71
+--------------------------------------------------------------------
+TOTAL                                   5005   2142    57%
+================= 122 passed, 8 warnings in 194.80s (0:03:14) =================

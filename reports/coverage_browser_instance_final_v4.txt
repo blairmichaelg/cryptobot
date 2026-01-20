@@ -1,0 +1,63 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\azureuser\Repositories\cryptobot
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 10 items
+
+tests/test_browser_extra.py::TestBrowserExtra::test_launch_and_close PASSED [ 10%]
+tests/test_browser_extra.py::TestBrowserExtra::test_create_context_proxy_formats PASSED [ 20%]
+tests/test_browser_extra.py::TestBrowserExtra::test_sticky_proxy_logic_flow PASSED [ 30%]
+tests/test_browser_extra.py::TestBrowserExtra::test_proxy_binding_persistence FAILED [ 40%]
+tests/test_browser_extra.py::TestBrowserExtra::test_cookie_persistence_unencrypted PASSED [ 50%]
+tests/test_browser_extra.py::TestBrowserExtra::test_cookie_persistence_encrypted PASSED [ 60%]
+tests/test_browser_extra.py::TestBrowserExtra::test_restart_and_health_check PASSED [ 70%]
+tests/test_browser_extra.py::TestBrowserExtra::test_new_page PASSED      [ 80%]
+tests/test_browser_extra.py::TestBrowserExtra::test_create_stealth_browser_factory PASSED [ 90%]
+tests/test_browser_extra.py::TestBrowserExtra::test_exception_paths PASSED [100%]
+
+================================== FAILURES ===================================
+_______________ TestBrowserExtra.test_proxy_binding_persistence _______________
+
+self = <test_browser_extra.TestBrowserExtra object at 0x0000026957B1EEA0>
+
+    @pytest.mark.asyncio
+    async def test_proxy_binding_persistence(self):
+        """Test actual proxy binding file I/O (lines 213-246)."""
+        manager = BrowserManager()
+    
+        with patch("browser.instance.open", create=True) as mock_open, \
+             patch("browser.instance.os.path.exists", return_value=True):
+    
+            # 1. Load: Read valid JSON
+            m_read = MagicMock()
+            m_read.__enter__.return_value.read.return_value = json.dumps({"u1": "p1"})
+            mock_open.return_value = m_read
+            assert await manager.load_proxy_binding("u1") == "p1"
+    
+            # 2. Save: Read valid JSON, then Write
+            m_read2 = MagicMock()
+            m_read2.__enter__.return_value.read.return_value = json.dumps({"u1": "p1"})
+            m_write = MagicMock()
+            mock_open.side_effect = [m_read2, m_write]
+            await manager.save_proxy_binding("u2", "p2")
+>           assert mock_open.call_count == 2
+E           AssertionError: assert 3 == 2
+E            +  where 3 = <MagicMock name='open' id='2651467604928'>.call_count
+
+tests\test_browser_extra.py:101: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  browser.secure_storage:secure_storage.py:56 \u26a0\ufe0f No cookie encryption key found. Generated new key.\nAdd this to your .env file:\nCRYPTOBOT_COOKIE_KEY=ZqDquhri6t4oSAjIazDh9OkY-7kBon0bI5R8d8Fa_nI=
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.2-final-0 _______________
+
+Name                  Stmts   Miss  Cover   Missing
+---------------------------------------------------
+browser\instance.py     164     10    94%   222-223, 229-230, 241-246
+---------------------------------------------------
+TOTAL                   164     10    94%
+=========================== short test summary info ===========================
+FAILED tests/test_browser_extra.py::TestBrowserExtra::test_proxy_binding_persistence
+========================= 1 failed, 9 passed in 1.01s =========================

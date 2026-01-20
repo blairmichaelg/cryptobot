@@ -14,9 +14,9 @@ cmd /c "tar -acvf bundle.zip --exclude=venv --exclude=.venv --exclude=__pycache_
 Write-Host "--- Uploading to Azure VM ($VM_IP) ---"
 # Note: Using strict host key checking=no to avoid prompt on first connect
 scp -o StrictHostKeyChecking=no -i $KEY_PATH $DEST_ZIP "${USER}@${VM_IP}:~/bundle.zip"
-scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\setup_remote.sh" "${USER}@${VM_IP}:~/setup_remote.sh"
-scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\cryptobot.service" "${USER}@${VM_IP}:~/cryptobot.service"
-scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\logrotate.conf" "${USER}@${VM_IP}:~/logrotate.conf"
+scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\scripts\setup_remote.sh" "${USER}@${VM_IP}:~/setup_remote.sh"
+scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\deploy\cryptobot.service" "${USER}@${VM_IP}:~/cryptobot.service"
+scp -o StrictHostKeyChecking=no -i $KEY_PATH "$SOURCE\deploy\logrotate.conf" "${USER}@${VM_IP}:~/logrotate.conf"
 
 Write-Host "--- Executing Remote Setup ---"
 ssh -o StrictHostKeyChecking=no -i $KEY_PATH "${USER}@${VM_IP}" "chmod +x ~/setup_remote.sh && ./setup_remote.sh"

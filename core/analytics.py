@@ -180,7 +180,7 @@ class EarningsTracker:
         
         lines = [
             "=" * 50,
-            f"📊 EARNINGS SUMMARY (Last 24 Hours)",
+            f"EARNINGS SUMMARY (Last 24 Hours)",
             "=" * 50,
             f"Session Duration: {session['session_duration_hours']:.1f} hours",
             f"Total Claims: {session['total_claims']}",

@@ -1,0 +1,191 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\azureuser\Repositories\cryptobot
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/test_captcha_extra.py::TestCaptchaExtra::test_budget_logic PASSED  [ 11%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_proxy_parsing PASSED [ 22%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_detection_logic PASSED [ 33%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_2captcha_hcaptcha_with_proxy FAILED [ 44%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_capsolver_turnstile FAILED [ 55%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_image_captcha_coordinates FAILED [ 66%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_manual_solve_detection PASSED [ 77%]
+tests/test_captcha_extra.py::TestCaptchaExtra::test_inject_token_variants FAILED [ 88%]
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000024A622EABA0>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000024A61E6F350>, 50034.340467)])']
+connector: <aiohttp.connector.TCPConnector object at 0x0000024A622EACF0>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000024A62352510>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000024A61E77130>, 50034.5073023)])']
+connector: <aiohttp.connector.TCPConnector object at 0x0000024A61EC74D0>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000024A623FA120>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000024A623D44A0>, 50034.7059064)])']
+connector: <aiohttp.connector.TCPConnector object at 0x0000024A623C47D0>
+tests/test_captcha_extra.py::TestCaptchaExtra::test_error_paths PASSED   [100%]
+
+================================== FAILURES ===================================
+__________ TestCaptchaExtra.test_solve_2captcha_hcaptcha_with_proxy ___________
+
+self = <test_captcha_extra.TestCaptchaExtra object at 0x0000024A61EBA8B0>
+mock_page = <AsyncMock id='2518498050800'>
+
+    @pytest.mark.asyncio
+    async def test_solve_2captcha_hcaptcha_with_proxy(self, mock_page):
+        """Test 2Captcha hCaptcha solve with proxy (lines 376-437)."""
+        solver = CaptchaSolver(api_key="KEY", provider="2captcha")
+        solver.set_proxy("http://p:p@1.1.1.1:80")
+    
+        mock_session = AsyncMock()
+        solver.session = mock_session
+    
+        # Setup responses
+        m_resp_in = AsyncMock()
+        m_resp_in.json.return_value = {"status": 1, "request": "req123"}
+        m_resp_res = AsyncMock()
+        m_resp_res.json.return_value = {"status": 1, "request": "token123"}
+    
+        mock_session.post.return_value.__aenter__.return_value = m_resp_in
+        mock_session.get.return_value.__aenter__.return_value = m_resp_res
+    
+        # Mock sitekey extraction directly to bypass complex detection in this unit test
+        with patch.object(solver, "_extract_sitekey_from_scripts", AsyncMock(return_value="h-key")), \
+             patch.object(solver, "_inject_token", AsyncMock()) as mock_inject:
+    
+            # Trigger solve
+            res = await solver._solve_2captcha("h-key", "http://url", "hcaptcha")
+>           assert res == "token123"
+E           AssertionError: assert None == 'token123'
+
+tests\test_captcha_extra.py:102: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    solvers.captcha:captcha.py:414 2Captcha Submit Error: {'status': 0, 'request': 'ERROR_WRONG_USER_KEY', 'error_text': "You've provided key parameter value in incorrect format, it should contain 32 symbols."}
+_______________ TestCaptchaExtra.test_solve_capsolver_turnstile _______________
+
+self = <test_captcha_extra.TestCaptchaExtra object at 0x0000024A62290B90>
+mock_page = <AsyncMock id='2518498065248'>
+
+    @pytest.mark.asyncio
+    async def test_solve_capsolver_turnstile(self, mock_page):
+        """Test CapSolver Turnstile solve (lines 440-510)."""
+        solver = CaptchaSolver(api_key="KEY", provider="capsolver")
+        mock_session = AsyncMock()
+        solver.session = mock_session
+    
+        # CreateTask response
+        m_resp_create = AsyncMock()
+        m_resp_create.json.return_value = {"errorId": 0, "taskId": "t1"}
+        # GetResult response (Ready)
+        m_resp_result = AsyncMock()
+        m_resp_result.json.return_value = {"status": "ready", "solution": {"token": "cap-token"}}
+    
+        mock_session.post.return_value.__aenter__.side_effect = [m_resp_create, m_resp_result]
+    
+        with patch("asyncio.sleep", AsyncMock()):
+            token = await solver._solve_capsolver("s-key", "http://u", "turnstile")
+>           assert token == "cap-token"
+E           AssertionError: assert None == 'cap-token'
+
+tests\test_captcha_extra.py:127: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    solvers.captcha:captcha.py:483 CapSolver Create Error: {'errorCode': 'ERROR_INVALID_TASK_DATA', 'errorDescription': 'clientKey is invalid', 'errorId': 1}
+____________ TestCaptchaExtra.test_solve_image_captcha_coordinates ____________
+
+self = <AsyncMock name='mock.mouse.click' id='2518499176000'>
+
+    def assert_called(self):
+        """assert that the mock was called at least once
+        """
+        if self.call_count == 0:
+            msg = ("Expected '%s' to have been called." %
+                   (self._mock_name or 'mock'))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'click' to have been called.
+
+C:\Python314\Lib\unittest\mock.py:954: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_captcha_extra.TestCaptchaExtra object at 0x0000024A62298490>
+mock_page = <AsyncMock id='2518498487536'>
+
+    @pytest.mark.asyncio
+    async def test_solve_image_captcha_coordinates(self, mock_page):
+        """Test coordinates-based image captcha (lines 246-375)."""
+        solver = CaptchaSolver(api_key="KEY")
+        mock_session = AsyncMock()
+        solver.session = mock_session
+    
+        # 1. Element & Box
+        mock_el = AsyncMock()
+        mock_page.query_selector.return_value = mock_el
+        mock_el.bounding_box.return_value = {"x": 10, "y": 20, "width": 100, "height": 100}
+        mock_el.screenshot.return_value = b"bytes"
+    
+        # 2. 2Captcha Responses
+        m_in = AsyncMock()
+        m_in.json.return_value = {"status": 1, "request": "i1"}
+        m_res = AsyncMock()
+        m_res.json.return_value = {"status": 1, "request": "10,20"} # coordinates
+    
+        mock_session.post.return_value.__aenter__.return_value = m_in
+        mock_session.get.return_value.__aenter__.return_value = m_res
+    
+        with patch("asyncio.sleep", AsyncMock()):
+            res = await solver._solve_image_captcha(mock_page)
+            assert res is True
+            # Should have clicked near (10+10, 20+20) = (20, 40)
+>           mock_page.mouse.click.assert_called()
+E           AssertionError: Expected 'click' to have been called.
+
+tests\test_captcha_extra.py:155: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    solvers.captcha:captcha.py:301 2Captcha Image Submit Error: {'status': 0, 'request': 'ERROR_WRONG_USER_KEY', 'error_text': "You've provided key parameter value in incorrect format, it should contain 32 symbols."}
+_________________ TestCaptchaExtra.test_inject_token_variants _________________
+
+self = <test_captcha_extra.TestCaptchaExtra object at 0x0000024A6225A950>
+mock_page = <AsyncMock id='2518499180032'>
+
+    @pytest.mark.asyncio
+    async def test_inject_token_variants(self, mock_page):
+        """Test token injection scripts for different types (lines 512-538)."""
+        solver = CaptchaSolver()
+    
+        # hCaptcha
+        await solver._inject_token(mock_page, "hcaptcha", "t1")
+        # userrecaptcha
+        await solver._inject_token(mock_page, "userrecaptcha", "t2")
+        # turnstile
+        await solver._inject_token(mock_page, "turnstile", "t3")
+    
+>       assert mock_page.evaluate.call_count == 6 # 2 per call (one selector, one callback)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert 7 == 6
+E        +  where 7 = <AsyncMock name='mock.evaluate' id='2518516826528'>.call_count
+E        +    where <AsyncMock name='mock.evaluate' id='2518516826528'> = <AsyncMock id='2518499180032'>.evaluate
+
+tests\test_captcha_extra.py:182: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  solvers.captcha:captcha.py:60 \u26a0\ufe0f No CAPTCHA API key provided. Switching to MANUAL mode.\nWARNING  solvers.captcha:captcha.py:61 You must solve CAPTCHAs yourself in the browser window.
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.2-final-0 _______________
+
+Name                 Stmts   Miss  Cover   Missing
+--------------------------------------------------
+solvers\captcha.py     314    153    51%   160-170, 184-189, 194-197, 201-215, 219, 223-241, 260-261, 271-272, 277-278, 303-374, 391, 396-398, 409-411, 416-437, 449-452, 456-460, 469, 485-510, 571-572, 578
+--------------------------------------------------
+TOTAL                  314    153    51%
+=========================== short test summary info ===========================
+FAILED tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_2captcha_hcaptcha_with_proxy
+FAILED tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_capsolver_turnstile
+FAILED tests/test_captcha_extra.py::TestCaptchaExtra::test_solve_image_captcha_coordinates
+FAILED tests/test_captcha_extra.py::TestCaptchaExtra::test_inject_token_variants
+========================= 4 failed, 5 passed in 1.90s =========================
