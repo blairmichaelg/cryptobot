@@ -548,6 +548,14 @@ class CaptchaSolver:
         Returns:
             True if the captcha was solved (token detected), False if timed out.
         """
+        # HEADLESS CHECK: If running headless, we cannot solve manually.
+        import os
+        is_headless = os.environ.get("HEADLESS", "false").lower() == "true"
+        
+        if is_headless:
+            logger.error("❌ Headless mode detected. Skipping manual captcha solve.")
+            return False
+
         logger.info("⚠️ PAUSED FOR MANUAL CAPTCHA SOLVE ⚠️")
         logger.info(f"Please solve the captcha in the browser within {timeout} seconds.")
         

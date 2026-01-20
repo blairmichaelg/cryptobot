@@ -55,6 +55,7 @@ class BrowserManager:
             "geoip": True,
             "humanize": True,
             "block_images": self.block_images,
+            "fonts": ["Arial", "Courier New", "Georgia", "Times New Roman", "Verdana"] # Fix for Camoufox TypeError
         }
 
         # We keep the camoufox instance wrapper
