@@ -107,14 +107,20 @@ class CaptchaSolver:
         """Parse proxy URL into components for 2Captcha API.
         
         Args:
-            proxy_url: Full proxy URL (e.g., socks5://user:pass@host:port)
+            proxy_url: Full proxy URL (e.g., http://user:pass@host:port)
             
         Returns:
             Dict with proxytype and proxy (formatted for 2Captcha legacy API)
         """
+        # Ensure we have a protocol for urlparse
+        if "://" not in proxy_url:
+            test_url = f"http://{proxy_url}"
+        else:
+            test_url = proxy_url
+            
         from urllib.parse import urlparse
+        parsed = urlparse(test_url)
         
-        parsed = urlparse(proxy_url)
         proxy_type = "SOCKS5" if "socks" in parsed.scheme.lower() else "HTTP"
         
         # 2Captcha legacy API wants: user:pass@host:port (no protocol)
@@ -411,9 +417,19 @@ class CaptchaSolver:
                 return None
                 
             if data.get('status') != 1:
-                logger.error(f"2Captcha Submit Error: {data}")
+                error_code = data.get('request', 'UNKNOWN_ERROR')
+                logger.error(f"2Captcha Submit Error: {error_code}")
+                if error_code == "ERROR_IP_NOT_ALLOWED":
+                    logger.error("❌ 2Captcha: IP not whitelisted. Triggering whitelist update.")
                 return None
+                
             request_id = data['request']
+            
+            # Record cost (approx $0.003 for complex captchas)
+            from core.analytics import get_tracker
+            # method can be userrecaptcha, hcaptcha, etc.
+            cost = 0.0003 if method == "base64" else 0.003
+            get_tracker().record_cost("captcha", cost, "2captcha")
 
         # 2. Poll
         logger.info(f"Waiting for solution (ID: {request_id})...")
@@ -431,9 +447,18 @@ class CaptchaSolver:
 
                 if data.get('status') == 1:
                     return data['request']
-                if data.get('request') != "CAPCHA_NOT_READY":
-                    logger.error(f"2Captcha Poll Error: {data}")
-                    return None
+                
+                error_code = data.get('request')
+                if error_code == "CAPCHA_NOT_READY":
+                    continue
+                
+                logger.error(f"❌ 2Captcha Error: {error_code}")
+                if error_code == "ERROR_IP_NOT_ALLOWED":
+                    logger.error("🚫 Your IP is NOT whitelisted in 2Captcha. Please add it to the portal.")
+                elif error_code == "ERROR_ZERO_BALANCE":
+                    logger.error("💸 2Captcha balance is ZERO!")
+                
+                return None
         return None
 
 

@@ -768,6 +768,9 @@ class FaucetBot:
         if isinstance(result, bool):
             result = ClaimResult(success=result, status="Claimed" if result else "Failed")
             
+        # Record analytics for the claim
+        await self._record_analytics(result)
+            
         return result
 
     async def ptc_wrapper(self, page: Page) -> ClaimResult:

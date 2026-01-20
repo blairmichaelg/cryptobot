@@ -25,7 +25,7 @@ class BotSettings(BaseSettings):
     # Core
     log_level: str = "INFO"
     headless: bool = True
-    timeout: int = 90000  # Global timeout in ms (default 90s for slow proxies)
+    timeout: int = 120000  # Global timeout in ms (default 120s for slow proxies)
     
     # Security / API
     captcha_provider: str = "2captcha"
@@ -45,7 +45,7 @@ class BotSettings(BaseSettings):
     registration_password: str = "silverFox420!"
     registration_username: str = "blazefoley97"
     # Unified proxy string format: protocol://user:pass@host:port
-    registration_proxy: str = "http://ub033d0d0583c05dd-zone-custom:ub033d0d0583c05dd@170.106.118.114:2333"
+    registration_proxy: Optional[str] = Field(default=None, validation_alias="REGISTRATION_PROXY")
 
     # Wallet Infrastructure (Multi-Coin Support)
     # Mapping of coin -> RPC URL

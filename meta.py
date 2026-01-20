@@ -302,6 +302,68 @@ class CryptobotMeta:
         print(f"   Running registration script...")
         self.run_cmd(cmd, capture_output=False)
 
+    def check_health(self):
+        """Comprehensive system health check"""
+        print("[HEALTH] Running comprehensive health check...")
+        
+        # 1. Check .env and critical keys
+        print("\n--- Environment Status ---")
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        keys = ["TWOCAPTCHA_API_KEY", "CRYPTOBOT_COOKIE_KEY"]
+        for key in keys:
+            val = os.environ.get(key)
+            status = "✅ Found" if val else "❌ MISSING"
+            print(f"   {key:25} : {status}")
+
+        # 2. Check 2Captcha Balance & Status
+        print("\n--- 2Captcha API Status ---")
+        api_key = os.environ.get("TWOCAPTCHA_API_KEY")
+        if api_key:
+            try:
+                import requests
+                resp = requests.get(f"https://2captcha.com/res.php?key={api_key}&action=getbalance&json=1")
+                if resp.status_code == 200:
+                    balance = resp.json().get("request", "0.00")
+                    print(f"   Balance: ${balance}")
+                    print(f"   Status:  ✅ Online")
+                else:
+                    print(f"   Status:  ⚠️ API returned {resp.status_code}")
+            except Exception as e:
+                print(f"   Status:  ❌ Connection Failed: {e}")
+        else:
+            print("   Status:  ⚠️ API Key not found, skipping.")
+
+        # 3. Proxy Health
+        print("\n--- Proxy Pool Health ---")
+        try:
+            from core.config import BotSettings
+            from core.proxy_manager import ProxyManager
+            import asyncio
+            
+            settings = BotSettings()
+            pm = ProxyManager(settings)
+            count = pm.load_proxies_from_file()
+            print(f"   Total Proxies: {count}")
+            
+            if count > 0:
+                print("   Running latency check on pool (Async)...")
+                summary = asyncio.run(pm.health_check_all_proxies())
+                print(f"   Healthy: {summary['healthy']}/{summary['total']}")
+                print(f"   Avg Latency: {summary['avg_latency_ms']:.0f}ms")
+        except Exception as e:
+            print(f"   Error checking proxies: {e}")
+
+        # 4. Browser Stealth (Camoufox)
+        print("\n--- Browser (Camoufox) Health ---")
+        if shutil.which("camoufox"):
+             print("   Camoufox Binary: ✅ Found")
+        else:
+             print("   Camoufox Binary: ⚠️ Not in PATH (Expected if using venv)")
+        
+        print("\n[HEALTH] Check complete.")
+
 def main():
     parser = argparse.ArgumentParser(description="Cryptobot Management Meta-Tool")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -351,6 +413,8 @@ def main():
         meta.dashboard(args)
     elif args.command == "register":
         meta.register_pick(args)
+    elif args.command == "health":
+        meta.check_health()
     else:
         parser.print_help()
 

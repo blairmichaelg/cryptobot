@@ -40,6 +40,8 @@ class BrowserManager:
         self.playwright = None
         
         # Cookie storage - encrypted by default
+        # NOTE: Requires that load_dotenv() has been called BEFORE this __init__
+        # Otherwise os.environ.get('CRYPTOBOT_COOKIE_KEY') will be None
         self.use_encrypted_cookies = use_encrypted_cookies
         if use_encrypted_cookies:
             self._secure_storage = SecureCookieStorage()
@@ -89,8 +91,8 @@ class BrowserManager:
             "viewport": {"width": dims[0], "height": dims[1]},
             "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],
-            "locale": random.choice(["en-US", "en-GB"]),
-            "timezone_id": random.choice(["America/New_York", "Europe/London", "UTC"]),
+            "locale": random.choice(["en-US", "en-GB", "en-CA", "en-AU"]),
+            "timezone_id": random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"]),
         }
         
         # Sticky Session Logic: Resolve and Persist Proxy

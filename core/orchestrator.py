@@ -426,6 +426,14 @@ class JobScheduler:
                 alerts = get_tracker().check_performance_alerts(hours=2)
                 for alert in alerts:
                     logger.warning(f"🔔 ALERT: {alert}")
+                
+                # Fix #27: Log profitability summary every 5 minutes
+                profit = get_tracker().get_profitability(hours=24)
+                logger.info(
+                    f"💰 PROFITABILITY: Earnings ${profit['earnings_usd']:.4f} | "
+                    f"Costs ${profit['costs_usd']:.4f} | "
+                    f"Net ${profit['net_profit_usd']:.4f} | ROI {profit['roi']:.2f}x"
+                )
             
             if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
                 logger.info("Performing browser health check...")

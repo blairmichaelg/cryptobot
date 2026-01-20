@@ -23,12 +23,16 @@ class StealthHub:
         (() => {
             // 1. Navigator Spoofing
             const maskNavigator = (navigator) => {
+                const platforms = ['Win32', 'MacIntel', 'Linux x86_64'];
+                const memories = [4, 8, 16, 32];
+                const cores = [4, 8, 12, 16];
+                
                 const props = {
                     webdriver: false,
                     languages: ['en-US', 'en'],
-                    platform: 'Win32',
-                    deviceMemory: 8,
-                    hardwareConcurrency: 8,
+                    platform: platforms[Math.floor(Math.random() * platforms.length)],
+                    deviceMemory: memories[Math.floor(Math.random() * memories.length)],
+                    hardwareConcurrency: cores[Math.floor(Math.random() * cores.length)],
                     maxTouchPoints: 0
                 };
                 

@@ -4,6 +4,7 @@ import aiohttp
 import random
 import string
 import os
+import time
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from core.config import AccountProfile, BotSettings
@@ -22,6 +23,9 @@ class Proxy:
         """Returns the proxy string format expected by Playwright: http://user:pass@ip:port or http://ip:port"""
         if self.username and self.password:
             return f"{self.protocol}://{self.username}:{self.password}@{self.ip}:{self.port}"
+        elif self.username:
+            # Fix #35: Keep username even if password is empty (Common for whitelisted sessions)
+            return f"{self.protocol}://{self.username}@{self.ip}:{self.port}"
         return f"{self.protocol}://{self.ip}:{self.port}"
 
     def to_2captcha_string(self) -> str:
@@ -39,9 +43,9 @@ class ProxyManager:
     """
 
     # Validation constants
-    VALIDATION_TIMEOUT_SECONDS = 10
-    VALIDATION_TEST_URL = "https://httpbin.org/ip"
-    LATENCY_HISTORY_MAX = 10  # Keep last 10 latency measurements per proxy
+    VALIDATION_TIMEOUT_SECONDS = 15
+    VALIDATION_TEST_URL = "https://www.google.com"
+    LATENCY_HISTORY_MAX = 5  # Keep last 5 latency measurements per proxy
     DEAD_PROXY_THRESHOLD_MS = 5000  # Consider proxy dead if avg latency > 5s
     DEAD_PROXY_FAILURE_COUNT = 3  # Remove after 3 consecutive failures
 
@@ -49,6 +53,7 @@ class ProxyManager:
         self.settings = settings
         self.api_key = settings.twocaptcha_api_key
         self.proxies: List[Proxy] = []
+        self.all_proxies: List[Proxy] = [] # Fix: Master list to preserve proxies during cooldown
         self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
         self.assignments: Dict[str, Proxy] = {}  # Map username -> Proxy
         
@@ -58,6 +63,11 @@ class ProxyManager:
         self.proxy_failures: Dict[str, int] = {}
         # Dead proxies that have been removed
         self.dead_proxies: List[str] = []
+        # Cooldown tracking: proxy_key -> timestamp when it can be reused
+        self.proxy_cooldowns: Dict[str, float] = {}
+        # Cooldown durations (seconds)
+        self.DETECTION_COOLDOWN = 3600  # 1 hour for 403/Detection
+        self.FAILURE_COOLDOWN = 300      # 5 minutes for connection errors
 
         # Auto-load on init
         self.load_proxies_from_file()
@@ -78,7 +88,6 @@ class ProxyManager:
         Returns:
             Latency in milliseconds, or None if failed
         """
-        import time
         proxy_url = proxy.to_string()
         proxy_key = self._proxy_key(proxy)
         
@@ -140,21 +149,21 @@ class ProxyManager:
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
         
         if detected:
-            # Detection is a severe failure - mark this specific session as dead immediately
-            self.proxy_failures[proxy_key] = self.DEAD_PROXY_FAILURE_COUNT
-            logger.error(f"[BURNED] Proxy session detected by site. Marking as dead: {proxy_key}")
-            
-        if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
-            if proxy_key not in self.dead_proxies:
-                self.dead_proxies.append(proxy_key)
-                logger.error(f"[DEAD] Proxy {proxy_key} marked as DEAD after threshold reached")
-                # Auto-remove from active pool
-                self.remove_dead_proxies()
-                
-                # Replenish if we are running low (e.g. < 5 proxies left)
-                if len(self.proxies) < 5 and self.settings.use_2captcha_proxies:
-                    logger.warning("📉 Proxy pool low (< 5). Triggering background replenishment...")
-                    asyncio.create_task(self.fetch_proxies(100))
+            # Detection: Put on long cooldown
+            self.proxy_cooldowns[proxy_key] = time.time() + self.DETECTION_COOLDOWN
+            logger.error(f"[BURNED] Proxy session detected by site. Cooldown for {self.DETECTION_COOLDOWN/60:.0f}m: {proxy_key}")
+        else:
+            # Connection failure: Put on short cooldown if threshold reached
+            if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
+                self.proxy_cooldowns[proxy_key] = time.time() + self.FAILURE_COOLDOWN
+                logger.warning(f"[TIMEOUT] Proxy {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooldown for {self.FAILURE_COOLDOWN/60:.0f}m")
+
+        # Check if we need to remove from active pool
+        self.remove_dead_proxies()
+        
+        if len(self.proxies) < 5 and self.settings.use_2captcha_proxies:
+            logger.warning("📉 Proxy pool low (< 5). Triggering background replenishment...")
+            asyncio.create_task(self.fetch_proxies_from_api(100))
 
     def get_proxy_stats(self, proxy: Proxy) -> Dict:
         """
@@ -222,18 +231,46 @@ class ProxyManager:
 
     def remove_dead_proxies(self) -> int:
         """
-        Remove dead proxies from the active pool.
+        Remove dead or slow proxies from the active pool.
         
         Returns:
             Number of proxies removed
         """
         before_count = len(self.proxies)
-        self.proxies = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
-        self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in self.dead_proxies]
+        now = time.time()
         
+        # 1. Clean up expired cooldowns
+        expired = [k for k, t in self.proxy_cooldowns.items() if t < now]
+        for k in expired:
+            del self.proxy_cooldowns[k]
+            if k in self.proxy_failures:
+                self.proxy_failures[k] = 0 # Reset failures after cooldown
+            logger.info(f"[RESTORE] Proxy {k} finished cooldown and is now active.")
+
+        # 2. Filter active proxies: must NOT be in cooldown and must NOT be slow from the master list
+        current_cooldowns = set(self.proxy_cooldowns.keys())
+        
+        # Filter proxies based on master list to allow restoration
+        self.proxies = [p for p in self.all_proxies if self._proxy_key(p) not in current_cooldowns]
+        self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in current_cooldowns]
+        
+        # 3. Filter out slow proxies (avg latency > threshold)
+        slow_proxies = []
+        for p in self.proxies:
+            key = self._proxy_key(p)
+            latencies = self.proxy_latency.get(key, [])
+            if latencies and (sum(latencies) / len(latencies)) > self.DEAD_PROXY_THRESHOLD_MS:
+                slow_proxies.append(key)
+                self.proxy_cooldowns[key] = now + self.FAILURE_COOLDOWN # Trigger cooldown for slow ones too
+        
+        if slow_proxies:
+            logger.warning(f"Removing {len(slow_proxies)} SLOW proxies from pool (cooldown): {slow_proxies}")
+            self.proxies = [p for p in self.proxies if self._proxy_key(p) not in slow_proxies]
+            self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in slow_proxies]
+            
         removed = before_count - len(self.proxies)
         if removed > 0:
-            logger.info(f"[CLEANUP] Removed {removed} dead proxies from pool")
+            logger.info(f"[CLEANUP] Removed {removed} total dead/slow proxies from pool. Remaining: {len(self.proxies)}")
         return removed
 
     async def validate_proxy(self, proxy: Proxy) -> bool:
@@ -335,7 +372,8 @@ class ProxyManager:
                     new_proxies.append(proxy)
                     count += 1
             
-            self.proxies = new_proxies
+            self.all_proxies = new_proxies
+            self.proxies = list(new_proxies)
             logger.info(f"[OK] Loaded {count} proxies from file.")
             return count
             
@@ -448,7 +486,8 @@ class ProxyManager:
                                     new_proxies.append(proxy)
                             
                             if new_proxies:
-                                self.proxies = new_proxies
+                                self.all_proxies = new_proxies
+                                self.proxies = list(new_proxies)
                                 # Save to proxies.txt
                                 abs_path = os.path.abspath(self.settings.residential_proxies_file)
                                 with open(abs_path, "w") as f:
@@ -523,7 +562,8 @@ class ProxyManager:
                 with open(abs_path, "w") as f:
                     f.write("\n".join(lines_to_write))
                 
-                self.proxies = new_proxies
+                self.all_proxies = new_proxies
+                self.proxies = list(new_proxies)
                 logger.info(f"✅ Generated and saved {len(new_proxies)} unique residential proxies to {abs_path}")
                 return len(new_proxies)
             except Exception as e:
@@ -579,22 +619,22 @@ class ProxyManager:
             The new proxy string, or None if no healthy proxies left
         """
         current_proxy_str = profile.proxy
-        current_key = ""
-        if current_proxy_str:
-            if "@" in current_proxy_str:
-                current_key = current_proxy_str.split("@")[-1]
-            elif "://" in current_proxy_str:
-                current_key = current_proxy_str.split("://")[-1]
+        # Normalize current key to match _proxy_key format (user:pass@ip:port)
+        current_key = current_proxy_str
+        if "://" in current_key:
+             current_key = current_key.split("://", 1)[1]
                 
         # If current is dead or we just want to rotate
         if not current_key or current_key in self.dead_proxies or profile.proxy_rotation_strategy == "random":
             if not self.proxies:
-                return None
+                 # Check if we can fetch more
+                 return None
                 
             # Filter out dead ones
             healthy = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
             if not healthy:
-                logger.warning(f"No healthy proxies left for {profile.username}")
+                logger.warning(f"No healthy proxies left for {profile.username}. Trying to replenish pool...")
+                # We return None but the orchestrator might trigger a retry or replenishment
                 return None
                 
             # Choose new one
@@ -603,5 +643,5 @@ class ProxyManager:
             self.assignments[profile.username] = new_proxy
             logger.info(f"[ROTATE] {profile.username} rotated to {self._proxy_key(new_proxy)}")
             return profile.proxy
-            
+        
         return current_proxy_str

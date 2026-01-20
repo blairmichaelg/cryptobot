@@ -29,6 +29,14 @@ class ClaimRecord:
     currency: str = "unknown"
     balance_after: float = 0.0
 
+@dataclass
+class CostRecord:
+    """Record of a cost incurred (captcha, proxy)."""
+    timestamp: float
+    type: str  # 'captcha', 'proxy'
+    amount_usd: float
+    faucet: Optional[str] = None
+
 
 class EarningsTracker:
     """
@@ -39,6 +47,7 @@ class EarningsTracker:
     def __init__(self, storage_file: Optional[str] = None):
         self.storage_file = storage_file or ANALYTICS_FILE
         self.claims: list = []
+        self.costs: list = []  # Fix #27: Track costs
         self.session_start = time.time()
         
         # Ensure file exists and is writable
@@ -54,7 +63,8 @@ class EarningsTracker:
                 with open(self.storage_file, "r") as f:
                     data = json.load(f)
                     self.claims = data.get("claims", [])
-                    logger.info(f"📊 Loaded {len(self.claims)} historical claims from {self.storage_file}")
+                    self.costs = data.get("costs", [])
+                    logger.info(f"📊 Loaded {len(self.claims)} claims and {len(self.costs)} costs.")
         except Exception as e:
             logger.warning(f"Could not load analytics: {e}")
             self.claims = []
@@ -63,7 +73,8 @@ class EarningsTracker:
         """Persist analytics data to disk."""
         try:
             data = {
-                "claims": self.claims[-1000:],  # Keep last 1000 claims
+                "claims": self.claims[-2000:],  # Increased limit
+                "costs": self.costs[-1000:],
                 "last_updated": time.time()
             }
             with open(self.storage_file, "w") as f:
@@ -102,6 +113,40 @@ class EarningsTracker:
         
         # Save immediately to ensure data persistence
         self._save()
+
+    def record_cost(self, cost_type: str, amount_usd: float, faucet: str = None):
+        """Record a cost incurred (e.g. captcha solve)."""
+        record = CostRecord(
+            timestamp=time.time(),
+            type=cost_type,
+            amount_usd=amount_usd,
+            faucet=faucet
+        )
+        self.costs.append(asdict(record))
+        logger.debug(f"💸 Cost: {cost_type} ${amount_usd:.4f} for {faucet or 'global'}")
+        self._save()
+
+    def get_profitability(self, hours: int = 24) -> Dict[str, Any]:
+        """Calculate net profit in USD (estimated)."""
+        cutoff = time.time() - (hours * 3600)
+        
+        # Estimate earnings in USD (100k satoshi = $10 approx, simplified)
+        # TODO: Integrate real-time price feed
+        satoshi_to_usd = 0.0001  # Placeholder 1 satoshi = $0.0001 is way off, let's use 100k = $43 (current)
+        btc_price = 43000
+        sat_value = btc_price / 100_000_000
+        
+        earnings_sat = sum(c['amount'] for c in self.claims if c['timestamp'] >= cutoff and c['success'])
+        earnings_usd = earnings_sat * sat_value
+        
+        total_costs = sum(cost['amount_usd'] for cost in self.costs if cost['timestamp'] >= cutoff)
+        
+        return {
+            "earnings_usd": earnings_usd,
+            "costs_usd": total_costs,
+            "net_profit_usd": earnings_usd - total_costs,
+            "roi": (earnings_usd / total_costs) if total_costs > 0 else 0
+        }
     
     def get_session_stats(self) -> Dict[str, Any]:
         """Get statistics for the current session."""

@@ -65,16 +65,44 @@ class SecureCookieStorage:
                 pass
         
         if not primary_key:
-            # Generate a new key if still none exists
-            new_key = Fernet.generate_key()
-            logger.warning(
-                f"No cookie encryption key found in environment. Generated new key.\n"
-                f"Add this to your .env file:\n"
-                f"{COOKIE_KEY_ENV}={new_key.decode()}\n"
-f"\n"
-                f"IMPORTANT: This warning appears every startup until you add the key to .env"
+            # Fix #34: Try loading from persistent file fallback
+            key_file = CONFIG_DIR / ".cookie_key"
+            if key_file.exists():
+                try:
+                    primary_key = key_file.read_text().strip()
+                    logger.info(f"Loaded {COOKIE_KEY_ENV} from persistent fallback file.")
+                except Exception as e:
+                    logger.warning(f"Failed to read fallback key file: {e}")
+
+        if not primary_key:
+            # Generate a new key if still none exists - but DO NOT use it silently
+            # This avoids the "lost cookies" issue with regenerating keys
+            logger.error(
+                f"❌ CRITICAL: No cookie encryption key found in environment variable '{COOKIE_KEY_ENV}'.\n"
+                f"Please add it to your .env file or environment.\n"
+                f"A temporary key has been created, and cookies will NOT persist across restarts."
             )
-            return Fernet(new_key)
+            # Fix: Return the key so we can try to save it
+            generated_key = Fernet.generate_key().decode()
+            
+            # 1. Save to fallback file
+            try:
+                (CONFIG_DIR / ".cookie_key").write_text(generated_key)
+                logger.info(f"Persisted newly generated key to {CONFIG_DIR}/.cookie_key")
+            except Exception as e:
+                logger.warning(f"Could not persist new key to fallback: {e}")
+                
+            # 2. Attempt to save to .env
+            try:
+                env_path = os.path.join(os.getcwd(), ".env")
+                if os.path.exists(env_path):
+                    with open(env_path, "a") as f:
+                        f.write(f"\n{COOKIE_KEY_ENV}={generated_key}\n")
+                    logger.info("✅ Also appended key to .env file.")
+            except Exception as e:
+                logger.debug(f"Could not append to .env: {e}")
+
+            return Fernet(generated_key.encode())
         
         try:
             # Support key rotation with MultiFernet

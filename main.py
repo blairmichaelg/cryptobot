@@ -135,11 +135,7 @@ async def main():
                 
                 # Sticky Proxy Injection
                 if profile.proxy:
-                    # Helper check:
-                    p_str = profile.proxy
-                    if "://" in p_str:
-                        p_str = p_str.split("://")[1]
-                    bot.set_proxy(p_str)
+                    bot.set_proxy(profile.proxy)
                 
                 # Get jobs and add to scheduler
                 jobs = bot.get_jobs()

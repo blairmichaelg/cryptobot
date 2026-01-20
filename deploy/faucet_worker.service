@@ -5,17 +5,13 @@ After=network.target
 [Service]
 Type=simple
 User=azureuser
-WorkingDirectory=/home/azureuser/backend_service
-EnvironmentFile=/home/azureuser/backend_service/.env
-# Override HEADLESS if needed, though .env should handle it
-Environment="HEADLESS=true"
-Environment="DISPLAY=:99"
-# Headless X11 support via xvfb-run
-ExecStart=/usr/bin/xvfb-run -a --server-args="-screen 0 1280x1024x24 -ac" /home/azureuser/backend_service/venv/bin/python main.py
+WorkingDirectory=/home/azureuser/cryptobot
+EnvironmentFile=/home/azureuser/cryptobot/.env
+ExecStart=/usr/bin/python3 main.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/home/azureuser/backend_service/service.log
-StandardError=append:/home/azureuser/backend_service/service.log
+StandardOutput=append:/home/azureuser/cryptobot/logs/production_run.log
+StandardError=append:/home/azureuser/cryptobot/logs/production_run.log
 
 [Install]
 WantedBy=multi-user.target
