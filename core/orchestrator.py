@@ -321,8 +321,8 @@ class JobScheduler:
             result = await method(page)
             
             duration = time.time() - start_time
-            logger.info(f"✅ Finished {job.name} for {username} in {duration:.1f}s")
-            
+            logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
+
             # Check if result indicates proxy detection
             if hasattr(result, 'status') and "Proxy Detected" in result.status:
                 logger.error(f"❌ Proxy detected for {job.name} ({username}). Rotating proxy...")

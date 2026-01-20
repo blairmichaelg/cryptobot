@@ -16,16 +16,35 @@ class CompressedRotatingFileHandler(RotatingFileHandler):
         os.remove(source)
 
 def setup_logging(log_level: str = "INFO"):
+    # Force UTF-8 encoding for console output on Windows
+    # Alternatively, use a StreamHandler and hope for the best, 
+    # but wrapping stdout is more reliable for emojis.
+    
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    
+    # Create handlers
+    file_handler = CompressedRotatingFileHandler(
+        'faucet_bot.log',
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding='utf-8'
+    )
+    
+    # StreamHandler doesn't take encoding directly in older Python, 
+    # but in 3.7+ it can be set via sys.stdout.reconfigure or just let it fail.
+    # We will use a custom handler or try to reconfigure.
+    if sys.platform == "win32":
+        try:
+            import io
+            if hasattr(sys.stdout, 'reconfigure'):
+                sys.stdout.reconfigure(encoding='utf-8')
+        except:
+            pass
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    
     logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
+        level=level,
         format='%(asctime)s [%(levelname)s] %(name)s - %(message)s',
-        handlers=[
-            CompressedRotatingFileHandler(
-                'faucet_bot.log',
-                maxBytes=10 * 1024 * 1024,
-                backupCount=5,
-                encoding='utf-8'
-            ),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[file_handler, stream_handler]
     )

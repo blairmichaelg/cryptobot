@@ -9,6 +9,11 @@ from dataclasses import dataclass
 
 from core.config import BotSettings, AccountProfile
 from core.logging_setup import setup_logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file into os.environ
+load_dotenv()
+
 from core.wallet_manager import WalletDaemon
 from browser.instance import BrowserManager
 from faucets.base import ClaimResult
@@ -52,7 +57,8 @@ async def main():
     browser_manager = BrowserManager(
         headless=settings.headless,
         block_images=settings.block_images,
-        block_media=settings.block_media
+        block_media=settings.block_media,
+        timeout=settings.timeout
     )
     
     proxy_manager = None

@@ -18,7 +18,7 @@ class BrowserManager:
     Manages the lifecycle of a stealthy Camoufox browser instance.
     Handles context creation, page management, and cleanup.
     """
-    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True):
+    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True, timeout: int = 60000):
         """
         Initialize the BrowserManager.
 
@@ -28,11 +28,13 @@ class BrowserManager:
             block_images: Whether to block image loading.
             block_media: Whether to block media (video/audio).
             use_encrypted_cookies: Whether to use encrypted cookie storage. Defaults to True.
+            timeout: Default timeout in milliseconds.
         """
         self.headless = headless
         self.proxy = proxy
         self.block_images = block_images
         self.block_media = block_media
+        self.timeout = timeout
         self.browser = None
         self.context = None
         self.playwright = None
@@ -129,6 +131,9 @@ class BrowserManager:
 
         logger.info(f"Creating isolated stealth context (Profile: {profile_name or 'Anonymous'}, Proxy: {proxy or 'None'}, Resolution: {dims[0]}x{dims[1]})")
         context = await self.browser.new_context(**context_args)
+        
+        # Set global timeout for this context
+        context.set_default_timeout(self.timeout)
         
         # Comprehensive Anti-Fingerprinting Suite
         # Includes: WebRTC leak prevention, Canvas/WebGL/Audio evasion, Navigator spoofing
