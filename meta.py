@@ -186,6 +186,102 @@ class CryptobotMeta:
         except Exception as e:
             print(f"   Error generating report: {e}")
 
+    def dashboard(self, args):
+        """Interactive dashboard showing earnings trends and health metrics"""
+        print("[DASHBOARD] Cryptobot Analytics Dashboard")
+        print("=" * 70)
+        
+        try:
+            from core.analytics import get_tracker
+            from core.withdrawal_analytics import get_analytics
+            
+            tracker = get_tracker()
+            withdrawal_analytics = get_analytics()
+            
+            # Session stats
+            session_stats = tracker.get_session_stats()
+            print(f"\n📊 Session Overview (Running for {session_stats['session_hours']:.1f}h)")
+            print(f"   Total Claims: {session_stats['total_claims']} ({session_stats['successful_claims']} successful)")
+            print(f"   Success Rate: {session_stats['success_rate']:.1f}%")
+            
+            # Earnings by currency
+            print(f"\n💰 Earnings Breakdown:")
+            for currency, amount in session_stats.get('earnings_by_currency', {}).items():
+                print(f"   {currency}: {amount}")
+            
+            # 24h faucet performance
+            faucet_stats = tracker.get_faucet_stats(24)
+            print(f"\n🎯 Top Faucets (Last 24h):")
+            sorted_faucets = sorted(
+                faucet_stats.items(), 
+                key=lambda x: x[1].get('earnings', 0), 
+                reverse=True
+            )[:5]
+            
+            for faucet, stats in sorted_faucets:
+                success_rate = stats.get('success_rate', 0)
+                earnings = stats.get('earnings', 0)
+                total = stats.get('total', 0)
+                print(f"   {faucet:15} | {success_rate:5.1f}% | {earnings:8.6f} | {total} claims")
+            
+            # Hourly rates
+            print(f"\n📈 Hourly Earning Rates (24h):")
+            hourly_rates = tracker.get_hourly_rate(24)
+            for faucet, rate in sorted(hourly_rates.items(), key=lambda x: x[1], reverse=True)[:5]:
+                print(f"   {faucet:15} | {rate:.6f}/hr")
+            
+            # Trend analysis (7 days)
+            print(f"\n📊 Trend Analysis (7 Days):")
+            trends = tracker.get_trending_analysis(7)
+            for faucet, trend_data in sorted(trends.items(), key=lambda x: x[1].get('growth_rate', 0), reverse=True)[:5]:
+                growth = trend_data.get('growth_rate', 0)
+                avg_daily = trend_data.get('avg_daily_earnings', 0)
+                trend_icon = "📈" if growth > 0 else "📉" if growth < 0 else "➡️"
+                print(f"   {faucet:15} | {trend_icon} {growth:+6.1f}% | Avg: {avg_daily:.6f}/day")
+            
+            # Profitability alert
+            print(f"\n⚠️  Profitability Alerts:")
+            alerts = self._check_profitability_alerts(tracker)
+            if alerts:
+                for alert in alerts:
+                    print(f"   {alert}")
+            else:
+                print("   ✅ All systems healthy")
+            
+            # Withdrawal stats
+            print(f"\n💸 Withdrawal Summary (Last 7 Days):")
+            withdrawal_report = withdrawal_analytics.generate_report(period="weekly")
+            print(f"   {withdrawal_report}")
+            
+        except Exception as e:
+            print(f"   Error generating dashboard: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _check_profitability_alerts(self, tracker):
+        """Check for significant earnings drops (Issue #27)"""
+        alerts = []
+        
+        try:
+            trends = tracker.get_trending_analysis(7)
+            
+            for faucet, trend_data in trends.items():
+                growth_rate = trend_data.get('growth_rate', 0)
+                daily_earnings = trend_data.get('daily_earnings', [])
+                
+                # Alert if growth dropped more than 50%
+                if growth_rate < -50:
+                    alerts.append(f"🔴 {faucet}: Earnings dropped {abs(growth_rate):.0f}%")
+                
+                # Alert if earnings are consistently zero for 3+ days
+                if len(daily_earnings) >= 3 and sum(daily_earnings[:3]) == 0:
+                    alerts.append(f"🟡 {faucet}: No earnings in last 3 days")
+        
+        except Exception as e:
+            alerts.append(f"Error checking alerts: {e}")
+        
+        return alerts
+
     def register_pick(self, args):
         """Automate Pick.io registrations"""
         print("[REGISTER] Starting automated Pick.io registrations...")
@@ -228,6 +324,9 @@ def main():
     # Report
     subparsers.add_parser("report", help="Show unified profitability and withdrawal report")
 
+    # Dashboard
+    subparsers.add_parser("dashboard", help="Interactive analytics dashboard with trends and alerts")
+
     # Register
     register_parser = subparsers.add_parser("register", help="Automate Pick.io registrations")
     register_parser.add_argument("--email", help="Email for registration")
@@ -248,6 +347,8 @@ def main():
         meta.deploy(args)
     elif args.command == "report":
         meta.report(args)
+    elif args.command == "dashboard":
+        meta.dashboard(args)
     elif args.command == "register":
         meta.register_pick(args)
     else:

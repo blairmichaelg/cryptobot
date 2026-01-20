@@ -60,16 +60,22 @@ class FreeBitcoinBot(FaucetBot):
         return False
 
     async def claim(self) -> ClaimResult:
+        logger.info(f"[DEBUG] FreeBitcoin claim() method started")
         try:
+            logger.info(f"[DEBUG] Navigating to {self.base_url}/")
             await self.page.goto(f"{self.base_url}/")
             await self.close_popups()
             await self.random_delay(2, 4)
 
             # Extract Balance
+            logger.info(f"[DEBUG] Getting balance...")
             balance = await self.get_balance("#balance")
+            logger.info(f"[DEBUG] Balance: {balance}")
 
             # Check if timer is running (already claimed)
+            logger.info(f"[DEBUG] Checking timer...")
             wait_min = await self.get_timer("#time_remaining")
+            logger.info(f"[DEBUG] Timer: {wait_min} minutes")
             if wait_min > 0:
                  return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait_min, balance=balance)
 
