@@ -1,7 +1,15 @@
 
 #!/bin/bash
-# Deployment script for Cryptobot on Azure VM
-# Usage: ./deploy.sh [vm_name] [resource_group] [--install-service]
+# -----------------------------------------------------------------------------
+# Deployment Wrapper Script using Azure CLI
+#
+# This script handles two modes:
+# 1. Remote Trigger (Default): Connects to Azure VM and pulls changes + restarts service.
+#    Usage: ./deploy/deploy.sh [vm_name] [resource_group]
+#
+# 2. Local Installation (--install-service): Sets up systemd service on the CURRENT machine.
+#    Usage: ./deploy/deploy.sh --install-service
+# -----------------------------------------------------------------------------
 
 # Function to perform local installation
 install_service() {
@@ -41,11 +49,16 @@ install_service() {
 VM_NAME=""
 RESOURCE_GROUP=""
 LOCAL_MODE=false
+CHECK_STATUS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --install-service)
             LOCAL_MODE=true
+            shift
+            ;;
+        --check-status)
+            CHECK_STATUS=true
             shift
             ;;
         *)
@@ -109,15 +122,24 @@ sudo systemctl status faucet_worker --no-pager
 "
 
 # Execute via Azure CLI
-az vm run-command invoke \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$VM_NAME" \
-  --command-id RunShellScript \
-  --scripts "$REMOTE_SCRIPT"
-
-if [ $? -eq 0 ]; then
-    echo "✅ Remote Deployment Triggered Successfully!"
+if [ "$CHECK_STATUS" = true ]; then
+  echo "📊 Checking Remote Status..."
+  az vm run-command invoke \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VM_NAME" \
+    --command-id RunShellScript \
+    --scripts "sudo -u azureuser bash -c 'cd /home/azureuser/Repositories/cryptobot && source .venv/bin/activate && python meta.py report'"
 else
-    echo "❌ Remote Deployment Failed!"
-    exit 1
+  az vm run-command invoke \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VM_NAME" \
+    --command-id RunShellScript \
+    --scripts "$REMOTE_SCRIPT"
+
+  if [ $? -eq 0 ]; then
+      echo "✅ Remote Deployment Triggered Successfully!"
+  else
+      echo "❌ Remote Deployment Failed!"
+      exit 1
+  fi
 fi
