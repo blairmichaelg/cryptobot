@@ -5,6 +5,35 @@ import core.azure_monitor as azure_monitor
 
 class TestAzureMonitor:
     
+    def test_import_failure_simulation(self):
+        """Test that import failure is handled gracefully by simulating the except block (lines 23-24)."""
+        # This test verifies that when azure monitor imports fail, the code handles it gracefully
+        # We can't easily test the actual import failure in the same process, but we can verify
+        # the fallback behavior by checking that functions still work when _azure_monitor_available is False
+        
+        # Save original state
+        original_available = azure_monitor._azure_monitor_available
+        original_tracer = azure_monitor._tracer
+        
+        try:
+            # Simulate the import failure state
+            azure_monitor._azure_monitor_available = False
+            azure_monitor._tracer = None
+            
+            # Now test that the initialize function returns False when SDK is not available
+            result = azure_monitor.initialize_azure_monitor("test_conn")
+            assert result is False
+            
+            # And tracking functions should handle None tracer gracefully
+            azure_monitor.track_claim("test", True, 1.0, "BTC")  # Should not crash
+            azure_monitor.track_error("error", "message", "faucet")  # Should not crash
+            azure_monitor.track_metric("metric", 1.0)  # Should not crash
+            
+        finally:
+            # Restore original state
+            azure_monitor._azure_monitor_available = original_available
+            azure_monitor._tracer = original_tracer
+    
     def test_initialize_azure_monitor_sdk_missing(self):
         """Test initialization when SDK is not installed (lines 40-42)."""
         with patch("core.azure_monitor._azure_monitor_available", False):
