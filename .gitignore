@@ -70,6 +70,8 @@ heartbeat.txt
 *.db
 earnings_analytics.json
 withdrawal_analytics.db
+profitability_report.json
+captcha_balance_tracking.json
 
 # Debug and Test Scripts (root only)
 /debug_*.py
