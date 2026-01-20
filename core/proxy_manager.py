@@ -153,6 +153,8 @@ class ProxyManager:
         elif self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
             # Consistent connection failure: 5 min cooldown
             self.proxy_cooldowns[proxy_key] = now + self.FAILURE_COOLDOWN
+            if proxy_key not in self.dead_proxies:
+                self.dead_proxies.append(proxy_key)
             logger.warning(f"[COOLDOWN] Proxy session {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooling down for 5m.")
 
         # Trigger cleanup

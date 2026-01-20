@@ -55,7 +55,22 @@ class Job:
         return cls(**data)
 
 class JobScheduler:
+    """
+    Central orchestration engine for the bot farm.
+
+    Manages a priority queue of Jobs, orchestrating their execution across available
+    browser contexts. Handles concurrency limits, rate limiting per domain,
+    proxy rotation, and robust error recovery.
+    """
     def __init__(self, settings: BotSettings, browser_manager: Any, proxy_manager: Optional[Any] = None):
+        """
+        Initialize the scheduler.
+
+        Args:
+            settings: Global configuration object.
+            browser_manager: Manager for Playwright/Camoufox instances.
+            proxy_manager: Optional manager for rotating residential proxies.
+        """
         self.settings = settings
         self.browser_manager = browser_manager
         self.proxy_manager = proxy_manager
@@ -73,6 +88,12 @@ class JobScheduler:
         # Proxy rotation tracking
         self.proxy_failures: Dict[str, Dict[str, Any]] = {}  # Key: proxy URL
         self.proxy_index: Dict[str, int] = {}  # Key: profile.username
+        
+        # Circuit Breaker Tracking
+        self.faucet_failures: Dict[str, int] = {} # Key: faucet_type
+        self.faucet_cooldowns: Dict[str, float] = {} # Key: faucet_type, Value: timestamp
+        self.CIRCUIT_BREAKER_THRESHOLD = 5
+        self.CIRCUIT_BREAKER_COOLDOWN = 14400 # 4 hours
         
         # Domain rate limiting - prevents hitting same faucet too fast
         self.domain_last_access: Dict[str, float] = {}  # Key: domain, Value: last access time
@@ -222,7 +243,8 @@ class JobScheduler:
         for pending_job in self.queue:
              if (pending_job.profile.username == username and 
                  pending_job.job_type == job.job_type and 
-                 pending_job.faucet_type == job.faucet_type):
+                 pending_job.faucet_type == job.faucet_type and
+                 pending_job.name == job.name):
                  logger.debug(f"⏭️ Skipping duplicate job add: {job.name} for {username}")
                  return
         
@@ -370,6 +392,16 @@ class JobScheduler:
             
             # Reschedule based on result
             if hasattr(result, 'next_claim_minutes'):
+                if result.success:
+                    # Reset Circuit Breaker on success
+                    self.faucet_failures[job.faucet_type] = 0
+                else:
+                    # Increment failure count
+                    self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
+                    if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
+                        logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times consecutively.")
+                        self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
+                        
                 wait_time = result.next_claim_minutes * 60
                 # Add jitter
                 wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
@@ -406,7 +438,17 @@ class JobScheduler:
                 del self.running_jobs[job_key]
 
     async def scheduler_loop(self):
-        """Main event loop for the scheduler."""
+        """
+        Main event loop for the scheduler.
+        
+        Runs continuously until stopped. In each iteration:
+        1. Performs maintenance (heartbeats, session persistence, health checks).
+        2. Checks for jobs ready to run (next_run <= now).
+        3. Enforces concurrency limits (global and per-profile).
+        4. Enforces domain rate limiting.
+        5. Spawns tasks for eligible jobs.
+        6. Sleeps dynamically until the next job is ready or timeout occurs.
+        """
         logger.info("Job Scheduler loop started.")
         while not self._stop_event.is_set():
             now = time.time()
@@ -467,6 +509,20 @@ class JobScheduler:
                     logger.debug(f"⏳ Rate limit: {job.name} must wait {domain_delay:.1f}s for {job.faucet_type}")
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
+                
+                # Check Circuit Breaker
+                if job.faucet_type in self.faucet_cooldowns:
+                     cooldown_end = self.faucet_cooldowns[job.faucet_type]
+                     if now < cooldown_end:
+                         logger.debug(f"🔌 Circuit Breaker Active: Skipping {job.faucet_type} until {time.ctime(cooldown_end)}")
+                         job.next_run = now + 600 # Check back in 10 mins
+                         continue
+                     else:
+                         # Cooldown expired, reset
+                         del self.faucet_cooldowns[job.faucet_type]
+                         self.faucet_failures[job.faucet_type] = 0
+                         logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
+
                 
                 # Advanced Withdrawal Scheduling (New Gen 3.0 Logic)
                 if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():

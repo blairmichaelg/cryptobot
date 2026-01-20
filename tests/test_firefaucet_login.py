@@ -31,7 +31,7 @@ async def test_firefaucet_login_logic():
     await browser_manager.launch()
     
     try:
-        page = await browser_manager.create_context(profile_id="test_profile")
+        page = await browser_manager.create_context(profile_name="test_profile")
         bot = FireFaucetBot(settings, page)
         
         print(f"Testing Login for {bot.faucet_name}...")

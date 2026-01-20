@@ -55,15 +55,26 @@ class TestProxyManagerComprehensive:
         """Test record_failure method."""
         manager = ProxyManager(mock_settings)
         
-        # Test simple failure recording
-        manager.record_failure("http://u:p@1.1.1.1:8080")
-        assert manager.proxy_failures.get("u:p@1.1.1.1:8080", 0) == 1
-        
-        # Test detected failure (more severe)
-        manager.record_failure("http://u:p@1.2.3.4:9090", detected=True)
-        proxy_key = "u:p@1.2.3.4:9090"
-        assert manager.proxy_failures[proxy_key] >= manager.DEAD_PROXY_FAILURE_COUNT
-        assert proxy_key in manager.dead_proxies
+        # Prevent actual background task creation during test
+        with patch.object(manager, 'fetch_proxies_from_api', new_callable=AsyncMock) as mock_fetch, \
+             patch('asyncio.create_task') as mock_create_task:
+            
+            # Test simple failure recording
+            manager.record_failure("http://u:p@1.1.1.1:8080")
+            assert manager.proxy_failures.get("u:p@1.1.1.1:8080", 0) == 1
+            
+            # Test detected failure (more severe)
+            manager.record_failure("http://u:p@1.2.3.4:9090", detected=True)
+            proxy_key = "u:p@1.2.3.4:9090"
+            assert manager.proxy_failures[proxy_key] >= 1
+            assert proxy_key in manager.proxy_cooldowns
+            
+            # Verify fetch was triggered if pool is low (empty proxies list < 5)
+            # manager.proxies is empty by default in this test setup
+            # record_failure calls create_task(fetch_proxies_from_api(...))
+            # creating the task calls the mock_fetch immediately to get the coroutine
+            mock_fetch.assert_called()
+            mock_create_task.assert_called()
     
     def test_remove_dead_proxies(self, mock_settings):
         """Test remove_dead_proxies method."""

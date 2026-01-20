@@ -89,6 +89,7 @@ class TestOrchestratorExtra:
     def test_proxy_rotation_strategies(self, mock_settings, mock_browser_manager):
         """Cover proxy rotation strategies (lines 188-202) and detection (176)."""
         scheduler = JobScheduler(mock_settings, mock_browser_manager)
+        scheduler.proxy_manager = None  # Disable manager to test internal scheduler logic
         proxies = ["p1", "p2", "p3"]
         
         # 1. Round Robin (default)
@@ -120,7 +121,7 @@ class TestOrchestratorExtra:
         """Cover proxy split, browser restart, and cleanup failure."""
         scheduler = JobScheduler(mock_settings, mock_browser_manager)
         profile = AccountProfile(faucet="f", username="u", password="p", proxy="http://user:pass@proxy:8080")
-        job = Job(priority=1, next_run=time.time(), name="n", profile=profile, faucet_type="test")
+        job = Job(priority=1, next_run=time.time(), name="n", profile=profile, faucet_type="mock_faucet")
         
         # 1. Proxy split (line 254)
         mock_bot_instance = MagicMock()
@@ -128,7 +129,7 @@ class TestOrchestratorExtra:
         
         with patch("core.registry.get_faucet_class", return_value=lambda s, p: mock_bot_instance):
             await scheduler._run_job_wrapper(job)
-            mock_bot_instance.set_proxy.assert_called_with("user:pass@proxy:8080")
+            mock_bot_instance.set_proxy.assert_called_with("http://user:pass@proxy:8080")
 
         # 2. Proxy detection result (lines 269-276)
         mock_result_detect = MagicMock()

@@ -25,7 +25,7 @@ class BotSettings(BaseSettings):
     # Core
     log_level: str = "INFO"
     headless: bool = True
-    timeout: int = 120000  # Global timeout in ms (default 120s for slow proxies)
+    timeout: int = 180000  # Global timeout in ms (default 180s for slow proxies)
     
     # Security / API
     captcha_provider: str = "2captcha"
@@ -158,8 +158,11 @@ class BotSettings(BaseSettings):
     # This list can be populated from JSON env var or config file
     accounts: List[AccountProfile] = Field(default_factory=list)
 
-    # Settings
-    enabled_faucets: List[str] = ["fire_faucet", "cointiply", "dutchy"]
+    enabled_faucets: List[str] = [
+        "fire_faucet", "cointiply", "dutchy",
+        "litepick", "tronpick", "dogepick", "solpick", "binpick", 
+        "bchpick", "tonpick", "polygonpick", "dashpick", "ethpick", "usdpick"
+    ]
     wallet_addresses: Dict[str, str] = Field(default_factory=dict)
 
     model_config = SettingsConfigDict(

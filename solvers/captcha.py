@@ -445,6 +445,9 @@ class CaptchaSolver:
                 except Exception:
                     continue  # Retry on temporary network blips
 
+                if waited % 10 == 0:
+                    logger.info(f"⏳ Still waiting for 2Captcha solution (ID: {request_id}, Waited: {waited}s)...")
+
                 if data.get('status') == 1:
                     return data['request']
                 

@@ -79,29 +79,35 @@ class FreeBitcoinBot(FaucetBot):
             if wait_min > 0:
                  return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait_min, balance=balance)
 
-            # Check for CAPTCHA (Turnstile/hCaptcha)
-            # wait for Turnstile to finish if it exists (visibility check)
-            await self.handle_cloudflare()
-            await self.solver.solve_captcha(self.page)
-            
-            # Click ROLL
+            # Check for Roll Button Presence BEFORE Solving (Save $$)
             roll_btn = self.page.locator("#free_play_form_button")
             if await roll_btn.is_visible():
-                await self.human_like_click(roll_btn)
-                await asyncio.sleep(5)
-                await self.close_popups()
+                logger.info("[DEBUG] Roll button found. Initiating Captcha Solve...")
                 
-                # Check result
-                result = self.page.locator("#winnings")
-                if await result.is_visible():
-                    won = await result.text_content()
-                    # Clean amount string (remove ' BTC', commas, etc)
-                    import re
-                    clean_amount = re.sub(r'[^\d.]', '', won)
-                    logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
-                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=60, amount=clean_amount, balance=balance)
+                # Handle Cloudflare & Captcha
+                await self.handle_cloudflare()
+                await self.solver.solve_captcha(self.page)
+                
+                # Double check visibility after potential captcha delay
+                if await roll_btn.is_visible():
+                    await self.human_like_click(roll_btn)
+                    await asyncio.sleep(5)
+                    await self.close_popups()
+                    
+                    # Check result
+                    result = self.page.locator("#winnings")
+                    if await result.is_visible():
+                        won = await result.text_content()
+                        # Clean amount string (remove ' BTC', commas, etc)
+                        import re
+                        clean_amount = re.sub(r'[^\d.]', '', won)
+                        logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
+                        return ClaimResult(success=True, status="Claimed", next_claim_minutes=60, amount=clean_amount, balance=balance)
+                else:
+                    logger.warning("Roll button disappeared after captcha solve.")
+                    return ClaimResult(success=False, status="Roll Button Vanished", next_claim_minutes=15, balance=balance)
             else:
-                 logger.warning("Roll button not found (or hidden)")
+                 logger.warning("Roll button not found (possibly hidden or blocked)")
                  return ClaimResult(success=False, status="Roll Button Not Found", next_claim_minutes=15, balance=balance)
 
         except Exception as e:

@@ -83,7 +83,8 @@ class EarningsTracker:
             logger.warning(f"Could not save analytics: {e}")
     
     def record_claim(self, faucet: str, success: bool, amount: float = 0.0, 
-                     currency: str = "unknown", balance_after: float = 0.0):
+                     currency: str = "unknown", balance_after: float = 0.0,
+                     allow_test: bool = False):
         """
         Record a claim attempt.
         
@@ -93,9 +94,10 @@ class EarningsTracker:
             amount: Amount claimed
             currency: Currency code (BTC, LTC, DOGE, etc.)
             balance_after: Balance after the claim
+            allow_test: Whether to allow test faucets (defaults to False)
         """
-        # Filter out test faucets from production analytics
-        if faucet == "test_faucet" or faucet.startswith("test_"):
+        # Filter out test faucets from production analytics unless explicitly allowed
+        if not allow_test and (faucet == "test_faucet" or faucet.startswith("test_")):
             logger.debug(f"Skipping analytics for test faucet: {faucet}")
             return
         

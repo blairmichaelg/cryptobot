@@ -1,3 +1,15 @@
+"""
+Gen 3.0 Crypto Faucet Farm - Main Entry Point
+
+This script serves as the central orchestrator for the crypto faucet automation system.
+It initializes the browser environment, loads account profiles, and starts the
+JobScheduler to manage concurrent claiming tasks.
+
+Usage:
+    python main.py              # Run in standard continuous mode
+    python main.py --visible    # Run with visible browser
+    python main.py --single fire_faucet  # Run specific faucet only
+"""
 from dotenv import load_dotenv
 
 # Load environment variables from .env file into os.environ
@@ -33,6 +45,16 @@ logger = logging.getLogger(__name__)
 from core.registry import FAUCET_REGISTRY, get_faucet_class
 
 async def main():
+    """
+    Main execution loop.
+
+    1. Parses command line arguments.
+    2. detailed logging setup.
+    3. Initializes BrowserManager (Stealth Context).
+    4. Initializes ProxyManager (if 2Captcha proxies enabled).
+    5. Loads Faucet Jobs from the Factory Registry.
+    6. Starts the JobScheduler and waits for SIGTERM or interruption.
+    """
     parser = argparse.ArgumentParser(description="Gen 3.0 Smart Crypto Farm - Job Scheduler")
     parser.add_argument("--visible", action="store_true", help="Show browser")
     parser.add_argument("--wallet-check", action="store_true", help="Check Electrum")

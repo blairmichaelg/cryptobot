@@ -129,20 +129,24 @@ class TestProxyHealthMonitoring:
 class TestDailyReports:
     """Tests for automated daily report generation."""
     
-    def test_get_trending_analysis_empty(self):
+    def test_get_trending_analysis_empty(self, tmp_path):
         """Test trending analysis with no data."""
         from core.analytics import EarningsTracker
         
-        tracker = EarningsTracker()
+        # Use a temporary file to ensure it's empty
+        temp_file = tmp_path / "empty_analytics.json"
+        tracker = EarningsTracker(storage_file=str(temp_file))
         trends = tracker.get_trending_analysis(7)
         
         assert trends == {}
     
-    def test_get_trending_analysis_with_data(self):
+    def test_get_trending_analysis_with_data(self, tmp_path):
         """Test trending analysis with sample data."""
         from core.analytics import EarningsTracker
         
-        tracker = EarningsTracker()
+        # Use a temporary file
+        temp_file = tmp_path / "data_analytics.json"
+        tracker = EarningsTracker(storage_file=str(temp_file))
         
         # Add some claims
         for i in range(5):
@@ -150,7 +154,8 @@ class TestDailyReports:
                 faucet="TestFaucet",
                 success=True,
                 amount=100,
-                currency="satoshi"
+                currency="satoshi",
+                allow_test=True
             )
         
         trends = tracker.get_trending_analysis(7)

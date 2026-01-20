@@ -115,7 +115,7 @@ class TestAnalytics:
     def test_get_daily_summary(self, temp_analytics_file):
         """Test human-readable summary (lines 176-200)."""
         tracker = EarningsTracker(storage_file=str(temp_analytics_file))
-        tracker.record_claim("test_faucet", True, 0.0001, "BTC")
+        tracker.record_claim("test_faucet", True, 0.0001, "BTC", allow_test=True)
         summary = tracker.get_daily_summary()
         assert "test_faucet" in summary
         assert "BTC" in summary

@@ -107,6 +107,14 @@ async def test_firefaucet_login_success_dashboard_elements(mock_settings, mock_p
     
     dashboard_locator = MagicMock()
     dashboard_locator.count = AsyncMock(return_value=1)
+    dashboard_locator.is_visible = AsyncMock(return_value=True)
+    dashboard_locator.is_disabled = AsyncMock(return_value=False)
+    dashboard_locator.scroll_into_view_if_needed = AsyncMock()
+    dashboard_locator.bounding_box = AsyncMock(return_value={'x': 0, 'y': 0, 'width': 100, 'height': 50})
+    dashboard_locator.click = AsyncMock()
+    dashboard_locator.first = MagicMock()
+    dashboard_locator.first.text_content = AsyncMock(return_value="")
+    dashboard_locator.first.is_visible = AsyncMock(return_value=True)
     
     mock_page.locator.return_value = dashboard_locator
     
@@ -126,6 +134,14 @@ async def test_firefaucet_login_success_logout_link(mock_settings, mock_page, mo
     
     logout_locator = MagicMock()
     logout_locator.count = AsyncMock(return_value=1)
+    logout_locator.is_visible = AsyncMock(return_value=True)
+    logout_locator.is_disabled = AsyncMock(return_value=False)
+    logout_locator.scroll_into_view_if_needed = AsyncMock()
+    logout_locator.bounding_box = AsyncMock(return_value={'x': 0, 'y': 0, 'width': 100, 'height': 50})
+    logout_locator.click = AsyncMock()
+    logout_locator.first = MagicMock()
+    logout_locator.first.text_content = AsyncMock(return_value="")
+    logout_locator.first.is_visible = AsyncMock(return_value=True)
     
     mock_page.locator.return_value = logout_locator
     

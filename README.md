@@ -355,6 +355,14 @@ Check logs in `faucet_bot.log` for detailed error messages.
 
 ---
 
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get started, run tests, and submit pull requests.
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ## ⚠️ Disclaimer
 
 This software is for **educational and research purposes only**. Using automation on websites may violate their Terms of Service. Use responsibly and at your own risk.
