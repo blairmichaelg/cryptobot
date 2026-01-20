@@ -45,17 +45,30 @@ class SecureCookieStorage:
         """
         Initialize Fernet with keys from environment variables.
         Supports key rotation via MultiFernet.
+        
+        Note: Requires load_dotenv() to have been called before BrowserManager initialization.
         """
         primary_key = os.environ.get(COOKIE_KEY_ENV)
         old_key = os.environ.get(COOKIE_KEY_OLD_ENV)
         
         if not primary_key:
-            # Generate a new key if none exists
+            # Try loading .env one more time in case it wasn't loaded yet
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+                primary_key = os.environ.get(COOKIE_KEY_ENV)
+            except ImportError:
+                pass
+        
+        if not primary_key:
+            # Generate a new key if still none exists
             new_key = Fernet.generate_key()
             logger.warning(
-                f"No cookie encryption key found. Generated new key.\n"
+                f"No cookie encryption key found in environment. Generated new key.\n"
                 f"Add this to your .env file:\n"
-                f"{COOKIE_KEY_ENV}={new_key.decode()}"
+                f"{COOKIE_KEY_ENV}={new_key.decode()}\n"
+f"\n"
+                f"IMPORTANT: This warning appears every startup until you add the key to .env"
             )
             return Fernet(new_key)
         
@@ -65,6 +78,8 @@ class SecureCookieStorage:
             if old_key:
                 keys.append(Fernet(old_key.encode()))
                 logger.info("Using key rotation with MultiFernet")
+            else:
+                logger.debug(f"Cookie encryption key loaded successfully (first 8 chars: {primary_key[:8]}...)")
             return MultiFernet(keys) if len(keys) > 1 else keys[0]
         except Exception as e:
             logger.error(f"Failed to initialize encryption: {e}")

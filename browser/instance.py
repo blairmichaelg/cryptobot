@@ -99,13 +99,11 @@ class BrowserManager:
             saved_proxy = await self.load_proxy_binding(profile_name)
             
             if saved_proxy:
+                # Sticky session: ALWAYS use the saved proxy
                 if proxy and proxy != saved_proxy:
                     logger.warning(f"⚠️ Proxy mismatch for {profile_name}. Requested: {proxy}, Stuck to: {saved_proxy}")
-                    logger.info(f"🔄 Updating sticky proxy for {profile_name} to {proxy}")
-                    await self.save_proxy_binding(profile_name, proxy)
-                elif not proxy:
-                     logger.info(f"🔗 Using sticky proxy {saved_proxy} for {profile_name}")
-                     proxy = saved_proxy
+                    logger.info(f"🔗 Honoring sticky session - using saved proxy {saved_proxy}")
+                proxy = saved_proxy  # Override requested proxy with sticky one
             elif proxy:
                 # No existing binding, create one
                 logger.info(f"📌 Binding {profile_name} to proxy {proxy}")

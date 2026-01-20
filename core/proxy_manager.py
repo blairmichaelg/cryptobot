@@ -62,8 +62,8 @@ class ProxyManager:
         self.load_proxies_from_file()
 
     def _proxy_key(self, proxy: Proxy) -> str:
-        """Generate a unique key for a proxy."""
-        return f"{proxy.ip}:{proxy.port}"
+        """Generate a unique key for a proxy (full string with session)."""
+        return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
 
 
 
@@ -128,21 +128,20 @@ class ProxyManager:
             proxy_str: The full proxy URL string
             detected: Whether the proxy was specifically detected as a bot by a site
         """
-        # Extract ip:port for lookup
-        proxy_key = ""
-        if "@" in proxy_str:
-            proxy_key = proxy_str.split("@")[-1]
-        elif "://" in proxy_str:
-            proxy_key = proxy_str.split("://")[-1]
-        else:
-            proxy_key = proxy_str
+        # Use FULL proxy string as key (including session ID) to track each session independently
+        # This prevents burning all sessions when one session is detected
+        proxy_key = proxy_str
+        
+        # Normalize the key: remove protocol prefix but keep everything else (including session)
+        if "://" in proxy_key:
+            proxy_key = proxy_key.split("://", 1)[1]  # Remove http:// or https://
             
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
         
         if detected:
-            # Detection is a severe failure
-            self.proxy_failures[proxy_key] += self.DEAD_PROXY_FAILURE_COUNT
-            logger.error(f"[BURNED] Proxy {proxy_key} detected by site. Marking as dead.")
+            # Detection is a severe failure - mark this specific session as dead immediately
+            self.proxy_failures[proxy_key] = self.DEAD_PROXY_FAILURE_COUNT
+            logger.error(f"[BURNED] Proxy session detected by site. Marking as dead: {proxy_key}")
             
         if self.proxy_failures[proxy_key] >= self.DEAD_PROXY_FAILURE_COUNT:
             if proxy_key not in self.dead_proxies:

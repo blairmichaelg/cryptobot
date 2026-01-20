@@ -83,6 +83,11 @@ class EarningsTracker:
             currency: Currency code (BTC, LTC, DOGE, etc.)
             balance_after: Balance after the claim
         """
+        # Filter out test faucets from production analytics
+        if faucet == "test_faucet" or faucet.startswith("test_"):
+            logger.debug(f"Skipping analytics for test faucet: {faucet}")
+            return
+        
         record = ClaimRecord(
             timestamp=time.time(),
             faucet=faucet,
