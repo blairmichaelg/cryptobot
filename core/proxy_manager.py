@@ -2,7 +2,8 @@ import logging
 import asyncio
 import aiohttp
 import random
-from typing import List, Dict, Optional
+import string
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from core.config import AccountProfile, BotSettings
 
@@ -63,6 +64,8 @@ class ProxyManager:
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy."""
         return f"{proxy.ip}:{proxy.port}"
+
+
 
     async def measure_proxy_latency(self, proxy: Proxy) -> Optional[float]:
         """
@@ -175,7 +178,7 @@ class ProxyManager:
             "is_dead": proxy_key in self.dead_proxies
         }
 
-    async def health_check_all_proxies(self) -> Dict[str, any]:
+    async def health_check_all_proxies(self) -> Dict[str, Any]:
         """
         Perform health check on all assigned proxies, measuring latency.
         
@@ -198,11 +201,15 @@ class ProxyManager:
         healthy = sum(1 for r in results if r is not None)
         dead = len(self.dead_proxies)
         
+        # Calculate average latency of HEALTHY proxies
+        valid_latencies = [r for r in results if r is not None]
+        avg_latency = sum(valid_latencies) / len(valid_latencies) if valid_latencies else 0
+        
         summary = {
             "total": len(self.proxies),
             "healthy": healthy,
             "dead": dead,
-            "avg_latency_ms": sum(r for r in results if r) / max(healthy, 1)
+            "avg_latency_ms": avg_latency
         }
         
         logger.info(f"[HEALTH] Health check complete: {healthy}/{len(self.proxies)} healthy, {dead} dead")
@@ -369,14 +376,81 @@ class ProxyManager:
             logger.error(f"Failed to parse proxy string '{proxy_str}': {e}")
             return None
 
+    async def fetch_proxies_from_api(self, quantity: int = 10) -> int:
+        """
+        Generates residential proxies by rotating session IDs.
+        Since 2Captcha (and similar providers) use a single gateway with session-based rotation,
+        we generate unique sessions from the base configured proxy.
+        """
+        # We need a base proxy to work from.
+        # Try to load from file first if empty
+        if not self.proxies:
+            self.load_proxies_from_file()
+            
+        if not self.proxies:
+            logger.error("Cannot generate proxies: No base proxy found in proxies.txt to use as template.")
+            return 0
+
+        # Use the first proxy as a template
+        template_proxy = self.proxies[0]
+        
+        if not template_proxy.username or not template_proxy.password:
+             logger.error("Cannot generate proxies: Base proxy is missing authentication details.")
+             return 0
+
+        logger.info(f"Generating {quantity} unique proxies using template from {template_proxy.ip}:{template_proxy.port}...")
+        
+        # Extract base username (remove existing session params if present)
+        base_username = template_proxy.username
+        if "-session-" in base_username:
+            base_username = base_username.split("-session-")[0]
+            
+        new_proxies = []
+        lines_to_write = []
+        lines_to_write.append("# Auto-generated from Base Proxy with Session Rotation")
+        # Keep the base one
+        lines_to_write.append(template_proxy.to_string())
+        new_proxies.append(template_proxy)
+        
+        for i in range(quantity):
+            # Generate random session ID (alphanumeric, 8 chars)
+            session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            
+            # Construct new username: user-session-ID
+            new_username = f"{base_username}-session-{session_id}"
+            
+            # Create proxy string
+            # Format: http://user:pass@ip:port
+            proxy_str = f"http://{new_username}:{template_proxy.password}@{template_proxy.ip}:{template_proxy.port}"
+            
+            lines_to_write.append(proxy_str)
+            
+            new_proxy = self._parse_proxy_string(proxy_str)
+            if new_proxy:
+                new_proxies.append(new_proxy)
+
+        if len(new_proxies) > 1:
+            # Update file
+            file_path = self.settings.residential_proxies_file
+            try:
+                with open(file_path, "w") as f:
+                    f.write("\n".join(lines_to_write))
+                
+                self.proxies = new_proxies
+                logger.info(f"✅ Generated and saved {len(new_proxies)} unique residential proxies to {file_path}")
+                return len(new_proxies)
+            except Exception as e:
+                logger.error(f"Failed to save generated proxies: {e}")
+                return 0
+        
+        return 0
+
     async def fetch_proxies(self, count: int = 100) -> bool:
         """
-        DEPRECATED: 2Captcha Whitelist API is incompatible with worker-based solving.
-        Redirects to file loader.
+        Wrapper for fetch_proxies_from_api to maintain compatibility.
         """
-        logger.warning("[WARN] 'fetch_proxies' is deprecated. Loading from file instead.")
-        res = self.load_proxies_from_file()
-        return res > 0
+        c = await self.fetch_proxies_from_api(count)
+        return c > 0
 
     def assign_proxies(self, profiles: List[AccountProfile]):
         """
