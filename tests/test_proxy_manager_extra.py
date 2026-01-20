@@ -74,7 +74,7 @@ class TestProxyManagerExtra:
     @pytest.mark.asyncio
     async def test_fetch_proxies_wrapper(self, mock_settings):
         """
-        Cover fetch_proxies wrapper (lines 448-453).
+        Cover fetch_proxies wrapper method (lines 448-453).
         """
         with patch.object(ProxyManager, "load_proxies_from_file", return_value=0):
             manager = ProxyManager(mock_settings)

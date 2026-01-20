@@ -1,5 +1,5 @@
 """
-Additional comprehensive tests for core.proxy_manager to achieve 100% coverage.
+Additional comprehensive tests for core.proxy_manager that achieve 100% coverage.
 """
 import pytest
 import asyncio

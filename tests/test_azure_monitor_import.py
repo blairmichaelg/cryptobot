@@ -4,6 +4,7 @@ This module tests the import-time exception handling (lines 23-24).
 """
 import pytest
 import sys
+import os
 import importlib.util
 
 
@@ -56,6 +57,10 @@ def test_azure_monitor_import_failure_subprocess():
     """Test that azure_monitor handles ImportError gracefully when Azure SDK is missing."""
     # This is a backup test using subprocess to verify behavior
     import subprocess
+    
+    # Determine the project root dynamically
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
     test_script = """
 import sys
 
@@ -87,7 +92,7 @@ print("SUCCESS: Import failure handled correctly")
         [sys.executable, '-c', test_script],
         capture_output=True,
         text=True,
-        cwd='/home/runner/work/cryptobot/cryptobot'
+        cwd=project_root
     )
     
     assert result.returncode == 0, f"Test failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"

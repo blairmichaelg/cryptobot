@@ -1,5 +1,5 @@
 """
-Additional tests for core.analytics to achieve 100% coverage.
+Additional tests for core.analytics that achieve 100% coverage.
 Focus on get_trending_analysis and generate_automated_report functions.
 """
 import pytest
