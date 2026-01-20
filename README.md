@@ -9,6 +9,7 @@ This project is a sophisticated, modular automation system designed to harvest h
 ## ⚡ Key Features (Gen 3.0)
 
 ### Core Capabilities
+
 - **🛡️ Advanced Stealth**: Uses **Camoufox** (Firefox fork) with fingerprint randomization to defeat sophisticated anti-bot detection
 - **🤖 Auto-Solve Captchas**: Integration with 2Captcha and CapSolver for Turnstile, hCaptcha, reCaptcha, and image-based captchas
 - **📊 Standardized Data Extraction**: Unified `get_balance()` and `get_timer()` methods across all faucets using `DataExtractor` utility
@@ -17,15 +18,17 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **⚡ Job-Based Scheduler**: High-concurrency orchestrator eliminates idle time and maximizes crypto extraction
 
 ### Architecture
+
 - **`core/`**: Configuration, wallet logic, data extraction, and job orchestration
 - **`browser/`**: Stealth context management with Camoufox
 - **`faucets/`**: Individual bot modules with standardized base class
 - **`solvers/`**: Unified captcha and shortlink solving interfaces
 - **`config/`**: Centralized configuration, state, and session management
-- **`deploy/`**: Systemd service files and deployment configurations
+- **`deploy/`**: Systemd service files (`faucet_worker.service`) and deployment configurations
 - **`logs/`**: Rotating logs and heartbeat monitoring
 
 ### Advanced Features
+
 - **💰 Golden Tier Targets**: Prioritizes high-yield, direct-deposit or reliable payers
 - **🏦 Wallet Daemon**: (Optional) Ready for **Electrum** JSON-RPC integration
 - **🎯 Zero Idle Time**: Job-based scheduler runs multiple earning methods simultaneously
@@ -53,9 +56,9 @@ This project is a sophisticated, modular automation system designed to harvest h
 
 ### 1. Prerequisites
 
-* Python 3.10+
-* A **2Captcha** API Key (Required for automation)
-* `pytest` (for running tests)
+- Python 3.10+
+- A **2Captcha** API Key (Required for automation)
+- `pytest` (for running tests)
 
 ### 2. Clone & Install
 
@@ -171,6 +174,7 @@ python register_faucets.py --email your@email.com --password yourpassword --visi
 ```
 
 **Supported Pick.io Faucets:**
+
 - LitePick.io (LTC)
 - TronPick.io (TRX)
 - DogePick.io (DOGE)
@@ -184,6 +188,7 @@ python register_faucets.py --email your@email.com --password yourpassword --visi
 - UsdPick.io (USDT)
 
 The script will:
+
 1. Navigate to each registration page
 2. Fill in email, password, and wallet address (if configured)
 3. Solve any CAPTCHAs automatically
@@ -216,15 +221,17 @@ The entry point. It handles the lifecycle, ensuring the browser is completely re
 
 Wraps `AsyncCamoufox`. It automatically handles:
 
-* User-Agent rotation
-* Canvas noise injection (via Camoufox)
-* GeoIP matching (if configured)
-* Viewport randomization
+- User-Agent rotation
+- Canvas noise injection (via Camoufox)
+- GeoIP matching (if configured)
+- Viewport randomization
 
 ### Solvers
 
 #### Captcha Solver (`solvers/captcha.py`)
+
 A unified interface that detects and solves multiple captcha types:
+
 - **Turnstile** (Cloudflare)
 - **hCaptcha**
 - **reCaptcha v2**
@@ -233,7 +240,9 @@ A unified interface that detects and solves multiple captcha types:
 Supports both 2Captcha and CapSolver providers. Automatically extracts sitekeys, polls for solutions, injects tokens, and triggers callbacks.
 
 #### Shortlink Solver (`solvers/shortlink.py`)
+
 Generic solver for crypto shortlinks that:
+
 - Detects and waits for countdown timers using `DataExtractor`
 - Solves captchas during traversal
 - Clicks through multiple steps ("Get Link", "Continue", "Next")
@@ -241,66 +250,81 @@ Generic solver for crypto shortlinks that:
 - Uses heuristics to avoid clicking ad elements
 
 ### Data Extraction (`core/extractor.py`)
+
 Standardized utility for parsing timers and balances:
+
 - **Timer formats**: HH:MM:SS, MM:SS, "Xh Ym", "X days", "X hours", "X minutes"
 - **Balance extraction**: Removes commas, extracts numeric values
 - **Logging**: Debug-level logging for troubleshooting
-
 
 ---
 
 ## 🔧 Troubleshooting
 
 ### Proxy Detection Issues
+
 Some faucets (DutchyCorp, CoinPayU, AdBTC) have aggressive proxy detection that blocks cloud/VPS IPs.
 
 **Symptoms**:
+
 - "Proxy Detected" message in logs
 - Login fails immediately
 - Site shows blocking message
 
 **Solutions**:
+
 - Use residential proxies
 - Run from home internet connection
 - Disable affected faucets in configuration
 
 ### Captcha Solving Failures
+
 **Symptoms**:
+
 - "Manual solve timed out" messages
 - Captcha not being detected
 - Token injection not working
 
 **Solutions**:
+
 - Verify 2Captcha/CapSolver API key is valid and has credits
 - Check logs for sitekey extraction errors
 - Enable `--visible` mode to manually solve and observe behavior
 - For image captchas, manual solving is currently required
 
 ### Timer/Balance Extraction Issues
+
 **Symptoms**:
+
 - "Failed to parse timer text" warnings
 - Balance shows as "0"
 - Incorrect wait times
 
 **Solutions**:
+
 - Enable debug logging: `export LOG_LEVEL=DEBUG`
 - Check `IMPLEMENTATION_NOTES.md` for site-specific selectors
 - Verify site hasn't changed its layout
 - Report new timer formats for enhancement
 
 ### PTC Ads Not Working
+
 **Symptoms**:
+
 - Ads not being detected
 - Timer not counting down
 - "Continue" button not appearing
 
 **Solutions**:
+
 - Ensure browser is in visible mode for sites requiring active focus (Cointiply)
 - Check for anti-adblocker messages
 - Verify ad availability (some sites have limited ads)
 
 ### General Debugging
+
 Enable visible mode and verbose logging:
+
 ```bash
 python main.py --visible --single <faucet_name>
 ```
