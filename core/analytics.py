@@ -8,6 +8,7 @@ import json
 import os
 import time
 import logging
+import aiohttp
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
@@ -17,6 +18,163 @@ logger = logging.getLogger(__name__)
 
 # Analytics data file path
 ANALYTICS_FILE = os.path.join(os.path.dirname(__file__), "..", "earnings_analytics.json")
+
+
+class CryptoPriceFeed:
+    """
+    Fetches and caches cryptocurrency prices in USD.
+    Uses CoinGecko API (free tier) with TTL-based caching.
+    """
+    
+    CACHE_TTL = 300  # 5 minutes
+    API_URL = "https://api.coingecko.com/api/v3/simple/price"
+    
+    # CoinGecko ID mapping for common currencies
+    CURRENCY_IDS = {
+        "BTC": "bitcoin",
+        "LTC": "litecoin",
+        "DOGE": "dogecoin",
+        "BCH": "bitcoin-cash",
+        "TRX": "tron",
+        "ETH": "ethereum",
+        "BNB": "binancecoin",
+        "SOL": "solana",
+        "TON": "the-open-network",
+        "DASH": "dash",
+        "POLYGON": "matic-network",
+        "USDT": "tether"
+    }
+    
+    # Decimal places for each currency (for converting from smallest unit)
+    CURRENCY_DECIMALS = {
+        "BTC": 8,     # 100,000,000 satoshi = 1 BTC
+        "LTC": 8,     # 100,000,000 litoshi = 1 LTC
+        "DOGE": 8,    # 100,000,000 units = 1 DOGE
+        "BCH": 8,     # 100,000,000 satoshi = 1 BCH
+        "TRX": 6,     # 1,000,000 sun = 1 TRX
+        "ETH": 18,    # 1,000,000,000,000,000,000 wei = 1 ETH
+        "BNB": 18,    # 1e18 units = 1 BNB
+        "SOL": 9,     # 1,000,000,000 lamports = 1 SOL
+        "TON": 9,     # 1,000,000,000 nanoton = 1 TON
+        "DASH": 8,    # 100,000,000 duffs = 1 DASH
+        "POLYGON": 18, # 1e18 units = 1 MATIC
+        "USDT": 6     # 1,000,000 units = 1 USDT (varies by chain, using common)
+    }
+    
+    def __init__(self):
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_file = os.path.join(os.path.dirname(__file__), "..", "config", "price_cache.json")
+        self._load_cache()
+    
+    def _load_cache(self):
+        """Load cached prices from disk."""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, "r") as f:
+                    data = json.load(f)
+                    # Only load non-expired entries
+                    now = time.time()
+                    self.cache = {
+                        k: v for k, v in data.items()
+                        if v.get("timestamp", 0) + self.CACHE_TTL > now
+                    }
+                logger.debug(f"Loaded {len(self.cache)} cached prices")
+        except Exception as e:
+            logger.debug(f"Could not load price cache: {e}")
+    
+    def _save_cache(self):
+        """Save cache to disk."""
+        try:
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+            with open(self.cache_file, "w") as f:
+                json.dump(self.cache, f)
+        except Exception as e:
+            logger.debug(f"Could not save price cache: {e}")
+    
+    async def get_price(self, currency: str) -> Optional[float]:
+        """
+        Get current USD price for a currency.
+        
+        Args:
+            currency: Currency code (BTC, LTC, DOGE, etc.)
+            
+        Returns:
+            Price in USD, or None if unavailable
+        """
+        currency = currency.upper()
+        
+        # Check cache first
+        if currency in self.cache:
+            cached = self.cache[currency]
+            if time.time() - cached["timestamp"] < self.CACHE_TTL:
+                return cached["price"]
+        
+        # Fetch from API
+        coin_id = self.CURRENCY_IDS.get(currency)
+        if not coin_id:
+            logger.warning(f"Unknown currency: {currency}")
+            return None
+        
+        try:
+            params = {
+                "ids": coin_id,
+                "vs_currencies": "usd"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.API_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        price = data.get(coin_id, {}).get("usd")
+                        
+                        if price:
+                            # Cache result
+                            self.cache[currency] = {
+                                "price": price,
+                                "timestamp": time.time()
+                            }
+                            self._save_cache()
+                            logger.debug(f"Fetched {currency} price: ${price}")
+                            return price
+        except Exception as e:
+            logger.warning(f"Failed to fetch {currency} price: {e}")
+        
+        return None
+    
+    async def convert_to_usd(self, amount: float, currency: str) -> float:
+        """
+        Convert an amount of cryptocurrency to USD.
+        
+        Args:
+            amount: Amount in smallest unit (satoshi for BTC, wei for ETH, etc.)
+            currency: Currency code
+            
+        Returns:
+            USD value
+        """
+        currency = currency.upper()
+        price = await self.get_price(currency)
+        
+        if not price:
+            return 0.0
+        
+        # Get decimal places for this currency
+        decimals = self.CURRENCY_DECIMALS.get(currency, 8)  # Default to 8 if unknown
+        divisor = 10 ** decimals
+        
+        coin_amount = amount / divisor
+        return coin_amount * price
+
+
+# Global price feed instance
+_price_feed = None
+
+def get_price_feed() -> CryptoPriceFeed:
+    """Get or create the global price feed."""
+    global _price_feed
+    if _price_feed is None:
+        _price_feed = CryptoPriceFeed()
+    return _price_feed
 
 
 @dataclass
@@ -129,25 +287,61 @@ class EarningsTracker:
         self._save()
 
     def get_profitability(self, hours: int = 24) -> Dict[str, Any]:
-        """Calculate net profit in USD (estimated)."""
+        """Calculate net profit in USD using real-time price feed."""
+        import asyncio
+        
         cutoff = time.time() - (hours * 3600)
         
-        # Estimate earnings in USD (100k satoshi = $10 approx, simplified)
-        # TODO: Integrate real-time price feed
-        satoshi_to_usd = 0.0001  # Placeholder 1 satoshi = $0.0001 is way off, let's use 100k = $43 (current)
-        btc_price = 43000
-        sat_value = btc_price / 100_000_000
+        # Get price feed
+        price_feed = get_price_feed()
         
-        earnings_sat = sum(c['amount'] for c in self.claims if c['timestamp'] >= cutoff and c['success'])
-        earnings_usd = earnings_sat * sat_value
+        # Calculate earnings in USD per currency
+        earnings_by_currency = defaultdict(float)
+        for c in self.claims:
+            if c['timestamp'] >= cutoff and c['success']:
+                earnings_by_currency[c['currency']] += c['amount']
+        
+        # Convert to USD using concurrent price fetching
+        total_earnings_usd = 0.0
+        try:
+            # Use existing event loop if available
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop - create one
+            loop = None
+        
+        async def _convert_all():
+            """Convert all currencies to USD concurrently."""
+            tasks = []
+            for currency, amount in earnings_by_currency.items():
+                tasks.append(price_feed.convert_to_usd(amount, currency))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            total = 0.0
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.debug(f"Currency conversion failed: {result}")
+                elif result is not None:
+                    total += result
+            return total
+        
+        if loop and loop.is_running():
+            # Already in async context - create task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, _convert_all())
+                total_earnings_usd = future.result()
+        else:
+            # Run in new event loop
+            total_earnings_usd = asyncio.run(_convert_all())
         
         total_costs = sum(cost['amount_usd'] for cost in self.costs if cost['timestamp'] >= cutoff)
         
         return {
-            "earnings_usd": earnings_usd,
+            "earnings_usd": total_earnings_usd,
             "costs_usd": total_costs,
-            "net_profit_usd": earnings_usd - total_costs,
-            "roi": (earnings_usd / total_costs) if total_costs > 0 else 0
+            "net_profit_usd": total_earnings_usd - total_costs,
+            "roi": (total_earnings_usd / total_costs) if total_costs > 0 else 0
         }
     
     def get_session_stats(self) -> Dict[str, Any]:

@@ -230,6 +230,66 @@ class JobScheduler:
         
         return 0.5  # Default mid-priority
 
+    def _check_auto_suspend(self, faucet_type: str) -> tuple[bool, str]:
+        """
+        Check if a faucet should be auto-suspended based on ROI and success rate.
+        
+        Args:
+            faucet_type: The faucet identifier
+            
+        Returns:
+            Tuple of (should_suspend: bool, reason: str)
+        """
+        from core.analytics import get_tracker
+        
+        try:
+            # Get faucet stats
+            stats = get_tracker().get_faucet_stats(24)
+            
+            if faucet_type not in stats:
+                return False, ""
+            
+            faucet_stats = stats[faucet_type]
+            
+            # Check minimum samples
+            if faucet_stats['total'] < self.settings.faucet_auto_suspend_min_samples:
+                return False, ""
+            
+            # Check success rate
+            success_rate = faucet_stats['success_rate']
+            if success_rate < self.settings.faucet_min_success_rate:
+                return True, f"Low success rate: {success_rate:.1f}% (threshold: {self.settings.faucet_min_success_rate}%)"
+            
+            # Check ROI (requires cost tracking)
+            # Calculate faucet-specific profitability
+            profitability = get_tracker().get_profitability(hours=24)
+            
+            # Get faucet earnings
+            earnings = faucet_stats.get('earnings', 0)
+            
+            # Estimate costs for this faucet (approximate based on claim count)
+            # Average captcha cost is ~$0.003, assume 1 captcha per claim
+            estimated_costs = faucet_stats['total'] * 0.003
+            
+            # Calculate ROI using simplified estimation
+            # Note: Full conversion requires async price feed which is available in get_profitability()
+            # We use a conservative fixed estimate here for the auto-suspend check
+            if estimated_costs > 0:
+                # Conservative estimate: assume low earnings (0.0001 USD per satoshi)
+                # This is intentionally pessimistic to avoid false positives
+                earnings_usd = earnings * 0.0001
+                
+                roi = (earnings_usd - estimated_costs) / estimated_costs
+                
+                if roi < self.settings.faucet_roi_threshold:
+                    return True, f"Negative ROI: {roi:.2f} (threshold: {self.settings.faucet_roi_threshold})"
+            
+            return False, ""
+            
+        except Exception as e:
+            logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
+            return False, ""
+
     def add_job(self, job: Job):
         """
         Add a job to the priority queue with deduplication.
@@ -255,6 +315,15 @@ class JobScheduler:
              if running_key.startswith(f"{username}:") and job.name in running_key:
                   logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
                   return
+
+        # Apply dynamic priority based on recent performance
+        try:
+            priority_multiplier = self.get_faucet_priority(job.faucet_type)
+            if priority_multiplier:
+                adjusted_priority = int(round(job.priority / max(priority_multiplier, 0.1)))
+                job.priority = max(1, adjusted_priority)
+        except Exception as e:
+            logger.debug(f"Dynamic priority adjustment failed for {job.faucet_type}: {e}")
 
         self.queue.append(job)
         self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
@@ -523,6 +592,14 @@ class JobScheduler:
                          self.faucet_failures[job.faucet_type] = 0
                          logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
 
+                # Auto-Suspend based on ROI and success rate
+                if self.settings.faucet_auto_suspend_enabled:
+                    should_suspend, reason = self._check_auto_suspend(job.faucet_type)
+                    if should_suspend:
+                        logger.warning(f"⏸️ AUTO-SUSPEND: {job.faucet_type} - {reason}")
+                        self.faucet_cooldowns[job.faucet_type] = now + self.settings.faucet_auto_suspend_duration
+                        job.next_run = now + 600  # Check back in 10 mins
+                        continue
                 
                 # Advanced Withdrawal Scheduling (New Gen 3.0 Logic)
                 if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():
