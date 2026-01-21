@@ -2,6 +2,7 @@ from .base import FaucetBot, ClaimResult
 import logging
 from solvers.shortlink import ShortlinkSolver
 import asyncio
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,24 @@ class FireFaucetBot(FaucetBot):
 
     async def view_ptc_ads(self):
         """
-        Views PTC ads for FireFaucet using updated selectors.
+        Views PTC (Paid-To-Click) ads for FireFaucet using updated selectors.
+        
+        Process:
+        1. Navigate to PTC ads page
+        2. Detect available ad cards
+        3. For each ad (up to limit):
+           - Click ad with human-like interaction
+           - Detect and solve CAPTCHAs (custom numeric image or Turnstile/hCaptcha)
+           - Submit and verify completion
+        4. Return to PTC page for next ad
+        
+        Stealth features:
+        - human_like_click() for ad interactions
+        - random_delay() between actions
+        - CAPTCHA solving with multiple provider support
+        
+        Raises:
+            Exception: Logs errors but doesn't raise to prevent interrupting other tasks
         """
         try:
             logger.info(f"[{self.faucet_name}] Checking PTC Ads...")
@@ -27,39 +45,62 @@ class FireFaucetBot(FaucetBot):
             
             while processed < limit:
                 if await ad_button.count() == 0:
-                    logger.info(f"[{self.faucet_name}] No more PTC ads available.")
+                    logger.info(f"[{self.faucet_name}] No more PTC ads available (processed {processed}).")
                     break
                 
-                logger.info(f"[{self.faucet_name}] Watching PTC Ad {processed + 1}...")
+                logger.info(f"[{self.faucet_name}] 🎥 Watching PTC Ad {processed + 1}/{limit}...")
+                await self.idle_mouse(duration=random.uniform(0.5, 1.0))
                 await ad_button.first.click()
                 await self.page.wait_for_load_state()
+                logger.debug(f"[{self.faucet_name}] Loaded PTC ad page: {self.page.url}")
                 
                 # PTC ads use a custom numeric image captcha
                 # We'll rely on our generic solver which should detect the image/input
                 # or we might need specific logic for #description > img
                 captcha_img = self.page.locator("#description > img")
                 if await captcha_img.count() > 0:
-                    logger.info(f"[{self.faucet_name}] Custom PTC captcha detected. Solving...")
+                    logger.info(f"[{self.faucet_name}] Custom PTC captcha image detected. Solving...")
                     # Basic solving logic (can be expanded with OCR if needed)
                     await self.solver.solve_captcha(self.page)
+                    logger.debug(f"[{self.faucet_name}] Custom PTC captcha solved")
                 
                 # Check for other captchas (Turnstile/hCaptcha)
                 if await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='hcaptcha']"):
+                    logger.info(f"[{self.faucet_name}] Standard CAPTCHA (Turnstile/hCaptcha) detected on PTC ad")
                     await self.solver.solve_captcha(self.page)
+                    logger.debug(f"[{self.faucet_name}] Standard CAPTCHA solved")
                 
                 # Submit button for PTC
                 submit_btn = self.page.locator("#submit-button")
                 if await submit_btn.count() > 0:
+                    logger.debug(f"[{self.faucet_name}] Clicking PTC submit button")
+                    await self.idle_mouse(duration=random.uniform(0.3, 0.8))
                     await self.human_like_click(submit_btn)
                     await self.random_delay(2, 4)
+                    logger.info(f"[{self.faucet_name}] ✅ PTC Ad {processed + 1} completed")
+                else:
+                    logger.warning(f"[{self.faucet_name}] PTC submit button not found")
                 
                 processed += 1
+                logger.debug(f"[{self.faucet_name}] Returning to PTC ads list")
                 await self.page.goto(f"{self.base_url}/ptc")
                 
         except Exception as e:
             logger.error(f"[{self.faucet_name}] PTC Error: {e}")
 
     async def login(self) -> bool:
+        """
+        Authenticate with FireFaucet using credentials from settings.
+        
+        Implements stealth techniques including:
+        - human_type() for text input with random delays
+        - idle_mouse() for natural mouse movement
+        - CAPTCHA solving with retry logic
+        - Multiple verification methods (URL, DOM elements, error messages)
+        
+        Returns:
+            bool: True if login successful, False otherwise
+        """
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
             creds = self.settings_account_override
         else:
@@ -82,15 +123,22 @@ class FireFaucetBot(FaucetBot):
             # Updated selectors (as of 2026-01)
             logger.info(f"[{self.faucet_name}] Filling login form...")
             
-            # Use fill() for speed during testing, then human delay
-            await self.page.fill('#username', creds['username'])
+            # Use human_type for stealth (avoid bot detection)
+            await self.human_type('#username', creds['username'], delay_min=80, delay_max=150)
+            await self.idle_mouse(duration=random.uniform(0.5, 1.0))
             await self.random_delay(0.3, 0.7)
-            await self.page.fill('#password', creds['password'])
+            await self.human_type('#password', creds['password'], delay_min=80, delay_max=150)
+            await self.idle_mouse(duration=random.uniform(0.5, 1.0))
             await self.random_delay(0.5, 1.0)
             
             # Handle CAPTCHA - site offers reCAPTCHA by default
-            logger.info(f"[{self.faucet_name}] Solving CAPTCHA...")
-            await self.solver.solve_captcha(self.page)
+            logger.info(f"[{self.faucet_name}] Solving login CAPTCHA...")
+            await self.idle_mouse(duration=random.uniform(0.8, 1.5))
+            captcha_result = await self.solver.solve_captcha(self.page)
+            if not captcha_result:
+                logger.warning(f"[{self.faucet_name}] Login CAPTCHA solving failed")
+            else:
+                logger.info(f"[{self.faucet_name}] Login CAPTCHA solved successfully")
             
             # Small delay to let token injection settle
             await self.random_delay(1.0, 2.0)
@@ -310,7 +358,26 @@ class FireFaucetBot(FaucetBot):
 
     async def claim(self) -> ClaimResult:
         """
-        Daily Bonus and Faucet Claim.
+        Execute the main faucet claim cycle for FireFaucet.
+        
+        Process:
+        1. Navigate to daily bonus page and attempt to claim
+        2. Navigate to faucet page
+        3. Extract and validate balance using DataExtractor with fallbacks
+        4. Extract and validate timer using DataExtractor with fallbacks
+        5. If timer active, return with next_claim_minutes
+        6. Solve CAPTCHA with retry logic
+        7. Click claim button with stealth techniques
+        8. Verify success and extract updated balance
+        
+        Stealth features:
+        - idle_mouse() between interactions
+        - human_like_click() for button interactions
+        - Random delays for natural behavior
+        - CAPTCHA retry on failure
+        
+        Returns:
+            ClaimResult: Contains success status, message, next claim time, amount, and balance
         """
         try:
             # First, check Daily Bonus
@@ -338,38 +405,111 @@ class FireFaucetBot(FaucetBot):
                 await self.random_delay(2, 4)
             
             # Now, Faucet Claim
+            logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
             await self.page.goto(f"{self.base_url}/faucet")
             
-            balance = await self.get_balance(".user-balance, .balance-text")
-            wait = await self.get_timer(".fa-clock + span, #claim_timer, .timer")
+            # Extract balance with fallback selectors
+            balance_selectors = [
+                ".user-balance",
+                ".balance-text",
+                "[class*='balance']",
+                "#balance",
+                ".navbar .balance"
+            ]
+            balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
+            logger.info(f"[{self.faucet_name}] Current balance: {balance}")
+            
+            # Extract timer with fallback selectors
+            timer_selectors = [
+                ".fa-clock + span",
+                "#claim_timer",
+                ".timer",
+                "[class*='timer']",
+                "[class*='countdown']"
+            ]
+            wait = await self.get_timer(timer_selectors[0], fallback_selectors=timer_selectors[1:])
+            logger.info(f"[{self.faucet_name}] Timer status: {wait} minutes")
+            
             if wait > 0:
+                 logger.info(f"[{self.faucet_name}] Claim not ready, waiting {wait} minutes")
                  return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait, balance=balance)
 
-            await self.solver.solve_captcha(self.page)
+            # Add stealth delay before solving CAPTCHA
+            await self.idle_mouse(duration=random.uniform(1.0, 2.0))
+            logger.info(f"[{self.faucet_name}] Solving CAPTCHA...")
+            captcha_result = await self.solver.solve_captcha(self.page)
+            if not captcha_result:
+                logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed, retrying...")
+                await self.random_delay(2, 4)
+                captcha_result = await self.solver.solve_captcha(self.page)
+                if not captcha_result:
+                    logger.error(f"[{self.faucet_name}] CAPTCHA solving failed after retry")
+                    return ClaimResult(success=False, status="CAPTCHA Failed", next_claim_minutes=5, balance=balance)
             
-            # Faucet Claim Button
-            faucet_btn = self.page.locator("#get_reward_button, #faucet_btn")
-            if await faucet_btn.count() > 0:
+            logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
+            await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+            
+            # Faucet Claim Button with fallback selectors
+            faucet_btn_selectors = [
+                "#get_reward_button",
+                "#faucet_btn", 
+                "button:has-text('Claim')",
+                "button[type='submit']",
+                ".claim-button"
+            ]
+            faucet_btn = None
+            for selector in faucet_btn_selectors:
+                btn = self.page.locator(selector)
+                if await btn.count() > 0:
+                    faucet_btn = btn
+                    logger.debug(f"[{self.faucet_name}] Found claim button with selector: {selector}")
+                    break
+            
+            if faucet_btn and await faucet_btn.count() > 0:
                 logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
                 await self.human_like_click(faucet_btn)
                 await self.random_delay(3, 5)
                 
-                if await self.page.locator(".success_msg, .alert-success").count() > 0:
-                    logger.info("FireFaucet faucet claimed successfully.")
-                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=30)
+                # Check for success with multiple selectors
+                success_selectors = [".success_msg", ".alert-success", ".toast-success", "[class*='success']"]
+                success_found = False
+                for sel in success_selectors:
+                    if await self.page.locator(sel).count() > 0:
+                        success_msg = await self.page.locator(sel).first.text_content()
+                        logger.info(f"[{self.faucet_name}] ✅ Faucet claimed successfully: {success_msg}")
+                        success_found = True
+                        break
                 
-                logger.warning(f"[{self.faucet_name}] Claim verification failed.")
+                if success_found:
+                    # Get updated balance
+                    new_balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
+                    logger.info(f"[{self.faucet_name}] New balance: {new_balance}")
+                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=30, balance=new_balance)
+                
+                logger.warning(f"[{self.faucet_name}] Claim verification failed - no success message found")
                 await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)
             else:
-                logger.warning(f"[{self.faucet_name}] Faucet button not found.")
+                logger.warning(f"[{self.faucet_name}] Faucet button not found with any selector")
                 await self.page.screenshot(path=f"claim_btn_missing_{self.faucet_name}.png", full_page=True)
                 
-            return ClaimResult(success=False, status="Faucet Ready but Failed", next_claim_minutes=5)
+            return ClaimResult(success=False, status="Faucet Ready but Failed", next_claim_minutes=5, balance=balance)
             
             
         except Exception as e:
-            logger.error(f"FireFaucet claim failed: {e}")
-            return ClaimResult(success=False, status=f"Error: {str(e)}", next_claim_minutes=30)
+            logger.error(f"[{self.faucet_name}] Claim failed with error: {e}", exc_info=True)
+            await self.page.screenshot(path=f"error_{self.faucet_name}.png", full_page=True)
+            
+            # Categorize errors for better next_claim_minutes
+            error_str = str(e).lower()
+            if any(keyword in error_str for keyword in ["timeout", "network", "connection"]):
+                logger.warning(f"[{self.faucet_name}] Network error detected, will retry in 5 minutes")
+                return ClaimResult(success=False, status=f"Network Error: {str(e)}", next_claim_minutes=5)
+            elif "captcha" in error_str:
+                logger.warning(f"[{self.faucet_name}] CAPTCHA error detected, will retry in 10 minutes")
+                return ClaimResult(success=False, status=f"CAPTCHA Error: {str(e)}", next_claim_minutes=10)
+            else:
+                logger.error(f"[{self.faucet_name}] Unknown error, will retry in 30 minutes")
+                return ClaimResult(success=False, status=f"Error: {str(e)}", next_claim_minutes=30)
 
     async def claim_shortlinks(self):
         """Attempts to claim available shortlinks on FireFaucet."""
