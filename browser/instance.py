@@ -88,13 +88,33 @@ class BrowserManager:
         stealth_data = StealthHub.get_random_dimensions()
         dims = (stealth_data["width"], stealth_data["height"])
 
+        # Load or generate persistent fingerprint settings for this profile
+        locale = None
+        timezone_id = None
+        if profile_name:
+            fingerprint = await self.load_profile_fingerprint(profile_name)
+            if fingerprint:
+                locale = fingerprint.get("locale")
+                timezone_id = fingerprint.get("timezone_id")
+                logger.debug(f"🔒 Using persistent fingerprint for {profile_name}: {locale}, {timezone_id}")
+        
+        # Generate new fingerprint if not found
+        if not locale or not timezone_id:
+            locale = random.choice(["en-US", "en-GB", "en-CA", "en-AU"])
+            timezone_id = random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"])
+            
+            # Save for future use
+            if profile_name:
+                await self.save_profile_fingerprint(profile_name, locale, timezone_id)
+                logger.info(f"📌 Generated and saved fingerprint for {profile_name}: {locale}, {timezone_id}")
+
         context_args = {
             "user_agent": user_agent or StealthHub.get_human_ua(self.user_agents),
             "viewport": {"width": dims[0], "height": dims[1]},
             "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],
-            "locale": random.choice(["en-US", "en-GB", "en-CA", "en-AU"]),
-            "timezone_id": random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"]),
+            "locale": locale,
+            "timezone_id": timezone_id,
         }
         
         # Sticky Session Logic: Resolve and Persist Proxy
@@ -248,6 +268,44 @@ class BrowserManager:
             return None
         except Exception as e:
             logger.error(f"Failed to load proxy binding for {profile_name}: {e}")
+            return None
+
+    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str):
+        """Save the fingerprint settings for a profile."""
+        try:
+            fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
+            data = {}
+            if os.path.exists(fingerprint_file):
+                with open(fingerprint_file, "r") as f:
+                    try:
+                        data = json.load(f)
+                    except json.JSONDecodeError:
+                        pass
+            
+            data[profile_name] = {
+                "locale": locale,
+                "timezone_id": timezone_id
+            }
+            
+            with open(fingerprint_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save fingerprint for {profile_name}: {e}")
+
+    async def load_profile_fingerprint(self, profile_name: str) -> Optional[Dict[str, str]]:
+        """Load the fingerprint settings for a profile."""
+        try:
+            fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
+            if os.path.exists(fingerprint_file):
+                with open(fingerprint_file, "r") as f:
+                    try:
+                        data = json.load(f)
+                        return data.get(profile_name)
+                    except json.JSONDecodeError:
+                        pass
+            return None
+        except Exception as e:
+            logger.error(f"Failed to load fingerprint for {profile_name}: {e}")
             return None
 
     async def new_page(self, context: BrowserContext = None) -> Page:
