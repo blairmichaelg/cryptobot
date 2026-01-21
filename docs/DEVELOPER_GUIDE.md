@@ -11,14 +11,17 @@ This guide outlines the standard operating procedures, architecture, and workflo
 
 ## 1. Development Workflow
 
-### Branching Strategy
+### Branching Strategy: Single Branch (`master`)
 
-We follow a strict feature-branch workflow:
+**CRITICAL**: There is only ONE branch: `master`. No feature branches, no worktrees.
 
-1. **Issue First**: Ensure every task has a corresponding GitHub Issue.
-2. **Branch**: Create branches named `feat/<issue-id>-description` or `fix/<issue-id>-description`.
-3. **Commit**: Use conventional commits (e.g., `feat: add fire faucet support`).
-4. **Pull Request**: All changes merge via PR.
+1. **Always Work on `master`**: All local development and agent delegations target `master`.
+2. **Stash Before Delegating**: If you have uncommitted work, stash it before delegating tasks to agents.
+3. **Parallel Agent Execution**: Multiple agents can work simultaneously—they commit independently to `master`.
+4. **Commit Convention**: Use conventional commits (e.g., `feat: add fire faucet support`).
+5. **Pull After Agents Complete**: When agents finish, `git pull origin master` to merge all changes.
+
+See [delegate_workflow.md](delegate_workflow.md) for detailed parallel delegation patterns.
 
 ### Automated Testing
 
@@ -29,12 +32,34 @@ Before pushing, ensure tests pass.
 
 ## 2. Agent Delegation Strategy
 
-Use the right agent for the right task to maximize efficiency.
+Delegate tasks to agents for parallel, cloud-based execution without creating branches.
 
-| Agent | Best For... | Command Example |
+| Agent | Best For... | How to Use |
 | :--- | :--- | :--- |
-| **Gemini** | Research, Audits, Complex Refactors, Documentation | `gemini "Audit the solver for new site support"` |
-| **Copilot** | Small Fixes, Unit Tests, Boilerplate, Linting | `/delegate create tests for core/extractor.py` |
+| **Copilot Coding Agent** | Adding faucets, refactoring modules, multi-step features | Use `#github-pull-request_copilot-coding-agent` tag in your request |
+| **Copilot (Editor)** | Small inline fixes, one-liners, typos | Use inline Copilot suggestions in VS Code |
+| **Plan Agent (runSubagent)** | Research, audits, architecture analysis | Use `runSubagent` tool with "Plan" agent |
+
+### Parallel Delegation Example
+
+```bash
+# Setup
+git stash && git pull origin master
+
+# Delegate multiple agents at once
+# (via Copilot: use #github-pull-request_copilot-coding-agent tag)
+
+# Agent A: Implement faucet X
+# Agent B: Implement faucet Y  
+# Agent C: Refactor solver
+
+# Each agent works in the cloud, commits independently to master
+
+# After all complete
+git pull origin master
+```
+
+**Result**: Clean `master` with all changes merged, zero branch cleanup.
 
 ## 3. Deployment (Azure VM)
 
