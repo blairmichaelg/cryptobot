@@ -111,6 +111,13 @@ class BotSettings(BaseSettings):
     scheduler_tick_rate: float = 1.0
     exploration_frequency_minutes: int = 30
     
+    # Auto-Suspend / Circuit Breaker Settings
+    faucet_auto_suspend_enabled: bool = True  # Enable ROI-based auto-suspend
+    faucet_min_success_rate: float = 30.0  # Suspend if success rate < 30%
+    faucet_roi_threshold: float = -0.5  # Suspend if ROI < -0.5 (more costs than earnings)
+    faucet_auto_suspend_duration: int = 14400  # 4 hours cooldown for low ROI faucets
+    faucet_auto_suspend_min_samples: int = 5  # Minimum claims before auto-suspend
+    
     # Browser / stealth - Diverse UA pool for fingerprint rotation
     user_agents: List[str] = Field(default_factory=list)
 

@@ -230,6 +230,68 @@ class JobScheduler:
         
         return 0.5  # Default mid-priority
 
+    def _check_auto_suspend(self, faucet_type: str) -> tuple[bool, str]:
+        """
+        Check if a faucet should be auto-suspended based on ROI and success rate.
+        
+        Args:
+            faucet_type: The faucet identifier
+            
+        Returns:
+            Tuple of (should_suspend: bool, reason: str)
+        """
+        from core.analytics import get_tracker
+        
+        try:
+            # Get faucet stats
+            stats = get_tracker().get_faucet_stats(24)
+            
+            if faucet_type not in stats:
+                return False, ""
+            
+            faucet_stats = stats[faucet_type]
+            
+            # Check minimum samples
+            if faucet_stats['total'] < self.settings.faucet_auto_suspend_min_samples:
+                return False, ""
+            
+            # Check success rate
+            success_rate = faucet_stats['success_rate']
+            if success_rate < self.settings.faucet_min_success_rate:
+                return True, f"Low success rate: {success_rate:.1f}% (threshold: {self.settings.faucet_min_success_rate}%)"
+            
+            # Check ROI (requires cost tracking)
+            # Calculate faucet-specific profitability
+            profitability = get_tracker().get_profitability(hours=24)
+            
+            # Get faucet earnings
+            earnings = faucet_stats.get('earnings', 0)
+            
+            # Estimate costs for this faucet (approximate based on claim count)
+            # Average captcha cost is ~$0.003, assume 1 captcha per claim
+            estimated_costs = faucet_stats['total'] * 0.003
+            
+            # Calculate ROI
+            if estimated_costs > 0:
+                # Convert earnings to USD (rough estimate)
+                # This is a simplified calculation - real earnings tracking would be better
+                import asyncio
+                from core.analytics import get_price_feed
+                
+                # Use a conservative estimate if we can't get real price
+                earnings_usd = earnings * 0.0001  # Rough estimate for satoshi
+                
+                roi = (earnings_usd - estimated_costs) / estimated_costs
+                
+                if roi < self.settings.faucet_roi_threshold:
+                    return True, f"Negative ROI: {roi:.2f} (threshold: {self.settings.faucet_roi_threshold})"
+            
+            return False, ""
+            
+        except Exception as e:
+            logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
+            return False, ""
+
     def add_job(self, job: Job):
         """
         Add a job to the priority queue with deduplication.
@@ -532,6 +594,14 @@ class JobScheduler:
                          self.faucet_failures[job.faucet_type] = 0
                          logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
 
+                # Auto-Suspend based on ROI and success rate
+                if self.settings.faucet_auto_suspend_enabled:
+                    should_suspend, reason = self._check_auto_suspend(job.faucet_type)
+                    if should_suspend:
+                        logger.warning(f"⏸️ AUTO-SUSPEND: {job.faucet_type} - {reason}")
+                        self.faucet_cooldowns[job.faucet_type] = now + self.settings.faucet_auto_suspend_duration
+                        job.next_run = now + 600  # Check back in 10 mins
+                        continue
                 
                 # Advanced Withdrawal Scheduling (New Gen 3.0 Logic)
                 if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():
