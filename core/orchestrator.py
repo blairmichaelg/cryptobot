@@ -271,15 +271,13 @@ class JobScheduler:
             # Average captcha cost is ~$0.003, assume 1 captcha per claim
             estimated_costs = faucet_stats['total'] * 0.003
             
-            # Calculate ROI
+            # Calculate ROI using simplified estimation
+            # Note: Full conversion requires async price feed which is available in get_profitability()
+            # We use a conservative fixed estimate here for the auto-suspend check
             if estimated_costs > 0:
-                # Convert earnings to USD (rough estimate)
-                # This is a simplified calculation - real earnings tracking would be better
-                import asyncio
-                from core.analytics import get_price_feed
-                
-                # Use a conservative estimate if we can't get real price
-                earnings_usd = earnings * 0.0001  # Rough estimate for satoshi
+                # Conservative estimate: assume low earnings (0.0001 USD per satoshi)
+                # This is intentionally pessimistic to avoid false positives
+                earnings_usd = earnings * 0.0001
                 
                 roi = (earnings_usd - estimated_costs) / estimated_costs
                 

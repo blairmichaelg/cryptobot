@@ -45,6 +45,22 @@ class CryptoPriceFeed:
         "USDT": "tether"
     }
     
+    # Decimal places for each currency (for converting from smallest unit)
+    CURRENCY_DECIMALS = {
+        "BTC": 8,     # 100,000,000 satoshi = 1 BTC
+        "LTC": 8,     # 100,000,000 litoshi = 1 LTC
+        "DOGE": 8,    # 100,000,000 units = 1 DOGE
+        "BCH": 8,     # 100,000,000 satoshi = 1 BCH
+        "TRX": 6,     # 1,000,000 sun = 1 TRX
+        "ETH": 18,    # 1,000,000,000,000,000,000 wei = 1 ETH
+        "BNB": 18,    # 1e18 units = 1 BNB
+        "SOL": 9,     # 1,000,000,000 lamports = 1 SOL
+        "TON": 9,     # 1,000,000,000 nanoton = 1 TON
+        "DASH": 8,    # 100,000,000 duffs = 1 DASH
+        "POLYGON": 18, # 1e18 units = 1 MATIC
+        "USDT": 6     # 1,000,000 units = 1 USDT (varies by chain, using common)
+    }
+    
     def __init__(self):
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_file = os.path.join(os.path.dirname(__file__), "..", "config", "price_cache.json")
@@ -130,7 +146,7 @@ class CryptoPriceFeed:
         Convert an amount of cryptocurrency to USD.
         
         Args:
-            amount: Amount in smallest unit (satoshi for BTC, etc.)
+            amount: Amount in smallest unit (satoshi for BTC, wei for ETH, etc.)
             currency: Currency code
             
         Returns:
@@ -142,13 +158,9 @@ class CryptoPriceFeed:
         if not price:
             return 0.0
         
-        # Convert from smallest unit to whole coin
-        # Bitcoin and most alts use 8 decimal places (100M satoshi = 1 coin)
-        # Ethereum uses 18 decimal places
-        if currency == "ETH":
-            divisor = 1e18
-        else:
-            divisor = 1e8
+        # Get decimal places for this currency
+        decimals = self.CURRENCY_DECIMALS.get(currency, 8)  # Default to 8 if unknown
+        divisor = 10 ** decimals
         
         coin_amount = amount / divisor
         return coin_amount * price
@@ -289,30 +301,39 @@ class EarningsTracker:
             if c['timestamp'] >= cutoff and c['success']:
                 earnings_by_currency[c['currency']] += c['amount']
         
-        # Convert to USD
+        # Convert to USD using concurrent price fetching
         total_earnings_usd = 0.0
         try:
-            # Run async price conversion
+            # Use existing event loop if available
             loop = asyncio.get_event_loop()
-            for currency, amount in earnings_by_currency.items():
-                try:
-                    usd_value = loop.run_until_complete(price_feed.convert_to_usd(amount, currency))
-                    total_earnings_usd += usd_value
-                except Exception as e:
-                    logger.debug(f"Could not convert {currency} to USD: {e}")
         except RuntimeError:
             # No event loop - create one
-            async def _convert():
-                total = 0.0
-                for currency, amount in earnings_by_currency.items():
-                    try:
-                        usd_value = await price_feed.convert_to_usd(amount, currency)
-                        total += usd_value
-                    except Exception as e:
-                        logger.debug(f"Could not convert {currency} to USD: {e}")
-                return total
+            loop = None
+        
+        async def _convert_all():
+            """Convert all currencies to USD concurrently."""
+            tasks = []
+            for currency, amount in earnings_by_currency.items():
+                tasks.append(price_feed.convert_to_usd(amount, currency))
             
-            total_earnings_usd = asyncio.run(_convert())
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            total = 0.0
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.debug(f"Currency conversion failed: {result}")
+                elif result is not None:
+                    total += result
+            return total
+        
+        if loop and loop.is_running():
+            # Already in async context - create task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, _convert_all())
+                total_earnings_usd = future.result()
+        else:
+            # Run in new event loop
+            total_earnings_usd = asyncio.run(_convert_all())
         
         total_costs = sum(cost['amount_usd'] for cost in self.costs if cost['timestamp'] >= cutoff)
         
