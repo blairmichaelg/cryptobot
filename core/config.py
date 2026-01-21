@@ -101,9 +101,12 @@ class BotSettings(BaseSettings):
     # Withdrawal Timing Strategy
     withdrawal_schedule: str = "off_peak"  # Options: immediate, off_peak, weekly_batch
     off_peak_hours: List[int] = [0, 1, 2, 3, 4, 5, 22, 23]  # UTC hours (low network activity)
+    prefer_off_peak_withdrawals: bool = True  # Prefer off-peak hours for withdrawals
     auto_consolidate_to_faucetpay: bool = True  # Auto-transfer from faucets to FaucetPay
     auto_withdraw_from_faucetpay: bool = False  # Requires FaucetPay API (manual for now)
     consolidation_interval_hours: int = 24  # How often to check/consolidate
+    withdrawal_retry_intervals: List[int] = [3600, 21600, 86400]  # Retry intervals: 1h, 6h, 24h
+    withdrawal_max_retries: int = 3  # Maximum retry attempts before marking as failed
 
     # Performance / Concurrency
     max_concurrent_bots: int = 3
