@@ -1,5 +1,19 @@
 # Copilot Instructions for Cryptobot Gen 3.0
 
+## ⚠️ CRITICAL: Branch & Worktree Policy
+
+**THERE IS ONLY ONE BRANCH: `master`. DO NOT CREATE OTHER BRANCHES OR WORKTREES.**
+
+- **NEVER** create worktrees, feature branches, or copilot/* branches
+- **NEVER** use `git worktree add` 
+- **NEVER** create pull requests - commit directly to master
+- **ALWAYS** work in `C:\Users\azureuser\Repositories\cryptobot` on `master`
+- **ALWAYS** `git pull` before starting work and `git push` after committing
+- **NEVER** force reset, force delete, or force push without explicit user permission
+- **NEVER** delete branches without checking if they have unmerged/uncommitted work
+
+If you find multiple worktrees or branches exist, ASK THE USER before deleting anything.
+
 ## Project Overview
 
 **Gen 3.0 Crypto Faucet Farm** is a professional autonomous harvesting system for high-yield cryptocurrency faucets. It combines advanced browser stealth (Camoufox), CAPTCHA solving (2Captcha/CapSolver), and job-based concurrency orchestration to maximize earnings.
