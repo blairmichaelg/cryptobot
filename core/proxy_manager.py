@@ -61,6 +61,7 @@ class ProxyManager:
         self.all_proxies: List[Proxy] = [] # Fix: Master list to preserve proxies during cooldown
         self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
         self.assignments: Dict[str, Proxy] = {}  # Map username -> Proxy
+        self._assignment_lock = asyncio.Lock()  # CRITICAL: Prevent race condition in async assignment
         
         # Latency tracking: proxy_key -> list of latency measurements (ms)
         self.proxy_latency: Dict[str, List[float]] = {}

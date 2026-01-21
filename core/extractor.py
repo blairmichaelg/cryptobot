@@ -1,6 +1,7 @@
 import re
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from playwright.async_api import Page
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +131,51 @@ class DataExtractor:
         
         logger.warning(f"Failed to extract balance from: '{text}'")
         return "0"
+
+    @staticmethod
+    async def find_balance_selector_in_dom(page: Page) -> Optional[str]:
+        """Auto-detect balance selector by looking for common patterns in DOM."""
+        common_balance_patterns = [
+            "[class*='balance']",
+            "[class*='user-balance']",
+            "[id*='balance']",
+            ".balance",
+            ".user-balance",
+            "#balance",
+            "[data-balance]"
+        ]
+        
+        for pattern in common_balance_patterns:
+            try:
+                el = page.locator(pattern)
+                if await el.count() > 0 and await el.is_visible():
+                    logger.info(f"Auto-detected balance selector: {pattern}")
+                    return pattern
+            except Exception:
+                continue
+        
+        return None
+
+    @staticmethod
+    async def find_timer_selector_in_dom(page: Page) -> Optional[str]:
+        """Auto-detect timer selector by looking for common patterns in DOM."""
+        common_timer_patterns = [
+            "[class*='timer']",
+            "[class*='countdown']",
+            "[id*='timer']",
+            "[id*='countdown']",
+            ".timer",
+            "#timer",
+            "[data-timer]"
+        ]
+        
+        for pattern in common_timer_patterns:
+            try:
+                el = page.locator(pattern)
+                if await el.count() > 0 and await el.is_visible():
+                    logger.info(f"Auto-detected timer selector: {pattern}")
+                    return pattern
+            except Exception:
+                continue
+        
+        return None

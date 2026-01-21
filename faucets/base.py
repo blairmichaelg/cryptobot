@@ -482,30 +482,84 @@ class FaucetBot:
         """
         raise NotImplementedError
         
-    async def get_timer(self, selector: str) -> float:
+    async def get_timer(self, selector: str, fallback_selectors: list = None) -> float:
         """
         Extract timer value from a selector and convert to minutes.
+        With automatic fallback to DOM auto-detection if selector fails.
         """
         try:
             el = self.page.locator(selector)
             if await el.count() > 0 and await el.first.is_visible():
                 text = await el.first.text_content()
+                logger.debug(f"[{self.faucet_name}] Timer extracted from {selector}: {text}")
                 return DataExtractor.parse_timer_to_minutes(text)
         except Exception as e:
-            logger.debug(f"[{self.faucet_name}] Timer extraction failed: {e}")
+            logger.debug(f"[{self.faucet_name}] Timer extraction failed for {selector}: {e}")
+        
+        # Try fallback selectors
+        if fallback_selectors:
+            for fb_sel in fallback_selectors:
+                try:
+                    el = self.page.locator(fb_sel)
+                    if await el.count() > 0 and await el.is_visible():
+                        text = await el.first.text_content()
+                        logger.info(f"[{self.faucet_name}] Timer extracted from fallback {fb_sel}: {text}")
+                        return DataExtractor.parse_timer_to_minutes(text)
+                except Exception:
+                    continue
+        
+        # Auto-detect from DOM
+        try:
+            auto_sel = await DataExtractor.find_timer_selector_in_dom(self.page)
+            if auto_sel:
+                el = self.page.locator(auto_sel)
+                text = await el.first.text_content()
+                logger.warning(f"[{self.faucet_name}] Timer auto-detected from DOM: {auto_sel} = {text}")
+                return DataExtractor.parse_timer_to_minutes(text)
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Auto-detection failed: {e}")
+        
+        logger.warning(f"[{self.faucet_name}] Could not extract timer from {selector} or fallbacks")
         return 0.0
 
-    async def get_balance(self, selector: str) -> str:
+    async def get_balance(self, selector: str, fallback_selectors: list = None) -> str:
         """
         Extract balance from a selector.
+        With automatic fallback to DOM auto-detection if selector fails.
         """
         try:
             el = self.page.locator(selector)
             if await el.count() > 0 and await el.first.is_visible():
                 text = await el.first.text_content()
+                logger.debug(f"[{self.faucet_name}] Balance extracted from {selector}: {text}")
                 return DataExtractor.extract_balance(text)
         except Exception as e:
-            logger.debug(f"[{self.faucet_name}] Balance extraction failed: {e}")
+            logger.debug(f"[{self.faucet_name}] Balance extraction failed for {selector}: {e}")
+        
+        # Try fallback selectors
+        if fallback_selectors:
+            for fb_sel in fallback_selectors:
+                try:
+                    el = self.page.locator(fb_sel)
+                    if await el.count() > 0 and await el.is_visible():
+                        text = await el.first.text_content()
+                        logger.info(f"[{self.faucet_name}] Balance extracted from fallback {fb_sel}: {text}")
+                        return DataExtractor.extract_balance(text)
+                except Exception:
+                    continue
+        
+        # Auto-detect from DOM
+        try:
+            auto_sel = await DataExtractor.find_balance_selector_in_dom(self.page)
+            if auto_sel:
+                el = self.page.locator(auto_sel)
+                text = await el.first.text_content()
+                logger.warning(f"[{self.faucet_name}] Balance auto-detected from DOM: {auto_sel} = {text}")
+                return DataExtractor.extract_balance(text)
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Auto-detection failed: {e}")
+        
+        logger.warning(f"[{self.faucet_name}] Could not extract balance from {selector} or fallbacks")
         return "0"
         
     async def is_logged_in(self) -> bool:

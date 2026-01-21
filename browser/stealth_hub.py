@@ -3,6 +3,15 @@ import json
 import logging
 from typing import Dict, Any, List
 
+# Import fake-useragent for dynamic UA generation
+try:
+    from fake_useragent import UserAgent
+    HAS_FAKE_UA = True
+except ImportError:
+    HAS_FAKE_UA = False
+    logger = logging.getLogger(__name__)
+    logger.warning("fake-useragent not installed. Using static list. Install with: pip install fake-useragent")
+
 logger = logging.getLogger(__name__)
 
 class StealthHub:
