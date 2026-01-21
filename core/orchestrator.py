@@ -4,9 +4,10 @@ import time
 import random
 import json
 import os
+import inspect
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
 from playwright.async_api import Page, BrowserContext
 
@@ -190,7 +191,6 @@ class JobScheduler:
         Returns:
             True if current time is off-peak for withdrawals
         """
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         
         # Check hour (late night / early morning UTC)
@@ -303,7 +303,7 @@ class JobScheduler:
         Automatically schedule withdrawal jobs for all faucets with withdraw() support.
         
         Timing strategy:
-        - Initial check: 24h after first claim
+        - Initial check: 24-72h depending on earnings rate
         - Repeat: Every 24-72h depending on earnings rate
         - Priority: Low (don't interfere with claiming)
         - Timing: Prefer off-peak hours (0-5 UTC, 22-23 UTC, weekends)
@@ -342,12 +342,11 @@ class JobScheduler:
             has_withdraw = False
             try:
                 # Check if withdraw method exists and is not the base implementation
-                import inspect
                 if hasattr(faucet_class, 'withdraw'):
                     method = getattr(faucet_class, 'withdraw')
                     # Check if it's not the base implementation (which just returns "Not Implemented")
                     source = inspect.getsource(method)
-                    if "Not Implemented" not in source or "NotImplementedError" not in source:
+                    if "Not Implemented" not in source and "NotImplementedError" not in source:
                         has_withdraw = True
             except Exception as e:
                 logger.debug(f"Could not inspect withdraw method for {faucet_type}: {e}")
@@ -381,7 +380,6 @@ class JobScheduler:
             
             # Adjust to off-peak hours if enabled
             if self.settings.prefer_off_peak_withdrawals:
-                from datetime import datetime, timezone, timedelta
                 target_time = datetime.fromtimestamp(next_withdrawal_time, tz=timezone.utc)
                 
                 # If not in off-peak hours, adjust to next off-peak window
