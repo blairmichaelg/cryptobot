@@ -28,6 +28,20 @@ install_service() {
         source .venv/bin/activate
     fi
     pip install -r requirements.txt
+
+    if [ "$CANARY_RESET" = true ]; then
+        echo "🧹 Clearing canary settings from .env..."
+        sed -i '/^CANARY_PROFILE=/d' .env || true
+        sed -i '/^CANARY_ONLY=/d' .env || true
+    fi
+
+    if [ -n "$CANARY_PROFILE" ]; then
+        echo "🧪 Enabling canary profile: $CANARY_PROFILE"
+        sed -i '/^CANARY_PROFILE=/d' .env || true
+        sed -i '/^CANARY_ONLY=/d' .env || true
+        echo "CANARY_PROFILE=$CANARY_PROFILE" >> .env
+        echo "CANARY_ONLY=true" >> .env
+    fi
     
     echo "⚙️  Updating systemd service..."
     # Ensure the service file exists
@@ -38,6 +52,21 @@ install_service() {
         echo "🔄 Restarting service..."
         sudo systemctl restart faucet_worker
         sudo systemctl status faucet_worker --no-pager
+        echo "🩺 Running health gate..."
+        python meta.py health || true
+        HEARTBEAT_FILE="/tmp/cryptobot_heartbeat"
+        if [ -f "$HEARTBEAT_FILE" ]; then
+            HB_TS=$(head -1 "$HEARTBEAT_FILE" | tr -d '\r')
+            NOW=$(date +%s)
+            if [ -z "$HB_TS" ] || [ $((NOW - HB_TS)) -gt 300 ]; then
+                echo "❌ Health gate failed: stale heartbeat."
+                exit 1
+            fi
+        else
+            echo "❌ Health gate failed: heartbeat missing."
+            exit 1
+        fi
+        echo "✅ Health gate passed."
         echo "✅ Local Installation & Service Restart Complete!"
     else
         echo "❌ Service file not found at deploy/faucet_worker.service"
@@ -50,6 +79,8 @@ VM_NAME=""
 RESOURCE_GROUP=""
 LOCAL_MODE=false
 CHECK_STATUS=false
+CANARY_PROFILE=""
+CANARY_RESET=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -59,6 +90,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --check-status)
             CHECK_STATUS=true
+            shift
+            ;;
+        --canary-profile)
+            CANARY_PROFILE="$2"
+            shift 2
+            ;;
+        --canary-reset)
+            CANARY_RESET=true
             shift
             ;;
         *)
@@ -103,8 +142,26 @@ else
 fi
 
 # Install Dependencies
+if [ "$CANARY_RESET" = true ]; then
+    echo '🧹 Clearing canary settings from .env...'
+    sed -i '/^CANARY_PROFILE=/d' .env || true
+    sed -i '/^CANARY_ONLY=/d' .env || true
+fi
+
+if [ -n "$CANARY_PROFILE" ]; then
+    echo '🧪 Enabling canary profile: $CANARY_PROFILE'
+    sed -i '/^CANARY_PROFILE=/d' .env || true
+    sed -i '/^CANARY_ONLY=/d' .env || true
+    echo "CANARY_PROFILE=$CANARY_PROFILE" >> .env
+    echo "CANARY_ONLY=true" >> .env
+fi
 echo '📦 Installing Python dependencies...'
-source .venv/bin/activate
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+else
+    python3 -m venv .venv
+    source .venv/bin/activate
+fi
 pip install -r requirements.txt
 
 
@@ -119,6 +176,21 @@ sudo systemctl daemon-reload
 echo '🔄 Restarting service...'
 sudo systemctl restart faucet_worker
 sudo systemctl status faucet_worker --no-pager
+
+echo '🩺 Running health gate...'
+python meta.py health || true
+HEARTBEAT_FILE="/tmp/cryptobot_heartbeat"
+if [ ! -f "$HEARTBEAT_FILE" ]; then
+    echo '❌ Health gate failed: heartbeat missing.'
+    exit 1
+fi
+HB_TS=$(head -1 "$HEARTBEAT_FILE" | tr -d '\r')
+NOW=$(date +%s)
+if [ -z "$HB_TS" ] || [ $((NOW - HB_TS)) -gt 300 ]; then
+    echo '❌ Health gate failed: stale heartbeat.'
+    exit 1
+fi
+echo '✅ Health gate passed.'
 "
 
 # Execute via Azure CLI

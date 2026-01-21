@@ -37,7 +37,7 @@ az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" --
 # 5. Bot Heartbeat
 echo "--------------------------------------------------"
 echo "❤️ Bot Heartbeat:"
-az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" --command-id RunShellScript --scripts "cat ~/Repositories/cryptobot/logs/heartbeat.txt 2>/dev/null || echo 'No heartbeat found'" --query "value[0].message" -o tsv
+az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" --command-id RunShellScript --scripts "if [ -f /tmp/cryptobot_heartbeat ]; then cat /tmp/cryptobot_heartbeat; elif [ -f ~/Repositories/cryptobot/logs/heartbeat.txt ]; then cat ~/Repositories/cryptobot/logs/heartbeat.txt; else echo 'No heartbeat found'; fi" --query "value[0].message" -o tsv
 
 echo "--------------------------------------------------"
 echo "✅ Health check complete!"

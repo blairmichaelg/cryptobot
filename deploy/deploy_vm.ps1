@@ -8,7 +8,7 @@ param(
     [string]$RemoteUser = "azureuser"
 )
 
-$RemotePath = "/home/$RemoteUser/backend_service"
+$RemotePath = "/home/$RemoteUser/Repositories/cryptobot"
 
 Write-Host "Deploying to $RemoteUser@$VmIp..."
 
@@ -17,7 +17,7 @@ Write-Host "Deploying to $RemoteUser@$VmIp..."
 scp -i $SshKey -r core browser config deploy faucets solvers scripts main.py meta.py requirements.txt setup.py "$RemoteUser@$VmIp`:$RemotePath"
 
 # 2. Update Remote
-ssh -i $SshKey $RemoteUser@$VmIp "cd $RemotePath && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+ssh -i $SshKey $RemoteUser@$VmIp "cd $RemotePath && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
 
 # 3. Restart Service
 ssh -i $SshKey $RemoteUser@$VmIp "sudo cp $RemotePath/deploy/faucet_worker.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart faucet_worker"

@@ -101,15 +101,22 @@ class BotSettings(BaseSettings):
     # Withdrawal Timing Strategy
     withdrawal_schedule: str = "off_peak"  # Options: immediate, off_peak, weekly_batch
     off_peak_hours: List[int] = [0, 1, 2, 3, 4, 5, 22, 23]  # UTC hours (low network activity)
+    prefer_off_peak_withdrawals: bool = True  # Prefer off-peak hours for withdrawals
     auto_consolidate_to_faucetpay: bool = True  # Auto-transfer from faucets to FaucetPay
     auto_withdraw_from_faucetpay: bool = False  # Requires FaucetPay API (manual for now)
     consolidation_interval_hours: int = 24  # How often to check/consolidate
+    withdrawal_retry_intervals: List[int] = [3600, 21600, 86400]  # Retry intervals: 1h, 6h, 24h
+    withdrawal_max_retries: int = 3  # Maximum retry attempts before marking as failed
 
     # Performance / Concurrency
     max_concurrent_bots: int = 3
     max_concurrent_per_profile: int = 1
     scheduler_tick_rate: float = 1.0
     exploration_frequency_minutes: int = 30
+
+    # Canary rollout (optional)
+    canary_profile: Optional[str] = Field(default=None, alias="CANARY_PROFILE")
+    canary_only: bool = Field(default=False, alias="CANARY_ONLY")
     
     # Auto-Suspend / Circuit Breaker Settings
     faucet_auto_suspend_enabled: bool = True  # Enable ROI-based auto-suspend
@@ -201,3 +208,17 @@ class BotSettings(BaseSettings):
             return {"username": self.dutchy_username, "password": self.dutchy_password}
         
         return None
+
+    def filter_profiles(self, profiles: List[AccountProfile]) -> List[AccountProfile]:
+        """
+        Apply canary filtering to profiles when enabled.
+        Matches by faucet name or username (case-insensitive substring).
+        """
+        if not self.canary_only or not self.canary_profile:
+            return profiles
+
+        target = self.canary_profile.lower()
+        return [
+            profile for profile in profiles
+            if target in profile.faucet.lower() or target in profile.username.lower()
+        ]

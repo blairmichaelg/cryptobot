@@ -133,6 +133,17 @@ async def main():
                 logger.warning(f"No profiles found matching '{args.single}'")
                 return
 
+        # Canary filter (optional)
+        if settings.canary_only and settings.canary_profile:
+            filtered_profiles = settings.filter_profiles(profiles)
+            if not filtered_profiles:
+                logger.warning(
+                    "No profiles matched CANARY_PROFILE '%s'",
+                    settings.canary_profile
+                )
+                return
+            profiles = filtered_profiles
+
         # 2Captcha Proxy Integration (Sticky Sessions)
         if proxy_manager:
             # Attempt fetch (redirects to file loader in modern versions)

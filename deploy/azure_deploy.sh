@@ -14,6 +14,8 @@ NC='\033[0m' # No Color
 DRY_RUN=false
 RESOURCE_GROUP=""
 VM_NAME=""
+CANARY_PROFILE=""
+CANARY_RESET=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -28,6 +30,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --canary-profile)
+            CANARY_PROFILE="$2"
+            shift 2
+            ;;
+        --canary-reset)
+            CANARY_RESET=true
             shift
             ;;
         *)
@@ -97,13 +107,28 @@ fi
 cd "$TARGET_DIR"
 
 # Ensure we are on the right branch
-# For production, we might want 'main' or 'feature/consolidated-production-upgrade'
-# Using current checked out for now or forcing checkout
-BRANCH="feature/consolidated-production-upgrade"
+BRANCH="master"
 echo "Switching to branch $BRANCH..."
 git fetch
 git checkout $BRANCH
 git pull origin $BRANCH
+
+CANARY_PROFILE="__CANARY_PROFILE__"
+CANARY_RESET="__CANARY_RESET__"
+
+if [ "$CANARY_RESET" = "true" ]; then
+    echo "Clearing canary settings from .env..."
+    sed -i '/^CANARY_PROFILE=/d' .env || true
+    sed -i '/^CANARY_ONLY=/d' .env || true
+fi
+
+if [ -n "$CANARY_PROFILE" ]; then
+    echo "Enabling canary profile: $CANARY_PROFILE"
+    sed -i '/^CANARY_PROFILE=/d' .env || true
+    sed -i '/^CANARY_ONLY=/d' .env || true
+    echo "CANARY_PROFILE=$CANARY_PROFILE" >> .env
+    echo "CANARY_ONLY=true" >> .env
+fi
 
 # Make deploy script executable
 chmod +x deploy/deploy.sh
@@ -116,6 +141,18 @@ echo "Invoking local deploy script..."
 DEPLOY_EOF
 
 chmod +x /tmp/deploy_cryptobot.sh
+
+CANARY_PROFILE="$CANARY_PROFILE" CANARY_RESET="$CANARY_RESET" python - <<'PY'
+from pathlib import Path
+import os
+
+path = Path("/tmp/deploy_cryptobot.sh")
+text = path.read_text()
+text = text.replace("__CANARY_PROFILE__", os.environ.get("CANARY_PROFILE", ""))
+reset = os.environ.get("CANARY_RESET", "false").lower() == "true"
+text = text.replace("__CANARY_RESET__", "true" if reset else "false")
+path.write_text(text)
+PY
 
 if [ "$DRY_RUN" = true ]; then
     echo -e "${YELLOW}[DRY RUN]${NC} Would execute deployment script on VM"
@@ -161,7 +198,7 @@ HEALTH_OUTPUT=$(az vm run-command invoke \
   --resource-group "$RESOURCE_GROUP" \
   --name "$VM_NAME" \
   --command-id RunShellScript \
-  --scripts "tail -20 ~/Repositories/cryptobot/faucet_bot.log" \
+    --scripts "tail -20 ~/Repositories/cryptobot/logs/production_run.log" \
   --output json)
 
 echo -e "${GREEN}Recent log output:${NC}"
@@ -172,4 +209,13 @@ echo -e "${GREEN}═════════════════════
 echo -e "${GREEN}  Deployment Complete!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════${NC}"
 echo "Monitor logs with:"
-echo "az vm run-command invoke --resource-group $RESOURCE_GROUP --name $VM_NAME --command-id RunShellScript --scripts 'tail -f ~/Repositories/cryptobot/faucet_bot.log'"
+echo "az vm run-command invoke --resource-group $RESOURCE_GROUP --name $VM_NAME --command-id RunShellScript --scripts 'tail -f ~/Repositories/cryptobot/logs/production_run.log'"
+
+echo ""
+echo "Running heartbeat gate (5-minute freshness check)..."
+az vm run-command invoke \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VM_NAME" \
+    --command-id RunShellScript \
+    --scripts "HEARTBEAT_FILE=/tmp/cryptobot_heartbeat; if [ ! -f \"$HEARTBEAT_FILE\" ]; then echo '❌ heartbeat missing'; exit 1; fi; HB_TS=$(head -1 \"$HEARTBEAT_FILE\" | tr -d '\\r'); NOW=$(date +%s); if [ -z \"$HB_TS\" ] || [ $((NOW - HB_TS)) -gt 300 ]; then echo '❌ heartbeat stale'; exit 1; fi; echo '✅ heartbeat ok'" \
+    --output json
