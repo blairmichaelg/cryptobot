@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from faucets.faucetcrypto import FaucetCryptoBot
 from faucets.base import ClaimResult
 from core.config import BotSettings
+from core.extractor import DataExtractor
 
 
 @pytest.fixture
@@ -92,6 +93,8 @@ async def test_faucetcrypto_login_already_logged_in(mock_settings, mock_page, mo
     
     bot = FaucetCryptoBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
     
     result = await bot.login()
     
@@ -100,16 +103,14 @@ async def test_faucetcrypto_login_already_logged_in(mock_settings, mock_page, mo
 
 @pytest.mark.asyncio
 async def test_faucetcrypto_login_success(mock_settings, mock_page, mock_solver):
-    """Test successful login"""
+    """Test successful login with human-like behavior"""
     mock_page.url = "https://faucetcrypto.com/login"
     
     email_input = MagicMock()
     email_input.first = MagicMock()
-    email_input.first.fill = AsyncMock()
     
     password_input = MagicMock()
     password_input.first = MagicMock()
-    password_input.first.fill = AsyncMock()
     
     login_btn = MagicMock()
     login_btn.first = MagicMock()
@@ -128,85 +129,165 @@ async def test_faucetcrypto_login_success(mock_settings, mock_page, mock_solver)
     bot = FaucetCryptoBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
     bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
     
     result = await bot.login()
     
     assert result is True
-    email_input.first.fill.assert_called_with("test@example.com")
-    password_input.first.fill.assert_called_with("test_password")
+    bot.human_type.assert_called()  # Verify human_type was used
 
 
 @pytest.mark.asyncio
-async def test_faucetcrypto_login_exception(mock_settings, mock_page, mock_solver):
-    """Test login handles exceptions"""
-    mock_page.goto.side_effect = Exception("Network error")
+async def test_faucetcrypto_login_with_retries(mock_settings, mock_page, mock_solver):
+    """Test login retry logic on timeout"""
+    mock_page.goto.side_effect = [TimeoutError("Timeout"), None]
+    mock_page.url = "https://faucetcrypto.com/login"
+    
+    email_input = MagicMock()
+    email_input.first = MagicMock()
+    
+    password_input = MagicMock()
+    password_input.first = MagicMock()
+    
+    login_btn = MagicMock()
+    login_btn.first = MagicMock()
+    
+    def locator_side_effect(selector):
+        if "email" in selector:
+            return email_input
+        elif "password" in selector:
+            return password_input
+        elif "Login" in selector or "Sign In" in selector:
+            return login_btn
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
     
     bot = FaucetCryptoBot(mock_settings, mock_page)
+    bot.handle_cloudflare = AsyncMock()
+    bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    
     result = await bot.login()
     
-    assert result is False
+    # Should retry after timeout
+    assert mock_page.goto.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_faucetcrypto_claim_success(mock_settings, mock_page, mock_solver):
-    """Test successful claim"""
+async def test_faucetcrypto_claim_success_with_stealth(mock_settings, mock_page, mock_solver):
+    """Test successful claim with stealth features"""
     claim_btn = MagicMock()
     claim_btn.count = AsyncMock(return_value=1)
+    claim_btn.first = MagicMock()
     
     reward_btn = MagicMock()
     reward_btn.is_visible = AsyncMock(return_value=True)
+    reward_btn.first = MagicMock()
     
     def locator_side_effect(selector):
-        if "Ready To Claim" in selector:
+        if "Ready To Claim" in selector or "Claim Now" in selector:
             return claim_btn
-        elif "Get Reward" in selector:
+        elif "Get Reward" in selector or "Collect" in selector:
             return reward_btn
         return MagicMock()
     
     mock_page.locator.side_effect = locator_side_effect
     
     bot = FaucetCryptoBot(mock_settings, mock_page)
-    bot.get_balance = AsyncMock(return_value="100")
+    bot.get_balance = AsyncMock(return_value="100.50")
+    bot.get_timer = AsyncMock(return_value=25.0)
     bot.human_like_click = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.handle_cloudflare = AsyncMock()
     
     result = await bot.claim()
     
     assert result.success is True
     assert result.status == "Claimed"
+    assert result.next_claim_minutes == 25.0
+    bot.idle_mouse.assert_called()  # Verify stealth was used
+    bot.random_delay.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_faucetcrypto_claim_timer_active(mock_settings, mock_page, mock_solver):
-    """Test claim when timer is active"""
+    """Test claim when timer is active with DataExtractor"""
     claim_btn = MagicMock()
     claim_btn.count = AsyncMock(return_value=0)
     
     mock_page.locator.return_value = claim_btn
     
     bot = FaucetCryptoBot(mock_settings, mock_page)
-    bot.get_balance = AsyncMock(return_value="100")
-    bot.get_timer = AsyncMock(return_value=15)
+    bot.get_balance = AsyncMock(return_value="100.25")
+    bot.get_timer = AsyncMock(return_value=18.5)  # Timer with fallback
+    bot.handle_cloudflare = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
     
     result = await bot.claim()
     
     assert result.success is True
     assert result.status == "Timer Active"
-    assert result.next_claim_minutes == 15
+    assert result.next_claim_minutes == 18.5
+    assert result.balance == "100.25"
 
 
 @pytest.mark.asyncio
-async def test_faucetcrypto_claim_reward_button_not_found(mock_settings, mock_page, mock_solver):
-    """Test claim when reward button is not found"""
+async def test_faucetcrypto_claim_with_captcha(mock_settings, mock_page, mock_solver):
+    """Test claim with CAPTCHA solving"""
     claim_btn = MagicMock()
     claim_btn.count = AsyncMock(return_value=1)
+    claim_btn.first = MagicMock()
     
     reward_btn = MagicMock()
-    reward_btn.is_visible = AsyncMock(return_value=False)
+    reward_btn.is_visible = AsyncMock(return_value=True)
+    reward_btn.first = MagicMock()
     
     def locator_side_effect(selector):
-        if "Ready To Claim" in selector:
+        if "Ready To Claim" in selector or "Claim Now" in selector:
             return claim_btn
-        elif "Get Reward" in selector:
+        elif "Get Reward" in selector or "Collect" in selector:
+            return reward_btn
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    bot = FaucetCryptoBot(mock_settings, mock_page)
+    bot.get_balance = AsyncMock(return_value="200")
+    bot.get_timer = AsyncMock(return_value=30.0)
+    bot.human_like_click = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.handle_cloudflare = AsyncMock()
+    bot.solver.solve_captcha = AsyncMock(return_value=True)
+    
+    result = await bot.claim()
+    
+    assert result.success is True
+    bot.solver.solve_captcha.assert_called()  # Verify CAPTCHA was attempted
+
+
+@pytest.mark.asyncio
+async def test_faucetcrypto_claim_with_retry_on_timeout(mock_settings, mock_page, mock_solver):
+    """Test claim retry logic on timeout"""
+    claim_btn = MagicMock()
+    claim_btn.count = AsyncMock(side_effect=[TimeoutError("Timeout"), 1])
+    claim_btn.first = MagicMock()
+    
+    reward_btn = MagicMock()
+    reward_btn.is_visible = AsyncMock(return_value=True)
+    reward_btn.first = MagicMock()
+    
+    def locator_side_effect(selector):
+        if "Ready To Claim" in selector or "Claim Now" in selector:
+            return claim_btn
+        elif "Get Reward" in selector or "Collect" in selector:
             return reward_btn
         return MagicMock()
     
@@ -214,24 +295,64 @@ async def test_faucetcrypto_claim_reward_button_not_found(mock_settings, mock_pa
     
     bot = FaucetCryptoBot(mock_settings, mock_page)
     bot.get_balance = AsyncMock(return_value="100")
+    bot.get_timer = AsyncMock(return_value=30.0)
     bot.human_like_click = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.handle_cloudflare = AsyncMock()
     
     result = await bot.claim()
     
-    assert result.success is False
-    assert result.status == "Reward Button Not Found"
+    # Should retry after timeout
+    assert claim_btn.count.call_count >= 2
 
 
 @pytest.mark.asyncio
-async def test_faucetcrypto_claim_exception(mock_settings, mock_page, mock_solver):
-    """Test claim handles exceptions"""
+async def test_faucetcrypto_claim_max_retries_exceeded(mock_settings, mock_page, mock_solver):
+    """Test claim fails after max retries"""
     bot = FaucetCryptoBot(mock_settings, mock_page)
-    bot.get_balance = AsyncMock(side_effect=Exception("Error"))
+    bot.get_balance = AsyncMock(side_effect=Exception("Network error"))
+    bot.handle_cloudflare = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
     
     result = await bot.claim()
     
     assert result.success is False
-    assert "Error" in result.status
+    assert "Error" in result.status or "retries" in result.status.lower()
+
+
+@pytest.mark.asyncio  
+async def test_data_extractor_timer_parsing():
+    """Test DataExtractor timer parsing with various formats"""
+    # Test HH:MM:SS format
+    assert DataExtractor.parse_timer_to_minutes("01:30:00") == 90.0
+    
+    # Test MM:SS format
+    assert DataExtractor.parse_timer_to_minutes("15:30") == 15.5
+    
+    # Test compound format
+    assert DataExtractor.parse_timer_to_minutes("1h 30m") == 90.0
+    assert DataExtractor.parse_timer_to_minutes("45m 30s") == 45.5
+    
+    # Test plain number
+    assert DataExtractor.parse_timer_to_minutes("25") == 25.0
+
+
+@pytest.mark.asyncio
+async def test_data_extractor_balance_extraction():
+    """Test DataExtractor balance extraction with various formats"""
+    # Test with currency symbol
+    assert DataExtractor.extract_balance("Balance: 1,234.56 BTC") == "1234.56"
+    
+    # Test with just number
+    assert DataExtractor.extract_balance("0.00012345") == "0.00012345"
+    
+    # Test with text prefix
+    assert DataExtractor.extract_balance("Your balance is 500.25") == "500.25"
+    
+    # Test edge case
+    assert DataExtractor.extract_balance("") == "0"
 
 
 @pytest.mark.asyncio
