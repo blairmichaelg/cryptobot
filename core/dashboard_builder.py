@@ -22,6 +22,8 @@ from rich.layout import Layout
 from rich.text import Text
 from rich import box
 
+from core.analytics import get_price_feed
+
 logger = logging.getLogger(__name__)
 
 
@@ -165,8 +167,6 @@ class DashboardBuilder:
             USD value
         """
         try:
-            from core.analytics import get_price_feed
-            
             price_feed = get_price_feed()
             usd_value = await price_feed.convert_to_usd(amount, currency)
             return usd_value
