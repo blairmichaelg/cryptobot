@@ -231,6 +231,10 @@ class TestSolPickBot(unittest.IsolatedAsyncioTestCase):
         timer_loc.count.return_value = 1
         timer_loc.first.text_content.return_value = ""
         
+        # Mock no CAPTCHA visible
+        captcha_loc = AsyncMock()
+        captcha_loc.is_visible.return_value = False
+        
         # Mock claim button visible
         claim_btn = AsyncMock()
         claim_btn.is_visible.return_value = True
@@ -253,6 +257,8 @@ class TestSolPickBot(unittest.IsolatedAsyncioTestCase):
         def locator_side_effect(selector):
             if "time" in selector.lower() and "timer" in selector.lower():
                 return timer_loc
+            if "captcha" in selector.lower() or "turnstile" in selector.lower():
+                return captcha_loc
             if "button" in selector.lower() or "claim" in selector.lower():
                 return claim_btn
             if "success" in selector.lower() or "alert" in selector.lower():
@@ -365,23 +371,60 @@ class TestSolPickBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.next_claim_minutes, 15)
 
     async def test_claim_exception_handling(self):
-        """Test claim handles exceptions gracefully."""
+        """Test claim handles exceptions gracefully and continues with degraded functionality."""
         bot = SolPickBot(self.settings, self.page)
         bot.handle_cloudflare = AsyncMock()
         bot.close_popups = AsyncMock()
         bot.idle_mouse = AsyncMock()
         bot._navigate_with_retry = AsyncMock(return_value=True)
+        bot.simulate_reading = AsyncMock()
+        bot.human_like_click = AsyncMock()
+        bot.solver = AsyncMock()
+        bot.solver.solve_captcha = AsyncMock(return_value=True)
         
-        # Mock exception during claim
+        # Mock exception during timer check (but claim should continue)
         timer_loc = AsyncMock()
         timer_loc.count.side_effect = Exception("Test exception")
-        self.page.locator.return_value = timer_loc
+        
+        # Mock no CAPTCHA
+        captcha_loc = AsyncMock()
+        captcha_loc.is_visible.return_value = False
+        
+        # Mock claim button visible
+        claim_btn = AsyncMock()
+        claim_btn.is_visible.return_value = True
+        
+        # Mock success message
+        success_msg = AsyncMock()
+        success_msg.count.return_value = 1
+        success_msg.first.wait_for = AsyncMock()
+        success_msg.first.text_content.return_value = "Claimed successfully"
+        
+        # Mock balance
+        balance_loc = AsyncMock()
+        balance_loc.is_visible.return_value = True
+        balance_loc.text_content.return_value = "0.005 SOL"
+        
+        def locator_side_effect(selector):
+            if "time" in selector.lower() and "timer" in selector.lower():
+                return timer_loc
+            if "captcha" in selector.lower() or "turnstile" in selector.lower():
+                return captcha_loc
+            if "button" in selector.lower():
+                return claim_btn
+            if "success" in selector.lower():
+                return success_msg
+            if "balance" in selector:
+                return balance_loc
+            return AsyncMock()
+        
+        self.page.locator.side_effect = locator_side_effect
         
         result = await bot.claim()
         
-        # Should handle exception and return proper result
-        self.assertFalse(result.success)
-        self.assertIn("Exception", result.status)
+        # Should handle exception in timer check and still complete claim successfully
+        self.assertTrue(result.success)
+        self.assertEqual(result.status, "Claimed")
 
     async def test_is_logged_in_true(self):
         """Test is_logged_in returns True when logout link is visible."""
