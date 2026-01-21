@@ -35,11 +35,11 @@ class CaptchaSolver:
             daily_budget: Maximum daily spend in USD (default $5.00).
         """
         self.api_key = api_key
-            self.provider = provider.lower().replace("twocaptcha", "2captcha")
-            # Fallback support (optional secondary provider)
-            self.fallback_provider = None
-            self.fallback_api_key = None
-            self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
+        self.provider = provider.lower().replace("twocaptcha", "2captcha")
+        # Fallback support (optional secondary provider)
+        self.fallback_provider = None
+        self.fallback_api_key = None
+        self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
         self.session = None
         self.daily_budget = daily_budget
         self.faucet_name = None

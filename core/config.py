@@ -160,6 +160,9 @@ class BotSettings(BaseSettings):
 
     dutchy_username: Optional[str] = None
     dutchy_password: Optional[str] = None
+    
+    litepick_username: Optional[str] = None
+    litepick_password: Optional[str] = None
 
     # Multi-Account Profiles
     # This list can be populated from JSON env var or config file
@@ -199,5 +202,7 @@ class BotSettings(BaseSettings):
             return {"username": self.freebitcoin_username, "password": self.freebitcoin_password}
         elif "dutchy" in name and self.dutchy_username:
             return {"username": self.dutchy_username, "password": self.dutchy_password}
+        elif "litepick" in name and self.litepick_username:
+            return {"email": self.litepick_username, "password": self.litepick_password}
         
         return None

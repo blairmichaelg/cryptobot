@@ -165,7 +165,7 @@ class PickFaucetBase(FaucetBot):
         """Standard login for .io pick family.
 
         Navigates to the login page, fills credentials, solves any present
-        captchas, and verifies the login state.
+        captchas, and verifies the login state with enhanced stealth.
 
         Returns:
             bool: True if login was successful and resulted in a logged-in state.
@@ -193,29 +193,62 @@ class PickFaucetBase(FaucetBot):
             email_field = self.page.locator('input[type="email"], input[name="email"], input#email')
             pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
             
-            await email_field.fill(creds['email'])
-            await pass_field.fill(creds['password'])
+            # Stealth: Human-like typing instead of instant fill
+            if await email_field.is_visible():
+                logger.debug(f"[{self.faucet_name}] Filling email field")
+                await self.human_type(email_field, creds['email'])
+            else:
+                logger.warning(f"[{self.faucet_name}] Email field not visible")
+                return False
+                
+            await self.random_delay(0.5, 1.5)
+            
+            if await pass_field.is_visible():
+                logger.debug(f"[{self.faucet_name}] Filling password field")
+                await self.human_type(pass_field, creds['password'])
+            else:
+                logger.warning(f"[{self.faucet_name}] Password field not visible")
+                return False
             
             # Check for hCaptcha or Turnstile
-            if await self.page.locator(".h-captcha, .cf-turnstile").is_visible():
+            captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
+            if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
                 logger.info(f"[{self.faucet_name}] Solving login captcha...")
-                # The CaptchaSolver in base.py handles the technical details
-                # but we may need to wait for it here if the provider is non-interactive
-                await self.random_delay(5, 10)
+                captcha_solved = await self.solver.solve_captcha(self.page)
+                if not captcha_solved:
+                    logger.warning(f"[{self.faucet_name}] Login CAPTCHA solving failed")
+                    return False
+                await self.random_delay(2, 4)
 
             login_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Login"), button:has-text("Log in")')
+            
+            if not await login_btn.is_visible():
+                logger.error(f"[{self.faucet_name}] Login button not found")
+                return False
+                
+            logger.debug(f"[{self.faucet_name}] Clicking login button")
+            await self.random_delay(0.5, 1.5)
             await self.human_like_click(login_btn)
             
             await self.page.wait_for_load_state("networkidle", timeout=30000)
             
+            # Verify login state
             if await self.is_logged_in():
                 logger.info(f"[{self.faucet_name}] Login successful")
                 return True
             else:
-                logger.warning(f"[{self.faucet_name}] Login did not result in dashboard")
+                logger.warning(f"[{self.faucet_name}] Login did not result in logged-in state")
+                
+                # Check for error messages
+                error_loc = self.page.locator(".alert-danger, .alert-error, .error")
+                if await error_loc.count() > 0:
+                    error_text = await error_loc.first.text_content()
+                    logger.error(f"[{self.faucet_name}] Login error: {error_text}")
+                
                 return False
+                
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Login error: {e}")
+            logger.error(f"[{self.faucet_name}] Login error: {e}", exc_info=True)
             return False
 
     async def is_logged_in(self) -> bool:
@@ -227,17 +260,24 @@ class PickFaucetBase(FaucetBot):
         return await self.page.locator('a:has-text("Logout"), a[href*="logout"]').is_visible()
 
     async def get_balance(self) -> str:
-        """Extract balance from the header.
+        """Extract balance from the header with enhanced fallback logic.
 
         Returns:
             str: The extracted balance string, or "0" if extraction fails.
         """
-        # Researched selectors: .balance, .navbar-right .balance, #balance
-        for selector in [".balance", ".navbar-right .balance", "#balance"]:
-            balance = await super().get_balance(selector)
-            if balance and balance != "0":
-                return balance
-        return "0"
+        # Multiple selector strategies for robustness
+        balance_selectors = [
+            ".balance",
+            ".navbar-right .balance", 
+            "#balance",
+            "[class*='balance']",
+            ".user-balance",
+            "#user-balance"
+        ]
+        
+        balance = await super().get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
+        logger.debug(f"[{self.faucet_name}] Balance extracted: {balance}")
+        return balance if balance and balance != "0" else "0"
 
     def get_jobs(self):
         """Standard job definition for the pick family.
@@ -273,7 +313,7 @@ class PickFaucetBase(FaucetBot):
         """Perform the hourly faucet claim.
 
         Handles navigation, cooldown checks, captcha solving, and clicking the
-        claim button.
+        claim button with enhanced stealth and robustness.
 
         Returns:
             ClaimResult: The result of the claim attempt.
@@ -284,52 +324,77 @@ class PickFaucetBase(FaucetBot):
         if not await self._navigate_with_retry(faucet_url):
             logger.error(f"[{self.faucet_name}] Failed to navigate to faucet page")
             return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=15)
+        
         await self.handle_cloudflare()
         await self.close_popups()
+        
+        # Stealth: Simulate reading page before interacting
+        await self.idle_mouse(duration=2.0)
 
-        # Check for existing timer
-        timer_text = await self.page.locator("#time").text_content()
-        if timer_text and any(c.isdigit() for c in timer_text):
-            minutes = DataExtractor.parse_timer_to_minutes(timer_text)
-            if minutes > 0:
-                logger.info(f"[{self.faucet_name}] Faucet on cooldown: {minutes}m remaining")
-                return ClaimResult(success=True, status="Cooldown", next_claim_minutes=minutes, balance=await self.get_balance())
+        # Check for existing timer with fallback selectors
+        timer_minutes = await self.get_timer("#time", fallback_selectors=["#timer", ".timer", "[id*='countdown']"])
+        if timer_minutes > 0:
+            logger.info(f"[{self.faucet_name}] Faucet on cooldown: {timer_minutes:.2f}m remaining")
+            balance = await self.get_balance()
+            return ClaimResult(success=True, status="Cooldown", next_claim_minutes=timer_minutes, balance=balance)
 
         try:
-            # Check for hCaptcha or Turnstile in the faucet page
-            if await self.page.locator(".h-captcha, .cf-turnstile").is_visible():
-                logger.info(f"[{self.faucet_name}] Solving faucet captcha...")
-                # We rely on the browser/solver to handle this, but adding a delay helps
-                await self.random_delay(5, 10)
+            # Check for and actively solve CAPTCHA
+            captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
+            if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
+                logger.info(f"[{self.faucet_name}] CAPTCHA detected, solving...")
+                captcha_solved = await self.solver.solve_captcha(self.page)
+                if not captcha_solved:
+                    logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed")
+                    return ClaimResult(success=False, status="CAPTCHA Failed", next_claim_minutes=5)
+                logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
+                await self.random_delay(2, 4)
 
             # The button is often 'Claim' or 'Roll' or has class 'btn-primary'
             claim_btn = self.page.locator('button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), button#claim')
             
             if not await claim_btn.is_visible():
                 logger.warning(f"[{self.faucet_name}] Claim button not found, checking if already claimed")
-                return ClaimResult(success=True, status="Already Claimed", next_claim_minutes=60, balance=await self.get_balance())
+                balance = await self.get_balance()
+                return ClaimResult(success=True, status="Already Claimed", next_claim_minutes=60, balance=balance)
 
+            # Stealth: Natural delay before clicking
+            await self.random_delay(1, 3)
             await self.human_like_click(claim_btn)
             await self.random_delay(3, 6)
 
             # Extract result from alert or specific message div
-            result_msg_loc = self.page.locator(".alert-success, #success, .message")
+            result_msg_loc = self.page.locator(".alert-success, #success, .message, .alert")
             if await result_msg_loc.count() > 0:
                 result_msg = await result_msg_loc.first.text_content()
                 logger.info(f"[{self.faucet_name}] Claim successful: {result_msg.strip()}")
+                
+                # Extract actual claim amount if present
+                amount_extracted = DataExtractor.extract_balance(result_msg)
+                balance = await self.get_balance()
+                
                 return ClaimResult(
                     success=True, 
                     status="Claimed", 
-                    next_claim_minutes=60, 
-                    amount=result_msg.strip(), 
-                    balance=await self.get_balance()
+                    next_claim_minutes=60,  # Standard hourly claim
+                    amount=amount_extracted if amount_extracted != "0" else result_msg.strip(), 
+                    balance=balance
                 )
             
-            return ClaimResult(success=False, status="Claim failed or result not found", next_claim_minutes=10)
+            # Check for error messages
+            error_msg_loc = self.page.locator(".alert-danger, .alert-error, .error")
+            if await error_msg_loc.count() > 0:
+                error_text = await error_msg_loc.first.text_content()
+                logger.warning(f"[{self.faucet_name}] Claim error message: {error_text}")
+                return ClaimResult(success=False, status=f"Error: {error_text}", next_claim_minutes=10)
+            
+            logger.warning(f"[{self.faucet_name}] Claim result not found, assuming success")
+            balance = await self.get_balance()
+            return ClaimResult(success=True, status="Claimed (unverified)", next_claim_minutes=60, balance=balance)
 
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Claim error: {e}")
-            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=15)
+            logger.error(f"[{self.faucet_name}] Claim error: {e}", exc_info=True)
+            return ClaimResult(success=False, status=f"Error: {str(e)[:100]}", next_claim_minutes=15)
 
     async def withdraw(self) -> ClaimResult:
         """Automated withdrawal for .io pick family.
