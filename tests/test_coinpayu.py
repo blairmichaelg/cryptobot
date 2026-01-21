@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from faucets.coinpayu import CoinPayUBot
 from faucets.base import ClaimResult
 from core.config import BotSettings
+from core.extractor import DataExtractor
 
 
 @pytest.fixture
@@ -25,6 +26,7 @@ def mock_solver():
         solver_instance = MockSolver.return_value
         solver_instance.solve_captcha = AsyncMock(return_value=True)
         solver_instance.api_key = "test_key"
+        solver_instance.set_faucet_name = MagicMock()
         yield solver_instance
 
 
@@ -47,6 +49,7 @@ def mock_page():
     locator_mock.first = MagicMock()
     locator_mock.first.is_visible = AsyncMock(return_value=False)
     locator_mock.first.text_content = AsyncMock(return_value="")
+    locator_mock.first.inner_text = AsyncMock(return_value="")
     locator_mock.first.click = AsyncMock()
     locator_mock.nth = MagicMock(return_value=locator_mock)
     page.locator.return_value = locator_mock
@@ -99,7 +102,7 @@ async def test_coinpayu_login_already_logged_in(mock_settings, mock_page, mock_s
 
 @pytest.mark.asyncio
 async def test_coinpayu_login_success(mock_settings, mock_page, mock_solver):
-    """Test successful login"""
+    """Test successful login with new stealth features"""
     mock_page.url = "https://www.coinpayu.com/login"
     
     # Setup mock locators
@@ -127,12 +130,18 @@ async def test_coinpayu_login_success(mock_settings, mock_page, mock_solver):
     bot = CoinPayUBot(mock_settings, mock_page)
     bot.strip_email_alias = MagicMock(return_value="test@example.com")
     bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.close_popups = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
     
     result = await bot.login()
     
     assert result is True
-    mock_page.fill.assert_called()
+    bot.human_type.assert_called()  # Should be called for email and password
     mock_page.wait_for_url.assert_called()
+    bot.handle_cloudflare.assert_called()
 
 
 @pytest.mark.asyncio
@@ -181,13 +190,18 @@ async def test_coinpayu_login_exception(mock_settings, mock_page, mock_solver):
 
 @pytest.mark.asyncio
 async def test_coinpayu_claim_success(mock_settings, mock_page, mock_solver):
-    """Test successful claim"""
+    """Test successful claim with new timer and balance extraction"""
     # Setup balance locator
     balance_locator = MagicMock()
     balance_locator.count = AsyncMock(return_value=1)
     balance_locator.first = MagicMock()
     balance_locator.first.count = AsyncMock(return_value=1)
-    balance_locator.first.inner_text = AsyncMock(return_value="100 coins")
+    balance_locator.first.is_visible = AsyncMock(return_value=True)
+    balance_locator.first.text_content = AsyncMock(return_value="100.5 coins")
+    
+    # Setup timer locator (no timer active)
+    timer_locator = MagicMock()
+    timer_locator.count = AsyncMock(return_value=0)
     
     # Setup claim button locators
     claim_btn_locator = MagicMock()
@@ -201,8 +215,10 @@ async def test_coinpayu_claim_success(mock_settings, mock_page, mock_solver):
     confirm_btn_locator.count = AsyncMock(return_value=1)
     
     def locator_side_effect(selector):
-        if "v2-dashboard-card-value" in selector:
+        if "v2-dashboard-card-value" in selector or "balance" in selector:
             return balance_locator
+        elif "timer" in selector or "countdown" in selector:
+            return timer_locator
         elif "#claim-now" in selector:
             return final_btn_locator
         elif "Claim Now" in selector:
@@ -214,14 +230,20 @@ async def test_coinpayu_claim_success(mock_settings, mock_page, mock_solver):
     mock_page.locator.side_effect = locator_side_effect
     
     bot = CoinPayUBot(mock_settings, mock_page)
-    bot.get_balance = AsyncMock(return_value="100")
+    bot.get_balance = AsyncMock(return_value="100.5")
+    bot.get_timer = AsyncMock(return_value=0.0)  # No timer active
     bot.human_like_click = AsyncMock()
     bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
     
     result = await bot.claim()
     
     assert result.success is True
     assert "Claimed" in result.status
+    assert result.next_claim_minutes == 60.0
+    bot.get_timer.assert_called()  # Should check for timer
+    bot.get_balance.assert_called()  # Should extract balance
 
 
 @pytest.mark.asyncio
@@ -304,12 +326,13 @@ async def test_coinpayu_transfer_faucet_to_main(mock_settings, mock_page, mock_s
     confirm_locator.count = AsyncMock(return_value=1)
     
     amount_input_locator = MagicMock()
+    amount_input_locator.count = AsyncMock(return_value=1)
     amount_input_locator.get_attribute = AsyncMock(return_value="100")
     
     def locator_side_effect(selector):
         if "Transfer" in selector:
             return transfer_btn_locator
-        elif "transfer-btn" in selector:
+        elif "transfer-btn" in selector or "btn-primary" in selector:
             return confirm_locator
         elif "amount" in selector:
             return amount_input_locator
@@ -319,11 +342,15 @@ async def test_coinpayu_transfer_faucet_to_main(mock_settings, mock_page, mock_s
     
     bot = CoinPayUBot(mock_settings, mock_page)
     bot.human_like_click = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
     
     result = await bot.transfer_faucet_to_main()
     
     assert result.success is True
     assert "Transferred" in result.status
+    bot.handle_cloudflare.assert_called()
 
 
 @pytest.mark.asyncio
@@ -458,3 +485,174 @@ async def test_coinpayu_consolidate_wrapper(mock_settings, mock_page, mock_solve
     
     assert result.success is False
     assert result.status == "Login/Access Failed"
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_claim_with_timer_active(mock_settings, mock_page, mock_solver):
+    """Test claim when timer is still active"""
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.get_balance = AsyncMock(return_value="100.5")
+    bot.get_timer = AsyncMock(return_value=45.0)  # 45 minutes remaining
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    
+    result = await bot.claim()
+    
+    assert result.success is False
+    assert "Timer active" in result.status
+    assert result.next_claim_minutes == 45.0
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_balance_extraction():
+    """Test balance extraction with DataExtractor"""
+    # Test various balance formats
+    test_cases = [
+        ("100.5 BTC", "100.5"),
+        ("Balance: 1,234.56", "1234.56"),
+        ("0.00012345 LTC", "0.00012345"),
+        ("1234", "1234"),
+    ]
+    
+    for input_text, expected in test_cases:
+        result = DataExtractor.extract_balance(input_text)
+        assert result == expected, f"Failed for input: {input_text}"
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_timer_extraction():
+    """Test timer extraction with DataExtractor"""
+    # Test various timer formats
+    test_cases = [
+        ("59:59", 59.983),  # MM:SS
+        ("01:30:00", 90.0),  # HH:MM:SS
+        ("1h 30m", 90.0),
+        ("45 min", 45.0),
+        ("120 seconds", 2.0),
+        ("2 hours", 120.0),
+    ]
+    
+    for input_text, expected in test_cases:
+        result = DataExtractor.parse_timer_to_minutes(input_text)
+        assert abs(result - expected) < 0.1, f"Failed for input: {input_text}. Got {result}, expected {expected}"
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_login_retry_on_timeout(mock_settings, mock_page, mock_solver):
+    """Test login retries on timeout"""
+    mock_page.goto.side_effect = [
+        asyncio.TimeoutError(),  # First attempt fails
+        asyncio.TimeoutError(),  # Second attempt fails
+        None  # Third attempt succeeds
+    ]
+    
+    mock_page.url = "https://www.coinpayu.com/dashboard"  # Eventually logged in
+    
+    login_btn_locator = MagicMock()
+    login_btn_locator.count = AsyncMock(return_value=1)
+    
+    alert_locator = MagicMock()
+    alert_locator.count = AsyncMock(return_value=0)
+    
+    def locator_side_effect(selector):
+        if "Login" in selector:
+            return login_btn_locator
+        elif "alert" in selector:
+            return alert_locator
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.close_popups = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    bot.strip_email_alias = MagicMock(return_value="test@example.com")
+    
+    result = await bot.login()
+    
+    assert result is True
+    assert mock_page.goto.call_count >= 2  # Should retry
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_login_max_retries_exceeded(mock_settings, mock_page, mock_solver):
+    """Test login fails after max retries"""
+    mock_page.goto.side_effect = asyncio.TimeoutError()  # Always timeout
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.close_popups = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    bot.strip_email_alias = MagicMock(return_value="test@example.com")
+    
+    result = await bot.login()
+    
+    assert result is False
+    assert mock_page.goto.call_count == 3  # Should try 3 times
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_claim_no_buttons_available(mock_settings, mock_page, mock_solver):
+    """Test claim when no claim buttons are available"""
+    claim_btn_locator = MagicMock()
+    claim_btn_locator.count = AsyncMock(return_value=0)
+    
+    def locator_side_effect(selector):
+        if "Claim" in selector:
+            return claim_btn_locator
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.get_balance = AsyncMock(return_value="100")
+    bot.get_timer = AsyncMock(return_value=0.0)
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    
+    result = await bot.claim()
+    
+    assert result.success is False
+    assert "No claims available" in result.status
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_captcha_failure_handling(mock_settings, mock_page, mock_solver):
+    """Test handling of CAPTCHA failures during claim"""
+    # Setup mocks
+    claim_btn_locator = MagicMock()
+    claim_btn_locator.count = AsyncMock(return_value=1)
+    claim_btn_locator.nth = MagicMock(return_value=claim_btn_locator)
+    
+    final_btn_locator = MagicMock()
+    final_btn_locator.count = AsyncMock(return_value=1)
+    
+    def locator_side_effect(selector):
+        if "Claim" in selector:
+            return claim_btn_locator
+        elif "#claim-now" in selector:
+            return final_btn_locator
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.get_balance = AsyncMock(return_value="100")
+    bot.get_timer = AsyncMock(return_value=0.0)
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    bot.human_like_click = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    
+    # Mock CAPTCHA solver to fail
+    bot.solver.solve_captcha = AsyncMock(return_value=False)
+    
+    result = await bot.claim()
+    
+    # Should still attempt to claim even if CAPTCHA solving fails
+    assert bot.solver.solve_captcha.called
