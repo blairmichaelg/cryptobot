@@ -1,0 +1,10 @@
+{
+  "u1": {
+    "locale": "en-AU",
+    "timezone_id": "Australia/Sydney"
+  },
+  "test_profile": {
+    "locale": "en-AU",
+    "timezone_id": "America/Los_Angeles"
+  }
+}

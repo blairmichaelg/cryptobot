@@ -275,8 +275,8 @@ class TestAnalyticsCoverage:
         """Test record_claim method (lines 85-98)."""
         tracker = EarningsTracker()
         
-        # Record a claim
-        tracker.record_claim("test_faucet", True, 100.5, "BTC", 1000.0)
+        # Record a claim (with allow_test=True to bypass test faucet filter)
+        tracker.record_claim("test_faucet", True, 100.5, "BTC", 1000.0, allow_test=True)
         
         # Verify claim was recorded
         assert len(tracker.claims) == 1

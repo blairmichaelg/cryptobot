@@ -1,95 +1,47 @@
-# Cryptobot Optimal Workflow
+# Cryptobot Workflow
 
 > [!IMPORTANT]
-> **AGENT CONTEXT - READ THIS FIRST**
->
-> 1. **Azure CLI**: IS INSTALLED. Do not check for `az` command existence; assume it works.
-> 2. **Proxy Strategy**: We use **Session-Based Rotation** (appending `-session-ID` to username), NOT IP Whitelisting.
-> 3. **Deployment**: Always run tests with `HEADLESS=true` before deployment.
+> - Azure CLI is available; do not gate on checking `az`.
+> - Proxy strategy uses session-based rotation; avoid IP allowlists.
+> - Always run headless tests before deployment.
 
-This document outlines the standard operating procedures for development, delegation, and deployment of the Cryptobot.
+Operational guardrails and delegation guidance for the faucet farm.
 
-## 1. Task Delegation Strategy
+## 1. Delegation
 
-We use two primary agents for autonomous work. Choose the right tool for the job:
+- Gemini (Plan agent): research, audits, complex analysis.
+- Copilot: quick fixes, unit tests, boilerplate.
+- Copilot Coding Agent: multi-step coding tasks; invoke with `#github-pull-request_copilot-coding-agent` when offloading.
 
-### **Gemini (`gemini`)** - The Architect & Researcher
+Delegation flow: pull `master`, stash/commit local changes, delegate, then pull and test before pushing.
 
-**Use for:**
+## 2. Repository Workflow
 
-- **Complex Research**: "Why is the 2Captcha API failing?" or "Analyze the profitability of adding a new faucet."
-- **Codebase Audits**: "Check all faucet modules for consistent error handling."
-- **Test Generation**: "Write comprehensive property-based tests for the solver."
-- **Documentation**: "Update the README to reflect recent changes."
-
-**Command:**
-
-```bash
-gemini "Your comprehensive instruction here"
-```
-
-### **GitHub Copilot (`@copilot` / `/delegate`)** - The Coder & Implementer
-
-**Use for:**
-
-- **Boilerplate/Repetitive Code**: "Create a new faucet file for LitePick."
-- **Unit Tests**: "Add coverage for this specific function."
-- **Refactoring**: "Split this large function into smaller ones."
-- **Quick Fixes**: "Fix the linting errors in this file."
-
-**Workflow:**
-
-1. **CLI**: Use `gh copilot suggest` for quick snippets.
-2. **Issue Delegation**: create an issue and assign to `@copilot` for background work.
-3. **Chat**: Use `@copilot` in PR comments to request changes.
-
----
-
-## 2. GitHub Workflow
-
-To maintain a robust codebase, follow this strict process:
-
-1. **Issue First**: Every task must return an Issue (e.g., "Fix 2Captcha Proxy Bug").
-2. **Branching**: Create a branch from `master`: `fix/issue-number-description`.
-3. **Development**: Make changes locally.
-4. **Pull Request**: Open a PR using `gh pr create`.
-    - **Description**: Link the issue (e.g., "Fixes #12").
-    - **Review**: Assign `@copilot` or a team member to review.
-5. **Merge**: Only merge after checks pass (tests, lint).
-
----
+- Single branch: `master` only within this repo. No worktrees.
+- Fork users may branch in their fork; PRs must target `master`.
+- Keep commits small and descriptive; prefer conventional prefixes.
+- Run `pytest` and `$env:HEADLESS="true"; pytest` before pushing.
 
 ## 3. Deployment Consistency
 
-The production environment (Azure VM) differs from local Windows dev. To ensure consistency:
+- Local (Windows) vs prod (Linux/Azure VM): use `pathlib.Path` everywhere.
+- Headless parity: run tests with `HEADLESS=true` locally.
+- Optional Docker parity: `docker build -t cryptobot .`.
+- Service settings live in `deploy/faucet_worker.service`; deploy with `./deploy/deploy.sh --install-service` and restart via `sudo systemctl restart faucet_worker`.
 
-### **Key Differences**
+## 4. Profitability and Robustness
 
-- **OS**: Windows (Local) vs Linux (Prod)
-- **Headless**: Usually False (Local) vs True (Prod)
-- **Paths**: `C:\Users\...` vs `/home/azureuser/...`
+- Monitor `earnings_analytics.json` and reports for regression detection.
+- Keep ProxyManager active; update `config/proxies.txt` if failures spike.
+- Use retries and page reloads instead of silent failures; log diagnostics with context.
 
-### **Consistency Checklist**
+## 5. Coordination & Handoffs
 
-1. **Always use `pathlib`**: Never hardcode backslashes `\` or forward slashes `/`. Use `Path.joinpath()`.
-2. **Test Headless**: Before pushing, run tests with headless mode enforced:
-
-    ```powershell
-    $env:HEADLESS="true"; pytest
-    ```
-
-3. **Docker Validation**: Use the `Dockerfile` to verify linux compatibility locally if needed.
-
-    ```bash
-    docker build -t cryptobot .
-    ```
-
-4. **Service Config**: Ensure `deploy/faucet_worker.service` env vars match your intended production settings.
-
----
-
-## 4. Profitability & Robustness
-
-- **Monitor**: Check `earnings_analytics.json` daily.
-- **Stealth**: Ensure `ProxyManager` rotation is active.
-- **Retry**: Never fail silently. Use `Page.reload()` and exponential backoff.
+- Update `task.md` when you finish a session or major task; keep status lists current.
+- Leave a brief summary in `COORDINATION.md` (or the latest walkthrough) using the handoff template:
+  - Last Active Agent: <name>
+  - Task Completed: <brief>
+  - Current Blockers: <issues>
+  - Next Steps Planned: <immediate actions>
+- Label issues/PRs (`enhancement`, `bug`, `priority:high`) and reference issue numbers in PRs.
+- Avoid force pushes; stay synced with `git pull origin master`.
