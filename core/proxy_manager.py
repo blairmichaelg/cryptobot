@@ -5,6 +5,7 @@ import random
 import string
 import os
 import time
+import json
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from core.config import AccountProfile, BotSettings
@@ -48,6 +49,10 @@ class ProxyManager:
     LATENCY_HISTORY_MAX = 5  # Keep last 5 latency measurements per proxy
     DEAD_PROXY_THRESHOLD_MS = 5000  # Consider proxy dead if avg latency > 5s
     DEAD_PROXY_FAILURE_COUNT = 3  # Remove after 3 consecutive failures
+    
+    # Persistence constants
+    HEALTH_FILE_VERSION = 1
+    HEALTH_DATA_MAX_AGE = 86400 * 7  # 7 days - ignore older data
 
     def __init__(self, settings: BotSettings):
         self.settings = settings
@@ -68,13 +73,83 @@ class ProxyManager:
         # Cooldown durations (seconds)
         self.DETECTION_COOLDOWN = 3600  # 1 hour for 403/Detection
         self.FAILURE_COOLDOWN = 300      # 5 minutes for connection errors
+        
+        # Health persistence file
+        from core.config import CONFIG_DIR
+        self.health_file = str(CONFIG_DIR / "proxy_health.json")
 
         # Auto-load on init
         self.load_proxies_from_file()
+        self._load_health_data()
 
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy (full string with session)."""
         return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
+
+    def _load_health_data(self):
+        """
+        Load persisted proxy health data from disk.
+        Includes versioning and stale data filtering.
+        """
+        try:
+            if not os.path.exists(self.health_file):
+                logger.debug(f"No proxy health file found at {self.health_file}")
+                return
+            
+            with open(self.health_file, "r") as f:
+                data = json.load(f)
+            
+            # Version check
+            version = data.get("version", 0)
+            if version != self.HEALTH_FILE_VERSION:
+                logger.warning(f"Proxy health file version mismatch (expected {self.HEALTH_FILE_VERSION}, got {version}). Ignoring.")
+                return
+            
+            # Age check - ignore stale data
+            saved_time = data.get("timestamp", 0)
+            age = time.time() - saved_time
+            if age > self.HEALTH_DATA_MAX_AGE:
+                logger.info(f"Proxy health data is stale ({age/86400:.1f} days old). Ignoring.")
+                return
+            
+            # Load health data
+            self.proxy_latency = data.get("proxy_latency", {})
+            self.proxy_failures = data.get("proxy_failures", {})
+            self.dead_proxies = data.get("dead_proxies", [])
+            self.proxy_cooldowns = data.get("proxy_cooldowns", {})
+            
+            # Clean up expired cooldowns
+            now = time.time()
+            self.proxy_cooldowns = {k: v for k, v in self.proxy_cooldowns.items() if v > now}
+            
+            logger.info(f"Loaded proxy health data: {len(self.proxy_latency)} proxies tracked, {len(self.dead_proxies)} dead, {len(self.proxy_cooldowns)} in cooldown")
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse proxy health file: {e}. Starting fresh.")
+        except Exception as e:
+            logger.warning(f"Failed to load proxy health data: {e}")
+
+    def _save_health_data(self):
+        """
+        Persist proxy health data to disk with versioning.
+        """
+        try:
+            data = {
+                "version": self.HEALTH_FILE_VERSION,
+                "timestamp": time.time(),
+                "proxy_latency": self.proxy_latency,
+                "proxy_failures": self.proxy_failures,
+                "dead_proxies": self.dead_proxies,
+                "proxy_cooldowns": self.proxy_cooldowns
+            }
+            
+            with open(self.health_file, "w") as f:
+                json.dump(data, f, indent=2)
+            
+            logger.debug(f"Saved proxy health data to {self.health_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save proxy health data: {e}")
 
 
 
@@ -114,6 +189,9 @@ class ProxyManager:
                         
                         # Reset failure count on success
                         self.proxy_failures[proxy_key] = 0
+                        
+                        # Save health data after update
+                        self._save_health_data()
                         
                         logger.debug(f"[LATENCY] Proxy {proxy_key} latency: {latency_ms:.0f}ms")
                         return latency_ms
@@ -156,6 +234,9 @@ class ProxyManager:
             if proxy_key not in self.dead_proxies:
                 self.dead_proxies.append(proxy_key)
             logger.warning(f"[COOLDOWN] Proxy session {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooling down for 5m.")
+
+        # Persist health data after failure
+        self._save_health_data()
 
         # Trigger cleanup
         self.remove_dead_proxies()
