@@ -94,11 +94,11 @@ class JobScheduler:
         self.faucet_cooldowns: Dict[str, float] = {} # Key: faucet_type, Value: timestamp
         self.CIRCUIT_BREAKER_THRESHOLD = 5
         self.CIRCUIT_BREAKER_COOLDOWN = 14400 # 4 hours
-            self.RETRYABLE_COOLDOWN = 600  # 10 minutes for temporary failures
+        self.RETRYABLE_COOLDOWN = 600  # 10 minutes for temporary failures
         
-            # Failure classification
-            self.PERMANENT_FAILURES = ["auth_failed", "account_banned", "account_disabled", "invalid_credentials"]
-            self.RETRYABLE_FAILURES = ["proxy_blocked", "proxy_detection", "cloudflare", "rate_limit", "timeout", "connection_error"]
+        # Failure classification
+        self.PERMANENT_FAILURES = ["auth_failed", "account_banned", "account_disabled", "invalid_credentials"]
+        self.RETRYABLE_FAILURES = ["proxy_blocked", "proxy_detection", "cloudflare", "rate_limit", "timeout", "connection_error"]
         # Domain rate limiting - prevents hitting same faucet too fast
         self.domain_last_access: Dict[str, float] = {}  # Key: domain, Value: last access time
         
