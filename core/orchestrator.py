@@ -256,6 +256,15 @@ class JobScheduler:
                   logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
                   return
 
+        # Apply dynamic priority based on recent performance
+        try:
+            priority_multiplier = self.get_faucet_priority(job.faucet_type)
+            if priority_multiplier:
+                adjusted_priority = int(round(job.priority / max(priority_multiplier, 0.1)))
+                job.priority = max(1, adjusted_priority)
+        except Exception as e:
+            logger.debug(f"Dynamic priority adjustment failed for {job.faucet_type}: {e}")
+
         self.queue.append(job)
         self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
         logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")

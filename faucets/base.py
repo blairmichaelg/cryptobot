@@ -41,10 +41,21 @@ class FaucetBot:
         key = settings.capsolver_api_key if provider == "capsolver" else settings.twocaptcha_api_key
         self.solver = CaptchaSolver(api_key=key, provider=provider)
             
+        self._faucet_name = "Generic"
         self.faucet_name = "Generic"
         self.base_url = ""
         self.base_url = ""
         self.settings_account_override = None # Allow manual injection of credentials
+
+    @property
+    def faucet_name(self) -> str:
+        return self._faucet_name
+
+    @faucet_name.setter
+    def faucet_name(self, value: str) -> None:
+        self._faucet_name = value
+        if self.solver:
+            self.solver.set_faucet_name(value)
 
     def set_proxy(self, proxy_string: str):
         """Pass the proxy string to the underlying solver."""

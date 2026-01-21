@@ -38,6 +38,7 @@ class CaptchaSolver:
         self.provider = provider.lower()
         self.session = None
         self.daily_budget = daily_budget
+        self.faucet_name = None
         
         # Rate limiting state
         self.last_request_time = 0
@@ -61,6 +62,10 @@ class CaptchaSolver:
             logger.warning("You must solve CAPTCHAs yourself in the browser window.")
             
         self.proxy_string = None  # Store proxy for sticky sessions
+
+    def set_faucet_name(self, faucet_name: Optional[str]) -> None:
+        """Associate this solver instance with a faucet for cost attribution."""
+        self.faucet_name = faucet_name
 
     def set_proxy(self, proxy_string: str):
         """Set the proxy to be used for all 2Captcha requests."""
@@ -91,6 +96,11 @@ class CaptchaSolver:
         self._solve_count_today += 1
         if success:
             logger.debug(f"💰 Captcha cost: ${cost:.4f} (Today: ${self._daily_spend:.4f}, Solves: {self._solve_count_today})")
+            try:
+                from core.analytics import get_tracker
+                get_tracker().record_cost("captcha", cost, faucet=self.faucet_name)
+            except Exception as e:
+                logger.debug(f"Captcha cost tracking failed: {e}")
 
     def get_budget_stats(self) -> dict:
         """Get current budget statistics."""
@@ -225,7 +235,13 @@ class CaptchaSolver:
             logger.info("CAPTCHA Detected: Image (Coordinates based)")
 
         # 2. Auto-Solve Path
-        if self.api_key:
+        auto_solve_allowed = False
+        if self.api_key and method:
+            auto_solve_allowed = self._can_afford_solve(method)
+            if not auto_solve_allowed:
+                logger.warning("💰 Captcha budget exceeded. Falling back to manual solve.")
+
+        if self.api_key and auto_solve_allowed:
             try:
                 if method == "image":
                     return await self._solve_image_captcha(page)
@@ -240,6 +256,7 @@ class CaptchaSolver:
                     if code:
                         logger.info(f"✅ {self.provider.title()} Solved! Injecting token...")
                         await self._inject_token(page, method, code)
+                        self._record_solve(method, True)
                         return True
                     else:
                         logger.error(f"❌ {self.provider.title()} failed to return a solution.")
@@ -373,6 +390,7 @@ class CaptchaSolver:
                 logger.info("📤 Clicked submit button")
             
             await asyncio.sleep(2)
+            self._record_solve("image", True)
             return True
             
         except Exception as e:
@@ -424,12 +442,6 @@ class CaptchaSolver:
                 return None
                 
             request_id = data['request']
-            
-            # Record cost (approx $0.003 for complex captchas)
-            from core.analytics import get_tracker
-            # method can be userrecaptcha, hcaptcha, etc.
-            cost = 0.0003 if method == "base64" else 0.003
-            get_tracker().record_cost("captcha", cost, "2captcha")
 
         # 2. Poll
         logger.info(f"Waiting for solution (ID: {request_id})...")
