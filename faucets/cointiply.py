@@ -1,10 +1,20 @@
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 class CointiplyBot(FaucetBot):
+    """
+    Cointiply faucet bot implementation.
+    
+    Supports:
+    - Faucet claims with timer-based scheduling
+    - PTC ad viewing for bonus earnings
+    - Automated withdrawals to multiple cryptocurrencies
+    """
+    
     def __init__(self, settings, page, **kwargs):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "Cointiply"
@@ -14,10 +24,18 @@ class CointiplyBot(FaucetBot):
         return "dashboard" in self.page.url or await self.page.locator(".user-balance-coins, .user-balance").is_visible()
 
     async def get_current_balance(self) -> str:
+        """
+        Get current balance from Cointiply dashboard.
+        
+        Returns:
+            Balance as string. Returns "0" if extraction fails.
+        """
         # Priority: .user-balance-coins, fallback: .user-balance
-        balance = await self.get_balance(".user-balance-coins")
-        if balance == "0":
-            balance = await self.get_balance(".user-balance")
+        balance = await self.get_balance(
+            ".user-balance-coins", 
+            fallback_selectors=[".user-balance"]
+        )
+        logger.debug(f"[{self.faucet_name}] Current balance: {balance}")
         return balance
 
     async def view_ptc_ads(self):
@@ -71,74 +89,192 @@ class CointiplyBot(FaucetBot):
             logger.error(f"[{self.faucet_name}] PTC Error: {e}")
 
     async def login(self) -> bool:
+        """
+        Authenticate with Cointiply using credentials.
+        
+        Returns:
+            True if login successful, False otherwise.
+        """
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
             creds = self.settings_account_override
         else:
             creds = self.settings.get_account("cointiply")
             
         if not creds: 
+            logger.warning(f"[{self.faucet_name}] No credentials configured")
             return False
 
         try:
-            await self.page.goto(f"{self.base_url}/login")
-            await self.page.fill('input[name="email"]', creds['username'])
-            await self.page.fill('input[name="password"]', creds['password'])
+            logger.info(f"[{self.faucet_name}] Starting login process")
+            await self.page.goto(f"{self.base_url}/login", wait_until="networkidle")
+            await self.handle_cloudflare()
             
-            await self.solver.solve_captcha(self.page)
+            # Use human_type for stealth
+            email_input = self.page.locator('input[name="email"]')
+            await self.human_type(email_input, creds['username'])
+            await self.random_delay(0.5, 1.5)
             
-            submit = self.page.locator('button:has_text("Login")')
+            password_input = self.page.locator('input[name="password"]')
+            await self.human_type(password_input, creds['password'])
+            await self.random_delay(0.5, 1.5)
+            
+            # Solve CAPTCHA if present
+            logger.debug(f"[{self.faucet_name}] Attempting CAPTCHA solve")
+            captcha_solved = await self.solver.solve_captcha(self.page)
+            if not captcha_solved:
+                logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not present")
+            
+            # Simulate human behavior before submitting
+            await self.idle_mouse(1.0)
+            
+            submit = self.page.locator('button:has-text("Login")')
             await self.human_like_click(submit)
             
+            # Wait for navigation with timeout
             await self.page.wait_for_url("**/home", timeout=15000)
+            logger.info(f"[{self.faucet_name}] ✅ Login successful")
             return True
+            
         except Exception as e:
-            logger.error(f"Cointiply login failed: {e}")
+            logger.error(f"[{self.faucet_name}] ❌ Login failed: {e}")
             return False
 
-    async def parse_claim_timer(self) -> float:
-        try:
-            # Check for "Claims are available" or timer
-            # Cointiply usually shows "Next Claim In: 59m 59s" or similar
-            # Or just doesn't show the roll button
-            return 0.0 # Placeholder, Cointiply logic is trickier without logging in
-        except:
-            pass
-        return 0.0
-
     async def claim(self) -> ClaimResult:
-        try:
-            await self.page.goto(f"{self.base_url}/faucet")
-            
-            balance = await self.get_current_balance()
-            
-            # Check for Roll Button
-            roll = self.page.locator("#claim_button, button.faucet-claim-btn, button:has-text('Roll & Win')")
-            if await roll.count() > 0 and await roll.is_visible():
-                # Check for "Ready" or text indicators
-                timer_text = await self.page.locator(".timer_display, #timer_display").first.inner_text() if await self.page.locator(".timer_display, #timer_display").count() > 0 else ""
+        """
+        Execute faucet claim with robust error handling and timer extraction.
+        
+        Returns:
+            ClaimResult with success status, next claim time, and balance.
+        """
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
                 
-                if "Ready" in timer_text or not any(char.isdigit() for char in timer_text):
-                    await self.solver.solve_captcha(self.page)
-                    await self.human_like_click(roll)
+                await self.page.goto(f"{self.base_url}/faucet", wait_until="networkidle")
+                await self.handle_cloudflare()
+                
+                # Extract current balance
+                balance = await self.get_current_balance()
+                logger.debug(f"[{self.faucet_name}] Balance before claim: {balance}")
+                
+                # Check for Roll Button
+                roll = self.page.locator("#claim_button, button.faucet-claim-btn, button:has-text('Roll & Win')")
+                roll_count = await roll.count()
+                
+                if roll_count > 0 and await roll.is_visible():
+                    logger.debug(f"[{self.faucet_name}] Roll button found and visible")
                     
-                    # Check for Success/Snackbars
-                    await asyncio.sleep(3)
-                    if await self.page.locator(".md-snackbar-content, .toast-success").count() > 0:
-                         logger.info("Cointiply rolled successfully.")
-                         return ClaimResult(success=True, status="Claimed", next_claim_minutes=60, balance=balance)
+                    # Extract timer using DataExtractor
+                    timer_selectors = [".timer_display", "#timer_display", ".timer-text"]
+                    timer_mins = await self.get_timer(
+                        timer_selectors[0], 
+                        fallback_selectors=timer_selectors[1:]
+                    )
                     
-                    return ClaimResult(success=True, status="Rolled", next_claim_minutes=60, balance=balance)
-            
-            # Check Timer fallback
-            wait_min = await self.get_timer(".timer_display, #timer_display, .timer-text")
-            if wait_min > 0:
-                 return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait_min, balance=balance)
-
-            return ClaimResult(success=False, status="Roll Not Available", next_claim_minutes=15, balance=balance)
-            
-        except Exception as e:
-            logger.error(f"Cointiply claim failed: {e}")
-            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=30)
+                    logger.debug(f"[{self.faucet_name}] Timer extracted: {timer_mins} minutes")
+                    
+                    # Check if timer is ready (0 or very close to 0)
+                    if timer_mins < 1.0:
+                        logger.info(f"[{self.faucet_name}] Timer ready, proceeding with claim")
+                        
+                        # Simulate human behavior before solving CAPTCHA
+                        await self.idle_mouse(1.5)
+                        
+                        # Solve CAPTCHA
+                        logger.debug(f"[{self.faucet_name}] Attempting CAPTCHA solve")
+                        captcha_solved = await self.solver.solve_captcha(self.page)
+                        
+                        if not captcha_solved:
+                            logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed")
+                            retry_count += 1
+                            if retry_count >= max_retries:
+                                return ClaimResult(
+                                    success=False,
+                                    status="CAPTCHA failed after retries",
+                                    next_claim_minutes=30,
+                                    balance=balance
+                                )
+                            await asyncio.sleep(5)
+                            continue
+                        
+                        # Click roll button with human-like behavior
+                        await self.random_delay(0.5, 1.5)
+                        await self.human_like_click(roll)
+                        
+                        # Wait for result
+                        await asyncio.sleep(3)
+                        
+                        # Check for success indicators
+                        success_selectors = [".md-snackbar-content", ".toast-success", ".alert-success"]
+                        success_found = False
+                        
+                        for sel in success_selectors:
+                            if await self.page.locator(sel).count() > 0:
+                                success_found = True
+                                logger.info(f"[{self.faucet_name}] ✅ Claim successful")
+                                break
+                        
+                        # Get updated balance
+                        new_balance = await self.get_current_balance()
+                        
+                        if success_found:
+                            # Typical Cointiply claim interval is 60 minutes
+                            return ClaimResult(
+                                success=True, 
+                                status="Claimed", 
+                                next_claim_minutes=60, 
+                                balance=new_balance
+                            )
+                        else:
+                            logger.info(f"[{self.faucet_name}] Roll completed (success uncertain)")
+                            return ClaimResult(
+                                success=True, 
+                                status="Rolled", 
+                                next_claim_minutes=60, 
+                                balance=new_balance
+                            )
+                    else:
+                        logger.info(f"[{self.faucet_name}] Timer active: {timer_mins:.1f} minutes remaining")
+                        return ClaimResult(
+                            success=True, 
+                            status="Timer Active", 
+                            next_claim_minutes=timer_mins, 
+                            balance=balance
+                        )
+                else:
+                    logger.warning(f"[{self.faucet_name}] Roll button not found or not visible")
+                    # Default wait time if roll button is missing
+                    return ClaimResult(
+                        success=False, 
+                        status="Roll Not Available", 
+                        next_claim_minutes=15, 
+                        balance=balance
+                    )
+                    
+            except asyncio.TimeoutError as e:
+                logger.warning(f"[{self.faucet_name}] Timeout error (attempt {retry_count + 1}): {e}")
+                retry_count += 1
+                if retry_count >= max_retries:
+                    return ClaimResult(
+                        success=False, 
+                        status="Timeout after retries", 
+                        next_claim_minutes=30
+                    )
+                await asyncio.sleep(5)
+                
+            except Exception as e:
+                logger.error(f"[{self.faucet_name}] ❌ Claim failed: {e}")
+                retry_count += 1
+                if retry_count >= max_retries:
+                    return ClaimResult(
+                        success=False, 
+                        status=f"Error: {str(e)[:50]}", 
+                        next_claim_minutes=30
+                    )
+                await asyncio.sleep(5)
 
     def get_jobs(self):
         """Returns Cointiply-specific jobs for the scheduler."""
