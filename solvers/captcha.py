@@ -35,7 +35,11 @@ class CaptchaSolver:
             daily_budget: Maximum daily spend in USD (default $5.00).
         """
         self.api_key = api_key
-        self.provider = provider.lower()
+            self.provider = provider.lower().replace("twocaptcha", "2captcha")
+            # Fallback support (optional secondary provider)
+            self.fallback_provider = None
+            self.fallback_api_key = None
+            self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
         self.session = None
         self.daily_budget = daily_budget
         self.faucet_name = None
@@ -70,6 +74,14 @@ class CaptchaSolver:
     def set_proxy(self, proxy_string: str):
         """Set the proxy to be used for all 2Captcha requests."""
         self.proxy_string = proxy_string
+
+        def set_fallback_provider(self, provider: str, api_key: str):
+            """Set a fallback captcha provider in case primary fails."""
+            self.fallback_provider = provider.lower().replace("twocaptcha", "2captcha")
+            self.fallback_api_key = api_key
+            logger.info(f"Fallback provider configured: {self.fallback_provider}")
+            if self.fallback_provider not in self.provider_stats:
+                self.provider_stats[self.fallback_provider] = {"solves": 0, "failures": 0, "cost": 0.0}
 
     def _check_and_reset_daily_budget(self):
         """Reset daily budget counter if new day."""
