@@ -1,18 +1,54 @@
+"""
+DutchyCorp Faucet Bot - Optimized for profitability, stealth, and robustness.
+
+This module implements the DutchyBot class for automated interaction with
+DutchyCorp faucet, including claims, shortlinks, and withdrawals.
+"""
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
+from typing import Optional
 from solvers.shortlink import ShortlinkSolver
 
 logger = logging.getLogger(__name__)
 
 class DutchyBot(FaucetBot):
+    """
+    DutchyCorp Faucet Bot implementation.
+    
+    Handles automated claiming, shortlink solving, and withdrawals for DutchyCorp.
+    Implements stealth primitives, robust error handling, and accurate scheduling.
+    """
+    
     def __init__(self, settings, page, **kwargs):
+        """
+        Initialize DutchyBot with settings and page context.
+        
+        Args:
+            settings: BotSettings instance with configuration
+            page: Playwright Page instance for browser automation
+            **kwargs: Additional arguments passed to parent class
+        """
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "DutchyCorp"
         self.base_url = "https://autofaucet.dutchycorp.space"
+        # Retry configuration for robustness
+        self.max_retries = 3
+        self.retry_delay = 5  # seconds
 
     async def is_logged_in(self) -> bool:
-        return await self.page.query_selector("a[href*='logout']") is not None
+        """
+        Check if user is currently logged in to DutchyCorp.
+        
+        Returns:
+            True if logged in, False otherwise
+        """
+        try:
+            logout_link = await self.page.query_selector("a[href*='logout']")
+            return logout_link is not None
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Login check error: {e}")
+            return False
     
     def get_jobs(self):
         """
@@ -46,213 +82,425 @@ class DutchyBot(FaucetBot):
         return jobs
 
     async def login(self) -> bool:
+        """
+        Perform login to DutchyCorp with enhanced stealth and error handling.
+        
+        Uses human_type() for credentials, implements retry logic for network errors,
+        and validates login state with comprehensive checks.
+        
+        Returns:
+            True if login successful, False otherwise
+        """
+        # Get credentials with override support
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
             creds = self.settings_account_override
         else:
             creds = self.settings.get_account("dutchy")
             
         if not creds: 
+            logger.error(f"[{self.faucet_name}] No credentials found")
             return False
 
-        try:
-            logger.info(f"[{self.faucet_name}] Navigating to login...")
-            await self.page.goto(f"{self.base_url}/login.php")
-            
-            # Check for Proxy Detection
-            content = await self.page.content()
-            if "Proxy Detected" in content:
-                logger.error(f"[{self.faucet_name}] Proxy Detection active! Site is blocking this IP.")
-                return False
-            
-            # Check if already logged in
-            if await self.page.query_selector("a[href*='logout']"):
-                 logger.info(f"[{self.faucet_name}] Already logged in.")
-                 return True
+        # Retry loop for network resilience
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                logger.info(f"[{self.faucet_name}] Login attempt {attempt}/{self.max_retries}")
+                await self.page.goto(f"{self.base_url}/login.php", wait_until="networkidle")
+                
+                # Check for common failure states
+                failure_state = await self.check_failure_states()
+                if failure_state:
+                    logger.error(f"[{self.faucet_name}] {failure_state} detected")
+                    return False
+                
+                # Check if already logged in
+                if await self.is_logged_in():
+                    logger.info(f"[{self.faucet_name}] Already logged in")
+                    return True
 
-            await self.page.fill('input[name="username"]', creds['username'])
-            await self.page.fill('input[name="password"]', creds['password'])
-            
-            # "Keep me logged in" checkbox often helps
-            remember = self.page.locator('input[name="remember_me"]')
-            if await remember.count() > 0:
-                await remember.check()
-            
-            await self.solver.solve_captcha(self.page)
-            
-            submit = self.page.locator('button[type="submit"]')
-            await self.human_like_click(submit)
-            
-            await self.page.wait_for_url("**/dashboard.php", timeout=20000)
-            logger.info(f"[{self.faucet_name}] Login Successful.")
-            return True
-        except Exception as e:
-            logger.error(f"DutchyCorp login failed: {e}")
-            return False
+                # Stealth: Idle mouse before interaction
+                await self.idle_mouse(1.5)
+                
+                # Use human_type() for stealth credential entry
+                username_input = self.page.locator('input[name="username"]')
+                await self.human_type(username_input, creds['username'])
+                
+                await self.random_delay(0.5, 1.5)
+                
+                password_input = self.page.locator('input[name="password"]')
+                await self.human_type(password_input, creds['password'])
+                
+                # "Keep me logged in" checkbox for session persistence
+                remember = self.page.locator('input[name="remember_me"]')
+                if await remember.count() > 0:
+                    await self.random_delay(0.3, 0.8)
+                    await remember.check()
+                    logger.debug(f"[{self.faucet_name}] Remember me checkbox enabled")
+                
+                # Close any popups that might interfere
+                await self.close_popups()
+                
+                # Solve CAPTCHA with retry handling
+                captcha_solved = await self.solver.solve_captcha(self.page)
+                if not captcha_solved:
+                    logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not required")
+                
+                # Submit with human-like behavior
+                await self.random_delay(0.5, 1.2)
+                submit = self.page.locator('button[type="submit"]')
+                await self.human_like_click(submit)
+                
+                # Wait for navigation with timeout
+                try:
+                    await self.page.wait_for_url("**/dashboard.php", timeout=20000)
+                    logger.info(f"[{self.faucet_name}] ✅ Login successful")
+                    return True
+                except Exception as wait_err:
+                    # Check if we're actually logged in despite navigation timeout
+                    if await self.is_logged_in():
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (alternative check)")
+                        return True
+                    raise wait_err
+                    
+            except asyncio.TimeoutError as e:
+                logger.warning(f"[{self.faucet_name}] Login timeout on attempt {attempt}: {e}")
+                if attempt < self.max_retries:
+                    await asyncio.sleep(self.retry_delay)
+                    continue
+            except Exception as e:
+                logger.error(f"[{self.faucet_name}] Login error on attempt {attempt}: {e}")
+                if attempt < self.max_retries:
+                    await asyncio.sleep(self.retry_delay)
+                    continue
+                    
+        logger.error(f"[{self.faucet_name}] ❌ Login failed after {self.max_retries} attempts")
+        return False
 
     async def claim(self) -> ClaimResult:
+        """
+        Execute the complete DutchyCorp claim cycle with optimized timing.
+        
+        Performs Dutchy Roll, Coin Roll, and Shortlinks in sequence.
+        Uses accurate timer extraction to determine next claim time.
+        
+        Returns:
+            ClaimResult with success status, balance, and next claim time
+        """
+        claim_start_time = asyncio.get_event_loop().time()
+        
         try:
-            balance = await self.get_balance(".user-balance, .balance-text")
-            # 1. Dutchy Roll
-            await self._do_roll("roll.php", "Dutchy Roll")
+            # Extract initial balance
+            logger.info(f"[{self.faucet_name}] Starting claim cycle")
+            balance = await self.get_balance(".user-balance, .balance-text, #balance, .balance")
+            logger.info(f"[{self.faucet_name}] Current balance: {balance}")
             
-            # 2. Coin Roll
-            await self._do_roll("coin_roll.php", "Coin Roll")
+            # Track minimum next claim time across all rolls
+            min_wait_minutes = 30.0  # Default fallback
             
-            # 3. Shortlinks
-            await self.claim_shortlinks()
+            # 1. Dutchy Roll - Primary earning source
+            roll1_wait = await self._do_roll("roll.php", "Dutchy Roll")
+            if roll1_wait is not None and roll1_wait > 0:
+                min_wait_minutes = min(min_wait_minutes, roll1_wait)
             
-            return ClaimResult(success=True, status="Dutchy cycle complete", next_claim_minutes=30, balance=balance)
+            await self.random_delay(2, 4)  # Stealth delay between actions
+            
+            # 2. Coin Roll - Secondary earning source
+            roll2_wait = await self._do_roll("coin_roll.php", "Coin Roll")
+            if roll2_wait is not None and roll2_wait > 0:
+                min_wait_minutes = min(min_wait_minutes, roll2_wait)
+            
+            await self.random_delay(2, 4)  # Stealth delay
+            
+            # 3. Shortlinks - Bonus earnings (best-effort)
+            try:
+                await self.claim_shortlinks()
+            except Exception as shortlink_err:
+                logger.warning(f"[{self.faucet_name}] Shortlinks failed (non-critical): {shortlink_err}")
+            
+            # Calculate actual claim duration for metrics
+            claim_duration = asyncio.get_event_loop().time() - claim_start_time
+            logger.info(f"[{self.faucet_name}] ⏱️ Claim cycle completed in {claim_duration:.1f}s")
+            
+            # Get final balance to calculate earnings
+            final_balance = await self.get_balance(".user-balance, .balance-text, #balance, .balance")
+            
+            return ClaimResult(
+                success=True, 
+                status="Dutchy cycle complete", 
+                next_claim_minutes=min_wait_minutes,
+                balance=final_balance,
+                amount="0"  # Could calculate from balance diff if needed
+            )
+            
+        except asyncio.TimeoutError as e:
+            logger.error(f"[{self.faucet_name}] Claim cycle timeout: {e}")
+            return ClaimResult(
+                success=False, 
+                status="Timeout error", 
+                next_claim_minutes=15
+            )
         except Exception as e:
-            logger.error(f"DutchyCorp claim cycle failed: {e}")
-            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=15)
+            logger.error(f"[{self.faucet_name}] Claim cycle error: {e}", exc_info=True)
+            return ClaimResult(
+                success=False, 
+                status=f"Error: {str(e)[:100]}", 
+                next_claim_minutes=15
+            )
 
-    async def claim_shortlinks(self):
-        """Attempts to claim available shortlinks."""
+    async def claim_shortlinks(self) -> None:
+        """
+        Attempt to claim available shortlinks with robust error handling.
+        
+        Shortlinks are bonus earnings - failures are logged but don't stop
+        the main claim cycle.
+        """
         try:
-            logger.info(f"[{self.faucet_name}] Checking Shortlinks...")
-            await self.page.goto(f"{self.base_url}/shortlinks-wall.php")
+            logger.info(f"[{self.faucet_name}] Checking shortlinks...")
+            await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
             
-            # Find available links
-            # Updated to include .transparent-btn.tooltipped
+            # Close any popups that might interfere
+            await self.close_popups()
+            
+            # Find available shortlink buttons
             links = self.page.locator(".transparent-btn.tooltipped, a.btn.btn-primary:has-text('Claim')")
             count = await links.count()
             
             if count == 0:
-                logger.info(f"[{self.faucet_name}] No shortlinks available.")
+                logger.info(f"[{self.faucet_name}] No shortlinks available")
                 return
 
-            logger.info(f"[{self.faucet_name}] Found {count} shortlinks. Trying top 3...")
+            logger.info(f"[{self.faucet_name}] Found {count} shortlinks, attempting top 3...")
             
-            # Attempt to find the blocker on page or context
+            # Get resource blocker for shortlink solver
             blocker = getattr(self.page, "resource_blocker", getattr(self.page.context, "resource_blocker", None))
             solver = ShortlinkSolver(self.page, blocker=blocker, captcha_solver=self.solver)
             
+            successful = 0
             for i in range(min(3, count)):
-                # Re-query because DOM changes
-                links = self.page.locator("a.btn.btn-primary:has-text('Claim')")
-                if await links.count() <= i: break
-                
-                # Click 'Claim' to start
-                # This usually redirects or opens a modal
-                await links.nth(i).click()
-                await asyncio.sleep(2)
-                
-                # Loop through the shortlink flow
-                if await solver.solve(self.page.url):
-                    logger.info(f"[{self.faucet_name}] Shortlink {i+1} Solved!")
-                    await self.page.goto(f"{self.base_url}/shortlinks-wall.php")
-                else:
-                    logger.warning(f"[{self.faucet_name}] Shortlink {i+1} Failed.")
-                    # Ensure we are back on wall
-                    if "shortlinks-wall" not in self.page.url:
-                        await self.page.goto(f"{self.base_url}/shortlinks-wall.php")
+                try:
+                    # Re-query DOM as it changes after each claim
+                    links = self.page.locator("a.btn.btn-primary:has-text('Claim')")
+                    current_count = await links.count()
+                    
+                    if current_count <= i:
+                        logger.debug(f"[{self.faucet_name}] No more shortlinks available")
+                        break
+                    
+                    # Stealth: Random delay before clicking
+                    await self.random_delay(1, 3)
+                    await self.idle_mouse(0.5)
+                    
+                    # Click to start shortlink flow
+                    await links.nth(i).click()
+                    await asyncio.sleep(2)
+                    
+                    # Solve shortlink flow
+                    if await solver.solve(self.page.url):
+                        successful += 1
+                        logger.info(f"[{self.faucet_name}] ✅ Shortlink {i+1} completed")
+                        await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
+                    else:
+                        logger.warning(f"[{self.faucet_name}] ❌ Shortlink {i+1} failed")
+                        # Ensure we're back on shortlinks page
+                        if "shortlinks-wall" not in self.page.url:
+                            await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
+                            
+                except Exception as link_err:
+                    logger.warning(f"[{self.faucet_name}] Shortlink {i+1} error: {link_err}")
+                    # Try to recover by navigating back
+                    try:
+                        await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
+                    except Exception:
+                        break  # Give up on remaining shortlinks
+            
+            logger.info(f"[{self.faucet_name}] Shortlinks complete: {successful}/{min(3, count)} successful")
                         
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Shortlink error: {e}")
+            logger.error(f"[{self.faucet_name}] Shortlinks error: {e}")
 
-    async def _do_roll(self, page_slug, roll_name):
+    async def _do_roll(self, page_slug: str, roll_name: str) -> Optional[float]:
+        """
+        Execute a single roll (Dutchy Roll or Coin Roll) with comprehensive handling.
+        
+        Args:
+            page_slug: Page URL slug (e.g., "roll.php", "coin_roll.php")
+            roll_name: Human-readable name for logging
+            
+        Returns:
+            Cooldown time in minutes if on cooldown, None if roll completed or failed
+        """
         try:
             logger.info(f"[{self.faucet_name}] Checking {roll_name}...")
-            await self.page.goto(f"{self.base_url}/{page_slug}")
+            await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="networkidle")
+            
+            # Close interfering popups
             await self.close_popups()
             
-            # Check for timer / cooldown
-            wait_min = await self.get_timer("#timer, .count_down_timer, .timer")
-            if wait_min > 0:
-                  logger.info(f"[{self.faucet_name}] {roll_name} is on cooldown: {wait_min}m")
-                  return
+            # Check for timer/cooldown using DataExtractor pattern
+            timer_selectors = ["#timer", ".count_down_timer", ".timer", "#countdown", ".cooldown"]
+            wait_min = await self.get_timer(timer_selectors[0], fallback_selectors=timer_selectors[1:])
             
-            # Dutchy has an "Unlock" button sometimes
+            if wait_min > 0:
+                logger.info(f"[{self.faucet_name}] {roll_name} on cooldown: {wait_min:.1f}m")
+                return wait_min
+            
+            # Stealth: Idle mouse to simulate reading
+            await self.idle_mouse(1.0)
+            
+            # Handle "Unlock" button if present
             unlock = self.page.locator("#unlockbutton")
             if await unlock.count() > 0 and await unlock.is_visible():
                 logger.info(f"[{self.faucet_name}] Unlocking {roll_name}...")
                 await self.human_like_click(unlock)
-                await asyncio.sleep(2)
+                await self.random_delay(1.5, 3.0)
 
-            # Dutchy has a "Boost" system before rolling sometimes
+            # Handle "Boost" system
             boost = self.page.locator("#claim_boosted, button:has-text('Boost')")
             if await boost.count() > 0 and await boost.is_visible():
-                 logger.info(f"[{self.faucet_name}] Applying boost for {roll_name}...")
-                 await self.human_like_click(boost)
-                 await self.random_delay()
+                logger.info(f"[{self.faucet_name}] Applying boost for {roll_name}...")
+                await self.human_like_click(boost)
+                await self.random_delay(1, 2)
 
-            # Solve Captcha
-            # Dutchy allows choosing Recaptcha/hCaptcha/Turnstile
+            # Handle Cloudflare/Turnstile challenges
             await self.handle_cloudflare()
-            await self.solver.solve_captcha(self.page)
+            
+            # Solve CAPTCHA
+            try:
+                captcha_solved = await self.solver.solve_captcha(self.page)
+                if captcha_solved:
+                    logger.info(f"[{self.faucet_name}] CAPTCHA solved for {roll_name}")
+                else:
+                    logger.debug(f"[{self.faucet_name}] No CAPTCHA required for {roll_name}")
+            except Exception as captcha_err:
+                logger.warning(f"[{self.faucet_name}] CAPTCHA error (continuing): {captcha_err}")
 
-            # Roll Button - multiple potential selectors
-            roll_btn = self.page.locator("#claim_boosted, button:has-text('Roll'), #roll_button, .roll-button")
+            # Stealth: Random delay before clicking roll button
+            await self.random_delay(0.5, 1.5)
+            
+            # Find and click roll button
+            roll_btn_selectors = "#claim_boosted, button:has-text('Roll'), #roll_button, .roll-button"
+            roll_btn = self.page.locator(roll_btn_selectors)
+            
             if await roll_btn.count() > 0:
                 await self.human_like_click(roll_btn.first)
                 await self.random_delay(3, 5)
                 
                 # Check for success message
-                success = self.page.locator(".alert-success, .toast-success, text=/You received/")
+                success = self.page.locator(".alert-success, .toast-success, text=/You received/, .success-message")
                 if await success.count() > 0:
-                    logger.info(f"[{self.faucet_name}] {roll_name} claimed successfully!")
+                    success_text = await success.first.text_content()
+                    logger.info(f"[{self.faucet_name}] ✅ {roll_name} claimed successfully: {success_text}")
                 else:
-                    logger.info(f"[{self.faucet_name}] {roll_name} roll clicked.")
-            else:
-                logger.warning(f"[{self.faucet_name}] {roll_name} button not found.")
+                    logger.info(f"[{self.faucet_name}] {roll_name} button clicked (no confirmation message)")
                 
+                # Return None to indicate roll was attempted (not on cooldown)
+                return None
+            else:
+                logger.warning(f"[{self.faucet_name}] {roll_name} button not found")
+                return None
+                
+        except asyncio.TimeoutError as e:
+            logger.error(f"[{self.faucet_name}] {roll_name} timeout: {e}")
+            return None
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] {roll_name} error: {e}")
+            logger.error(f"[{self.faucet_name}] {roll_name} error: {e}", exc_info=True)
+            return None
     async def withdraw(self) -> ClaimResult:
-        """Automated withdrawal for DutchyCorp."""
+        """
+        Execute automated withdrawal for DutchyCorp with robust error handling.
+        
+        Attempts to withdraw available balances to FaucetPay or direct wallet.
+        Handles CAPTCHA solving and validates withdrawal success.
+        
+        Returns:
+            ClaimResult with withdrawal status and next run time
+        """
         try:
-            logger.info(f"[{self.faucet_name}] Navigating to Balance/Withdrawal page...")
-            await self.page.goto(f"{self.base_url}/balance.php")
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/balance.php", wait_until="networkidle")
             
-            # DutchyCorp lists many coins. Find those with a 'Withdraw' button enabled.
-            # Usually: button.btn-success:has-text('Withdraw')
+            # Close any interfering popups
+            await self.close_popups()
+            
+            # Find available withdrawal buttons
             withdraw_btns = self.page.locator("a.btn.btn-success:has-text('Withdraw'), button:has-text('Withdraw')")
             count = await withdraw_btns.count()
             
             if count == 0:
-                logger.info(f"[{self.faucet_name}] No balances ready for withdrawal.")
-                return ClaimResult(success=True, status="No Balance", next_claim_minutes=1440)
+                logger.info(f"[{self.faucet_name}] No balances ready for withdrawal")
+                return ClaimResult(
+                    success=True, 
+                    status="No Balance", 
+                    next_claim_minutes=1440  # Check again in 24 hours
+                )
             
-            # Try to withdraw the first coin that meets threshold (or just the first one)
-            # For Dutchy, we often want to withdraw LTC or DOGE to FaucetPay
-            target_btn = None
-            for i in range(count):
-                btn = withdraw_btns.nth(i)
-                parent_row = self.page.locator(f"tr:has(button:has-text('Withdraw')):nth-child({i+1})")
-                # Try to extract balance from the row if possible, else just try the click
-                await self.human_like_click(btn)
-                await self.page.wait_for_load_state()
-                target_btn = btn
-                break
-
-            if not target_btn:
-                return ClaimResult(success=False, status="No Withdraw Button Found", next_claim_minutes=60)
-
-            # Withdrawal Confirmation Page
-            # 1. Select Method (FaucetPay is usually preferred)
+            logger.info(f"[{self.faucet_name}] Found {count} withdrawable balance(s)")
+            
+            # Stealth: Idle before interaction
+            await self.idle_mouse(1.0)
+            
+            # Click first available withdrawal button
+            # (In production, could add logic to prefer specific coins)
+            target_btn = withdraw_btns.nth(0)
+            await self.human_like_click(target_btn)
+            await self.page.wait_for_load_state("networkidle")
+            
+            # Withdrawal confirmation page
+            # Select FaucetPay as withdrawal method if available
             method_select = self.page.locator("select[name='method'], #withdrawal_method")
             if await method_select.count() > 0:
-                # Try FaucetPay (value 1 or text)
-                await method_select.select_option(label="FaucetPay")
-                await asyncio.sleep(1)
+                try:
+                    await method_select.select_option(label="FaucetPay")
+                    logger.info(f"[{self.faucet_name}] Selected FaucetPay withdrawal method")
+                    await asyncio.sleep(1)
+                except Exception as select_err:
+                    logger.debug(f"[{self.faucet_name}] Could not select FaucetPay: {select_err}")
 
-            # 2. Solve Captcha
-            await self.solver.solve_captcha(self.page)
+            # Solve CAPTCHA for withdrawal
+            await self.random_delay(0.5, 1.5)
+            try:
+                captcha_solved = await self.solver.solve_captcha(self.page)
+                if captcha_solved:
+                    logger.info(f"[{self.faucet_name}] CAPTCHA solved for withdrawal")
+            except Exception as captcha_err:
+                logger.warning(f"[{self.faucet_name}] CAPTCHA error: {captcha_err}")
             
-            # 3. Final Confirm
+            # Final confirmation with stealth delay
+            await self.random_delay(0.5, 1.2)
             submit = self.page.locator("button:has-text('Withdraw'), #withdraw_button").last
             await self.human_like_click(submit)
             
             await self.random_delay(2, 4)
             
-            # Check for success
-            success = self.page.locator(".alert-success, .toast-success, :text-contains('Withdrawal has been sent')")
+            # Check for success confirmation
+            success = self.page.locator(".alert-success, .toast-success, :text-contains('Withdrawal has been sent'), .success-message")
             if await success.count() > 0:
-                logger.info(f"[{self.faucet_name}] Withdrawal successful!")
-                return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+                success_text = await success.first.text_content()
+                logger.info(f"[{self.faucet_name}] ✅ Withdrawal successful: {success_text}")
+                return ClaimResult(
+                    success=True, 
+                    status="Withdrawn", 
+                    next_claim_minutes=1440  # Daily withdrawals
+                )
             
-            return ClaimResult(success=False, status="Withdrawal confirm failed or message not found", next_claim_minutes=120)
+            logger.warning(f"[{self.faucet_name}] Withdrawal submitted but no confirmation message")
+            return ClaimResult(
+                success=False, 
+                status="No confirmation message", 
+                next_claim_minutes=120  # Retry in 2 hours
+            )
 
+        except asyncio.TimeoutError as e:
+            logger.error(f"[{self.faucet_name}] Withdrawal timeout: {e}")
+            return ClaimResult(
+                success=False, 
+                status="Timeout error", 
+                next_claim_minutes=60
+            )
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Withdrawal Error: {e}")
-            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)
+            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}", exc_info=True)
+            return ClaimResult(
+                success=False, 
+                status=f"Error: {str(e)[:100]}", 
+                next_claim_minutes=60
+            )
