@@ -5,6 +5,7 @@ import os
 import sys
 import shutil
 import json
+import asyncio
 from datetime import datetime
 
 class CryptobotMeta:
@@ -364,6 +365,27 @@ class CryptobotMeta:
         
         print("\n[HEALTH] Check complete.")
 
+    def profitability(self, args):
+        """Display comprehensive profitability analytics dashboard"""
+        print("[PROFITABILITY] Generating analytics dashboard...")
+        
+        try:
+            from core.dashboard_builder import DashboardBuilder
+            
+            hours = args.hours
+            dashboard = DashboardBuilder(hours=hours)
+            
+            # Run async dashboard build
+            asyncio.run(dashboard.build_dashboard())
+            
+        except ImportError as e:
+            print(f"   Error: Missing required library. Run 'pip install -r requirements.txt'")
+            print(f"   Details: {e}")
+        except Exception as e:
+            print(f"   Error generating profitability dashboard: {e}")
+            import traceback
+            traceback.print_exc()
+
 def main():
     parser = argparse.ArgumentParser(description="Cryptobot Management Meta-Tool")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -399,6 +421,18 @@ def main():
     # Health
     subparsers.add_parser("health", help="Run comprehensive system health check")
 
+    # Profitability
+    profitability_parser = subparsers.add_parser(
+        "profitability", 
+        help="Display comprehensive profitability analytics dashboard"
+    )
+    profitability_parser.add_argument(
+        "--hours", 
+        type=int, 
+        default=24, 
+        help="Time window for analysis in hours (default: 24)"
+    )
+
     args = parser.parse_args()
     meta = CryptobotMeta()
 
@@ -418,6 +452,8 @@ def main():
         meta.register_pick(args)
     elif args.command == "health":
         meta.check_health()
+    elif args.command == "profitability":
+        meta.profitability(args)
     else:
         parser.print_help()
 
