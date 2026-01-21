@@ -4,15 +4,33 @@
 
 **THERE IS ONLY ONE BRANCH: `master`. DO NOT CREATE OTHER BRANCHES OR WORKTREES.**
 
+### Rules:
 - **NEVER** create worktrees, feature branches, or copilot/* branches
 - **NEVER** use `git worktree add` 
-- **NEVER** create pull requests - commit directly to master
 - **ALWAYS** work in `C:\Users\azureuser\Repositories\cryptobot` on `master`
-- **ALWAYS** `git pull` before starting work and `git push` after committing
+- **ALWAYS** `git pull origin master` before starting ANY work
+- **ALWAYS** `git push origin master` after committing
 - **NEVER** force reset, force delete, or force push without explicit user permission
-- **NEVER** delete branches without checking if they have unmerged/uncommitted work
 
-If you find multiple worktrees or branches exist, ASK THE USER before deleting anything.
+### If You Need to Make Changes:
+1. `git pull origin master` (sync first)
+2. Make your changes locally
+3. `git add . && git commit -m "description"`
+4. `git push origin master`
+
+### If You Find Multiple Branches/Worktrees:
+1. **FIRST** - Review all open PRs: `gh pr list --state open`
+2. **SECOND** - Review all open issues: `gh issue list --state open`  
+3. **THIRD** - Merge/close PRs as appropriate (merge good ones, close bad ones)
+4. **FOURTH** - Sync: `git pull origin master`
+5. **FIFTH** - Only THEN delete stale branches: `git push origin --delete branch-name`
+6. **ASK THE USER** before deleting anything with uncommitted work
+
+### Pull Request Policy:
+- PRs are acceptable ONLY for code review before merging to master
+- PRs must target `master` branch
+- After merge, delete the source branch immediately
+- Do NOT leave stale branches or WIP PRs open
 
 ## Project Overview
 
