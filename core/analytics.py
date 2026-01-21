@@ -199,14 +199,18 @@ class CostRecord:
 class EarningsTracker:
     """
     Tracks earnings, claim success rates, and profitability metrics.
-    Persists data to disk for historical analysis.
+    Persists data to disk for historical analysis with auto-flush capability.
     """
+    
+    # Auto-flush interval (5 minutes)
+    AUTO_FLUSH_INTERVAL = 300
     
     def __init__(self, storage_file: Optional[str] = None):
         self.storage_file = storage_file or ANALYTICS_FILE
         self.claims: list = []
         self.costs: list = []  # Fix #27: Track costs
         self.session_start = time.time()
+        self.last_flush_time = time.time()  # Track last auto-flush
         
         # Ensure file exists and is writable
         if not os.path.exists(ANALYTICS_FILE):
@@ -237,6 +241,8 @@ class EarningsTracker:
             }
             with open(self.storage_file, "w") as f:
                 json.dump(data, f)
+            self.last_flush_time = time.time()
+            logger.debug(f"📊 Analytics flushed: {len(self.claims)} claims, {len(self.costs)} costs")
         except Exception as e:
             logger.warning(f"Could not save analytics: {e}")
     
@@ -270,9 +276,13 @@ class EarningsTracker:
         self.claims.append(asdict(record))
         logger.info(f"📈 Recorded: {faucet} {'✓' if success else '✗'} {amount} {currency}")
         
-        
-        # Save immediately to ensure data persistence
-        self._save()
+        # Auto-flush if interval exceeded (5 minutes)
+        if time.time() - self.last_flush_time > self.AUTO_FLUSH_INTERVAL:
+            logger.info(f"💾 Auto-flushing analytics (interval exceeded)")
+            self._save()
+        else:
+            # Regular save (on every claim for data protection)
+            self._save()
 
     def record_cost(self, cost_type: str, amount_usd: float, faucet: str = None):
         """Record a cost incurred (e.g. captcha solve)."""
