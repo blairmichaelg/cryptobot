@@ -5,10 +5,13 @@ import random
 import json
 import os
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Callable, Any, Union
+from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
 from datetime import datetime, timezone
 from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
 from playwright.async_api import Page, BrowserContext
+
+if TYPE_CHECKING:
+    from faucets.base import ClaimResult
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +410,7 @@ class JobScheduler:
         
         logger.info(f"Withdrawal job scheduling complete: {scheduled_count} jobs scheduled")
 
-    async def execute_consolidated_withdrawal(self, faucet_name: str, profile: AccountProfile) -> ClaimResult:
+    async def execute_consolidated_withdrawal(self, faucet_name: str, profile: AccountProfile) -> "ClaimResult":
         """
         Execute withdrawal for a specific faucet with timing optimization.
         
@@ -429,6 +432,7 @@ class JobScheduler:
         from core.wallet_manager import WalletDaemon
         from core.withdrawal_analytics import get_analytics
         from core.analytics import get_tracker
+        from faucets.base import ClaimResult
         
         logger.info(f"Executing consolidated withdrawal for {faucet_name} ({profile.username})...")
         

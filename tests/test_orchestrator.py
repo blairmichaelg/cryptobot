@@ -294,3 +294,276 @@ class TestJobScheduler:
         except asyncio.TimeoutError:
             pytest.fail("Scheduler loop did not stop within timeout")
         assert scheduler._stop_event.is_set()
+
+
+class TestWithdrawalScheduling:
+    """Test suite for automated withdrawal scheduling."""
+    
+    @pytest.fixture
+    def settings_with_accounts(self):
+        """Create settings with account profiles."""
+        return BotSettings(
+            max_concurrent_bots=2,
+            max_concurrent_per_profile=1,
+            user_agents=["Mozilla/5.0 Test Agent"],
+            prefer_off_peak_withdrawals=True,
+            withdrawal_retry_intervals=[3600, 21600, 86400],
+            withdrawal_max_retries=3,
+            accounts=[
+                AccountProfile(faucet="firefaucet", username="test_user1", password="pass1", enabled=True),
+                AccountProfile(faucet="cointiply", username="test_user2", password="pass2", enabled=True),
+                AccountProfile(faucet="unknown_faucet", username="test_user3", password="pass3", enabled=True),
+            ]
+        )
+    
+    @pytest.fixture
+    def mock_browser_manager(self):
+        """Create mock browser manager."""
+        manager = AsyncMock()
+        manager.create_context = AsyncMock()
+        manager.new_page = AsyncMock()
+        manager.save_cookies = AsyncMock()
+        manager.check_page_status = AsyncMock(return_value={"blocked": False, "network_error": False})
+        return manager
+    
+    @pytest.fixture
+    def scheduler_with_accounts(self, settings_with_accounts, mock_browser_manager):
+        """Create JobScheduler instance with accounts."""
+        with patch.object(JobScheduler, '_restore_session'), \
+             patch.object(JobScheduler, '_persist_session'):
+            return JobScheduler(settings_with_accounts, mock_browser_manager)
+    
+    @pytest.mark.asyncio
+    async def test_schedule_withdrawal_jobs_creates_jobs(self, scheduler_with_accounts):
+        """Test that schedule_withdrawal_jobs creates withdrawal jobs for supported faucets."""
+        with patch('core.analytics.get_tracker') as mock_tracker:
+            # Mock analytics
+            mock_tracker_instance = MagicMock()
+            mock_tracker_instance.get_hourly_rate.return_value = {
+                'firefaucet': 150,  # High earner
+                'cointiply': 60,    # Medium earner
+            }
+            mock_tracker_instance.get_faucet_stats.return_value = {}  # For priority calc
+            mock_tracker.return_value = mock_tracker_instance
+            
+            # Schedule withdrawal jobs
+            await scheduler_with_accounts.schedule_withdrawal_jobs()
+            
+            # Check that jobs were created (at least 1 for supported faucets)
+            withdrawal_jobs = [j for j in scheduler_with_accounts.queue if "withdraw" in j.job_type.lower()]
+            assert len(withdrawal_jobs) >= 1
+            
+            # Check job properties (priority may be adjusted by dynamic priority system)
+            for job in withdrawal_jobs:
+                assert job.priority >= 10  # Low priority (10 or higher = lower priority)
+                assert job.job_type == "withdraw_wrapper"
+                assert job.next_run > time.time()  # Scheduled in future
+    
+    @pytest.mark.asyncio
+    async def test_schedule_withdrawal_jobs_respects_off_peak(self, scheduler_with_accounts):
+        """Test that withdrawal jobs are scheduled during off-peak hours."""
+        with patch('core.analytics.get_tracker') as mock_tracker:
+            mock_tracker_instance = MagicMock()
+            mock_tracker_instance.get_hourly_rate.return_value = {'firefaucet': 100}
+            mock_tracker.return_value = mock_tracker_instance
+            
+            await scheduler_with_accounts.schedule_withdrawal_jobs()
+            
+            withdrawal_jobs = [j for j in scheduler_with_accounts.queue if "withdraw" in j.job_type.lower()]
+            
+            for job in withdrawal_jobs:
+                # Check that the scheduled time is in off-peak hours
+                from datetime import datetime, timezone
+                scheduled_time = datetime.fromtimestamp(job.next_run, tz=timezone.utc)
+                # Should be in off_peak_hours
+                assert scheduled_time.hour in scheduler_with_accounts.settings.off_peak_hours
+    
+    @pytest.mark.asyncio
+    async def test_schedule_withdrawal_jobs_skips_unsupported_faucets(self, scheduler_with_accounts):
+        """Test that withdrawal jobs are not created for faucets without withdraw()."""
+        with patch('core.analytics.get_tracker') as mock_tracker:
+            mock_tracker_instance = MagicMock()
+            mock_tracker_instance.get_hourly_rate.return_value = {}
+            mock_tracker.return_value = mock_tracker_instance
+            
+            await scheduler_with_accounts.schedule_withdrawal_jobs()
+            
+            # Check that unknown_faucet doesn't have a withdrawal job
+            withdrawal_jobs = [j for j in scheduler_with_accounts.queue if "unknown" in j.faucet_type.lower()]
+            assert len(withdrawal_jobs) == 0
+    
+    @pytest.mark.asyncio
+    async def test_execute_consolidated_withdrawal_below_threshold(self, scheduler_with_accounts, mock_browser_manager):
+        """Test that withdrawal is skipped when balance is below threshold."""
+        profile = AccountProfile(faucet="firefaucet", username="test_user", password="pass")
+        
+        with patch('core.analytics.get_tracker') as mock_tracker:
+            mock_tracker_instance = MagicMock()
+            mock_tracker_instance.get_faucet_stats.return_value = {
+                'firefaucet': {'earnings': 100}  # Below threshold
+            }
+            mock_tracker.return_value = mock_tracker_instance
+            
+            result = await scheduler_with_accounts.execute_consolidated_withdrawal("firefaucet", profile)
+            
+            assert result.success == True
+            assert "Below Threshold" in result.status
+            assert result.next_claim_minutes == 1440
+    
+    @pytest.mark.asyncio
+    async def test_execute_consolidated_withdrawal_off_peak_check(self, scheduler_with_accounts, mock_browser_manager):
+        """Test that withdrawal is deferred when not in off-peak hours."""
+        profile = AccountProfile(faucet="firefaucet", username="test_user", password="pass")
+        
+        with patch('core.analytics.get_tracker') as mock_tracker, \
+             patch.object(scheduler_with_accounts, 'is_off_peak_time', return_value=False):
+            
+            mock_tracker_instance = MagicMock()
+            mock_tracker_instance.get_faucet_stats.return_value = {
+                'firefaucet': {'earnings': 100000}  # Above threshold
+            }
+            mock_tracker.return_value = mock_tracker_instance
+            
+            result = await scheduler_with_accounts.execute_consolidated_withdrawal("firefaucet", profile)
+            
+            assert result.success == True
+            assert "Off-Peak" in result.status
+            assert result.next_claim_minutes == 60
+    
+    @pytest.mark.asyncio
+    async def test_withdrawal_retry_logic_on_failure(self, scheduler_with_accounts, mock_browser_manager, settings_with_accounts):
+        """Test that withdrawal jobs retry with exponential backoff on failure."""
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_browser_manager.create_context.return_value = mock_context
+        mock_browser_manager.new_page.return_value = mock_page
+        
+        # Mock failed withdrawal
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_result.status = "Withdrawal Failed"
+        mock_result.next_claim_minutes = 60
+        mock_method = AsyncMock(return_value=mock_result)
+        
+        profile = AccountProfile(faucet="firefaucet", username="test_user", password="pass")
+        job = Job(
+            priority=10,
+            next_run=time.time(),
+            name="FireFaucet Withdraw",
+            profile=profile,
+            faucet_type="firefaucet",
+            job_type="withdraw_wrapper",
+            retry_count=0
+        )
+        
+        with patch("core.registry.get_faucet_class") as mock_get_class:
+            mock_bot_cls = MagicMock()
+            mock_bot_instance = MagicMock()
+            mock_get_class.return_value = mock_bot_cls
+            mock_bot_cls.return_value = mock_bot_instance
+            mock_bot_instance.withdraw_wrapper = mock_method
+            
+            await scheduler_with_accounts._run_job_wrapper(job)
+            
+            # Should be rescheduled with retry
+            assert len(scheduler_with_accounts.queue) == 1
+            rescheduled_job = scheduler_with_accounts.queue[0]
+            assert rescheduled_job.retry_count == 1
+            
+            # Check retry interval (should be first interval: 1 hour = 3600 seconds)
+            expected_delay = settings_with_accounts.withdrawal_retry_intervals[0]
+            actual_delay = rescheduled_job.next_run - time.time()
+            assert abs(actual_delay - expected_delay) < 2.0  # Allow 2s tolerance
+    
+    @pytest.mark.asyncio
+    async def test_withdrawal_max_retries_reached(self, scheduler_with_accounts, mock_browser_manager):
+        """Test that withdrawal jobs stop retrying after max attempts."""
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_browser_manager.create_context.return_value = mock_context
+        mock_browser_manager.new_page.return_value = mock_page
+        
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_result.status = "Withdrawal Failed"
+        mock_result.next_claim_minutes = 60
+        mock_method = AsyncMock(return_value=mock_result)
+        
+        profile = AccountProfile(faucet="firefaucet", username="test_user", password="pass")
+        job = Job(
+            priority=10,
+            next_run=time.time(),
+            name="FireFaucet Withdraw",
+            profile=profile,
+            faucet_type="firefaucet",
+            job_type="withdraw_wrapper",
+            retry_count=3  # Already at max retries
+        )
+        
+        with patch("core.registry.get_faucet_class") as mock_get_class, \
+             patch("core.withdrawal_analytics.get_analytics") as mock_analytics:
+            
+            mock_bot_cls = MagicMock()
+            mock_bot_instance = MagicMock()
+            mock_get_class.return_value = mock_bot_cls
+            mock_bot_cls.return_value = mock_bot_instance
+            mock_bot_instance.withdraw_wrapper = mock_method
+            
+            mock_analytics_instance = MagicMock()
+            mock_analytics.return_value = mock_analytics_instance
+            
+            await scheduler_with_accounts._run_job_wrapper(job)
+            
+            # Should NOT be rescheduled
+            assert len(scheduler_with_accounts.queue) == 0
+            
+            # Should log failed withdrawal to analytics
+            mock_analytics_instance.record_withdrawal.assert_called_once()
+            call_args = mock_analytics_instance.record_withdrawal.call_args
+            assert call_args[1]['status'] == 'failed'
+    
+    @pytest.mark.asyncio
+    async def test_withdrawal_exception_retry_logic(self, scheduler_with_accounts, mock_browser_manager):
+        """Test that withdrawal exceptions trigger retry logic."""
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_browser_manager.create_context.return_value = mock_context
+        mock_browser_manager.new_page.return_value = mock_page
+        
+        mock_method = AsyncMock(side_effect=Exception("Test withdrawal error"))
+        
+        profile = AccountProfile(faucet="firefaucet", username="test_user", password="pass")
+        job = Job(
+            priority=10,
+            next_run=time.time(),
+            name="FireFaucet Withdraw",
+            profile=profile,
+            faucet_type="firefaucet",
+            job_type="withdraw_wrapper",
+            retry_count=0
+        )
+        
+        with patch("core.registry.get_faucet_class") as mock_get_class:
+            mock_bot_cls = MagicMock()
+            mock_bot_instance = MagicMock()
+            mock_get_class.return_value = mock_bot_cls
+            mock_bot_cls.return_value = mock_bot_instance
+            mock_bot_instance.withdraw_wrapper = mock_method
+            
+            await scheduler_with_accounts._run_job_wrapper(job)
+            
+            # Should be rescheduled with retry
+            assert len(scheduler_with_accounts.queue) == 1
+            rescheduled_job = scheduler_with_accounts.queue[0]
+            assert rescheduled_job.retry_count == 1
+            
+            # Check retry interval
+            expected_delay = scheduler_with_accounts.settings.withdrawal_retry_intervals[0]
+            actual_delay = rescheduled_job.next_run - time.time()
+            assert abs(actual_delay - expected_delay) < 2.0
+    
+    def test_is_off_peak_time_implementation_exists(self, scheduler_with_accounts):
+        """Test that is_off_peak_time method exists and returns a boolean."""
+        result = scheduler_with_accounts.is_off_peak_time()
+        assert isinstance(result, bool)
+
