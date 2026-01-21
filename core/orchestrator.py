@@ -4,10 +4,15 @@ import time
 import random
 import json
 import os
+import inspect
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Callable, Any, Union
+from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
+from datetime import datetime, timezone, timedelta
 from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
 from playwright.async_api import Page, BrowserContext
+
+if TYPE_CHECKING:
+    from faucets.base import ClaimResult
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +191,6 @@ class JobScheduler:
         Returns:
             True if current time is off-peak for withdrawals
         """
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         
         # Check hour (late night / early morning UTC)
@@ -293,6 +297,258 @@ class JobScheduler:
         except Exception as e:
             logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
             return False, ""
+
+    async def schedule_withdrawal_jobs(self):
+        """
+        Automatically schedule withdrawal jobs for all faucets with withdraw() support.
+        
+        Timing strategy:
+        - Initial check: 24-72h depending on earnings rate
+        - Repeat: Every 24-72h depending on earnings rate
+        - Priority: Low (don't interfere with claiming)
+        - Timing: Prefer off-peak hours (0-5 UTC, 22-23 UTC, weekends)
+        """
+        from core.registry import FAUCET_REGISTRY, get_faucet_class
+        from core.analytics import get_tracker
+        
+        logger.info("Scheduling withdrawal jobs for supported faucets...")
+        
+        # Get all enabled accounts
+        enabled_profiles = [acc for acc in self.settings.accounts if acc.enabled]
+        
+        if not enabled_profiles:
+            logger.warning("No enabled account profiles found. Skipping withdrawal job scheduling.")
+            return
+        
+        scheduled_count = 0
+        
+        for profile in enabled_profiles:
+            # Get the faucet class for this profile
+            faucet_type = profile.faucet.lower().replace("_", "").replace(" ", "")
+            
+            # Try to find matching faucet in registry
+            faucet_class = None
+            for registry_key in FAUCET_REGISTRY.keys():
+                if registry_key.replace("_", "") in faucet_type or faucet_type in registry_key.replace("_", ""):
+                    faucet_class = get_faucet_class(registry_key)
+                    faucet_type = registry_key
+                    break
+            
+            if not faucet_class:
+                logger.debug(f"No faucet class found for profile: {profile.username} ({profile.faucet})")
+                continue
+            
+            # Check if the faucet has withdraw() method implemented
+            has_withdraw = False
+            try:
+                # Check if withdraw method exists and is not the base implementation
+                if hasattr(faucet_class, 'withdraw'):
+                    method = getattr(faucet_class, 'withdraw')
+                    # Check if it's not the base implementation (which just returns "Not Implemented")
+                    source = inspect.getsource(method)
+                    if "Not Implemented" not in source and "NotImplementedError" not in source:
+                        has_withdraw = True
+            except Exception as e:
+                logger.debug(f"Could not inspect withdraw method for {faucet_type}: {e}")
+            
+            if not has_withdraw:
+                logger.debug(f"Skipping withdrawal job for {faucet_type} - withdraw() not implemented")
+                continue
+            
+            # Calculate next withdrawal time based on analytics
+            next_withdrawal_time = time.time()
+            
+            # Get earnings rate from analytics to determine scheduling frequency
+            try:
+                tracker = get_tracker()
+                hourly_rate = tracker.get_hourly_rate(hours=168)  # 1 week
+                faucet_hourly = hourly_rate.get(faucet_type, 0)
+                
+                # If high earning rate, check more frequently
+                if faucet_hourly > 100:  # High earner (>100 sat/hour)
+                    check_interval = 86400  # 24 hours
+                elif faucet_hourly > 50:  # Medium earner
+                    check_interval = 129600  # 36 hours
+                else:  # Low earner
+                    check_interval = 259200  # 72 hours
+            except Exception as e:
+                logger.debug(f"Could not get earnings rate for {faucet_type}: {e}")
+                check_interval = 86400  # Default to 24 hours
+            
+            # Add initial delay (24 hours) for first withdrawal check
+            next_withdrawal_time += check_interval
+            
+            # Adjust to off-peak hours if enabled
+            if self.settings.prefer_off_peak_withdrawals:
+                target_time = datetime.fromtimestamp(next_withdrawal_time, tz=timezone.utc)
+                
+                # If not in off-peak hours, adjust to next off-peak window
+                if target_time.hour not in self.settings.off_peak_hours:
+                    # Find next off-peak hour
+                    hours_to_add = 0
+                    while (target_time.hour + hours_to_add) % 24 not in self.settings.off_peak_hours:
+                        hours_to_add += 1
+                    target_time += timedelta(hours=hours_to_add)
+                    next_withdrawal_time = target_time.timestamp()
+            
+            # Create withdrawal job with low priority
+            withdrawal_job = Job(
+                priority=10,  # Low priority (higher number = lower priority)
+                next_run=next_withdrawal_time,
+                name=f"{profile.faucet} Withdraw",
+                profile=profile,
+                faucet_type=faucet_type,
+                job_type="withdraw_wrapper",
+                retry_count=0
+            )
+            
+            self.add_job(withdrawal_job)
+            scheduled_count += 1
+            logger.info(f"Scheduled withdrawal job for {profile.faucet} ({profile.username}) at {datetime.fromtimestamp(next_withdrawal_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        
+        logger.info(f"Withdrawal job scheduling complete: {scheduled_count} jobs scheduled")
+
+    async def execute_consolidated_withdrawal(self, faucet_name: str, profile: AccountProfile) -> "ClaimResult":
+        """
+        Execute withdrawal for a specific faucet with timing optimization.
+        
+        Steps:
+        1. Load faucet bot instance
+        2. Check if balance meets threshold
+        3. Call WalletDaemon.should_withdraw_now() for timing
+        4. Execute withdraw() method
+        5. Log results to WithdrawalAnalytics
+        
+        Args:
+            faucet_name: The faucet identifier
+            profile: Account profile for this faucet
+            
+        Returns:
+            ClaimResult with withdrawal outcome
+        """
+        from core.registry import get_faucet_class
+        from core.wallet_manager import WalletDaemon
+        from core.withdrawal_analytics import get_analytics
+        from core.analytics import get_tracker
+        from faucets.base import ClaimResult
+        
+        logger.info(f"Executing consolidated withdrawal for {faucet_name} ({profile.username})...")
+        
+        # 1. Load faucet bot instance
+        faucet_class = get_faucet_class(faucet_name)
+        if not faucet_class:
+            logger.error(f"Unknown faucet type: {faucet_name}")
+            return ClaimResult(success=False, status="Unknown Faucet", next_claim_minutes=1440)
+        
+        # Create a temporary page context for withdrawal
+        context = None
+        try:
+            # Get proxy for this profile
+            current_proxy = self.get_next_proxy(profile)
+            
+            # Create context
+            ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
+            context = await self.browser_manager.create_context(
+                proxy=current_proxy,
+                user_agent=ua,
+                profile_name=profile.username
+            )
+            page = await self.browser_manager.new_page(context=context)
+            
+            # Instantiate bot
+            bot = faucet_class(self.settings, page)
+            bot.settings_account_override = {
+                "username": profile.username,
+                "password": profile.password,
+            }
+            if current_proxy:
+                bot.set_proxy(current_proxy)
+            
+            # 2. Check if balance meets threshold
+            # This is handled by withdraw_wrapper, but we can also check here
+            tracker = get_tracker()
+            faucet_stats = tracker.get_faucet_stats(24)
+            current_balance = 0.0
+            
+            if faucet_name.lower() in faucet_stats:
+                current_balance = faucet_stats[faucet_name.lower()].get("earnings", 0.0)
+            
+            # Get threshold from settings
+            threshold_key = f"{faucet_name.lower().replace('_', '')}_min_withdraw"
+            min_threshold = getattr(self.settings, threshold_key, 1000)
+            
+            if current_balance < min_threshold:
+                logger.info(f"Balance {current_balance} below threshold {min_threshold}. Deferring withdrawal.")
+                return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
+            
+            # 3. Check timing with WalletDaemon if available
+            if self.settings.prefer_off_peak_withdrawals:
+                # Determine cryptocurrency for this faucet
+                crypto = bot._get_cryptocurrency_for_faucet() if hasattr(bot, '_get_cryptocurrency_for_faucet') else "BTC"
+                
+                # Check if we have wallet daemon configured
+                if self.settings.wallet_rpc_urls and self.settings.electrum_rpc_user:
+                    try:
+                        wallet_daemon = WalletDaemon(
+                            self.settings.wallet_rpc_urls,
+                            self.settings.electrum_rpc_user,
+                            self.settings.electrum_rpc_pass
+                        )
+                        
+                        should_withdraw = await wallet_daemon.should_withdraw_now(
+                            crypto,
+                            int(current_balance),
+                            min_threshold
+                        )
+                        
+                        await wallet_daemon.close()
+                        
+                        if not should_withdraw:
+                            logger.info(f"WalletDaemon recommends deferring withdrawal for {faucet_name}")
+                            return ClaimResult(success=True, status="Deferred by WalletDaemon", next_claim_minutes=360)
+                    except Exception as e:
+                        logger.warning(f"WalletDaemon check failed: {e}. Proceeding with withdrawal.")
+                else:
+                    # Use simple off-peak check
+                    if not self.is_off_peak_time():
+                        logger.info(f"Not off-peak time. Deferring withdrawal for {faucet_name}")
+                        return ClaimResult(success=True, status="Waiting for Off-Peak", next_claim_minutes=60)
+            
+            # 4. Execute withdrawal
+            result = await bot.withdraw_wrapper(page)
+            
+            # 5. Analytics are logged by withdraw_wrapper
+            logger.info(f"Withdrawal completed for {faucet_name}: {result.status}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing withdrawal for {faucet_name}: {e}")
+            
+            # Log failed withdrawal to analytics
+            try:
+                analytics = get_analytics()
+                analytics.record_withdrawal(
+                    faucet=faucet_name,
+                    cryptocurrency="BTC",  # Default, may not be accurate
+                    amount=0.0,
+                    network_fee=0.0,
+                    platform_fee=0.0,
+                    withdrawal_method="unknown",
+                    status="failed",
+                    notes=str(e)
+                )
+            except Exception:
+                pass
+            
+            return ClaimResult(success=False, status=f"Error: {str(e)}", next_claim_minutes=360)
+        finally:
+            if context:
+                try:
+                    await self.browser_manager.save_cookies(context, profile.username)
+                    await context.close()
+                except Exception as cleanup_error:
+                    logger.warning(f"Context cleanup failed: {cleanup_error}")
 
     def add_job(self, job: Job):
         """
@@ -468,18 +724,53 @@ class JobScheduler:
                 if result.success:
                     # Reset Circuit Breaker on success
                     self.faucet_failures[job.faucet_type] = 0
+                    job.retry_count = 0  # Reset retry count on success
                 else:
-                    # Increment failure count
-                    self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
-                    if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
-                        logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times consecutively.")
-                        self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
+                    # Handle withdrawal job failures differently
+                    if "withdraw" in job.job_type.lower():
+                        # Withdrawal-specific retry logic with exponential backoff
+                        if job.retry_count >= self.settings.withdrawal_max_retries:
+                            logger.error(f"❌ Withdrawal failed {job.retry_count} times for {job.name}. Max retries reached. Skipping.")
+                            # Don't reschedule - mark as permanently failed
+                            # Log to analytics
+                            try:
+                                from core.withdrawal_analytics import get_analytics
+                                analytics = get_analytics()
+                                analytics.record_withdrawal(
+                                    faucet=job.faucet_type,
+                                    cryptocurrency="BTC",
+                                    amount=0.0,
+                                    network_fee=0.0,
+                                    platform_fee=0.0,
+                                    withdrawal_method="unknown",
+                                    status="failed",
+                                    notes=f"Max retries ({self.settings.withdrawal_max_retries}) exceeded: {result.status}"
+                                )
+                            except Exception:
+                                pass
+                            return
+                        else:
+                            # Use configured retry intervals
+                            retry_interval = self.settings.withdrawal_retry_intervals[min(job.retry_count, len(self.settings.withdrawal_retry_intervals) - 1)]
+                            job.next_run = time.time() + retry_interval
+                            job.retry_count += 1
+                            logger.warning(f"⚠️ Withdrawal failed for {job.name}. Retry {job.retry_count}/{self.settings.withdrawal_max_retries} in {retry_interval/3600:.1f}h")
+                            self.add_job(job)
+                            return
+                    else:
+                        # Increment failure count for non-withdrawal jobs
+                        self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
+                        if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
+                            logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times consecutively.")
+                            self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
                         
                 wait_time = result.next_claim_minutes * 60
-                # Add jitter
-                wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
+                # Add jitter for non-withdrawal jobs
+                if "withdraw" not in job.job_type.lower():
+                    wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
                 job.next_run = time.time() + wait_time
-                job.retry_count = 0
+                if result.success:
+                    job.retry_count = 0
                 self.add_job(job)
             
         except Exception as e:
@@ -491,10 +782,40 @@ class JobScheduler:
                 await self.browser_manager.restart()
                 self.consecutive_job_failures = 0
 
-            job.retry_count += 1
-            retry_delay = min(PROXY_COOLDOWN_SECONDS * (2 ** job.retry_count), MAX_RETRY_BACKOFF_SECONDS)  # Exponential backoff capped
-            job.next_run = time.time() + retry_delay
-            self.add_job(job)
+            # Withdrawal-specific exception handling
+            if "withdraw" in job.job_type.lower():
+                if job.retry_count >= self.settings.withdrawal_max_retries:
+                    logger.error(f"❌ Withdrawal exception for {job.name} after {job.retry_count} retries. Max retries reached.")
+                    # Log failed withdrawal
+                    try:
+                        from core.withdrawal_analytics import get_analytics
+                        analytics = get_analytics()
+                        analytics.record_withdrawal(
+                            faucet=job.faucet_type,
+                            cryptocurrency="BTC",
+                            amount=0.0,
+                            network_fee=0.0,
+                            platform_fee=0.0,
+                            withdrawal_method="unknown",
+                            status="failed",
+                            notes=f"Exception after {job.retry_count} retries: {str(e)}"
+                        )
+                    except Exception:
+                        pass
+                    return  # Don't reschedule
+                else:
+                    # Use configured retry intervals for withdrawals
+                    retry_interval = self.settings.withdrawal_retry_intervals[min(job.retry_count, len(self.settings.withdrawal_retry_intervals) - 1)]
+                    job.next_run = time.time() + retry_interval
+                    job.retry_count += 1
+                    logger.warning(f"⚠️ Withdrawal exception for {job.name}. Retry {job.retry_count}/{self.settings.withdrawal_max_retries} in {retry_interval/3600:.1f}h")
+                    self.add_job(job)
+            else:
+                # Standard exponential backoff for non-withdrawal jobs
+                job.retry_count += 1
+                retry_delay = min(PROXY_COOLDOWN_SECONDS * (2 ** job.retry_count), MAX_RETRY_BACKOFF_SECONDS)
+                job.next_run = time.time() + retry_delay
+                self.add_job(job)
             
         finally:
             try:
@@ -523,8 +844,21 @@ class JobScheduler:
         6. Sleeps dynamically until the next job is ready or timeout occurs.
         """
         logger.info("Job Scheduler loop started.")
+        
+        # Initialize withdrawal jobs on first run
+        withdrawal_jobs_scheduled = False
+        
         while not self._stop_event.is_set():
             now = time.time()
+            
+            # Schedule withdrawal jobs once at startup
+            if not withdrawal_jobs_scheduled:
+                try:
+                    await self.schedule_withdrawal_jobs()
+                    withdrawal_jobs_scheduled = True
+                except Exception as e:
+                    logger.warning(f"Failed to schedule withdrawal jobs: {e}")
+                    withdrawal_jobs_scheduled = True  # Don't retry every loop
             
             # Maintenance tasks (heartbeat and session persistence)
             if now - self.last_heartbeat_time >= HEARTBEAT_INTERVAL_SECONDS:
