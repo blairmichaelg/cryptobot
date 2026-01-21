@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import json
+import logging
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +9,25 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 LOGS_DIR = BASE_DIR / "logs"
+
+logger = logging.getLogger(__name__)
+
+def load_faucet_config(config_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """
+    Load faucet_config.json if present.
+
+    Returns:
+        Parsed config dict or None if not found/invalid.
+    """
+    path = config_path or (CONFIG_DIR / "faucet_config.json")
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        logger.warning("Failed to load faucet config from %s: %s", path, exc)
+        return None
 
 class AccountProfile(BaseModel):
     faucet: str
@@ -35,6 +56,13 @@ class BotSettings(BaseSettings):
     
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
+    proxy_residential_filter: bool = True
+    proxy_residential_denylist: List[str] = Field(default_factory=lambda: [
+        "hosting", "host", "cloud", "datacenter", "data center", "vps", "server",
+        "colo", "cdn", "digitalocean", "amazon", "aws", "google", "microsoft",
+        "ovh", "hetzner", "vultr", "linode", "leaseweb", "contabo", "choopa",
+        "netcup", "scaleway", "cloudflare"
+    ])
     
     # Optimization
     block_images: bool = True
@@ -170,6 +198,51 @@ class BotSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    def apply_faucet_config(self, config: Dict[str, Any]) -> None:
+        """
+        Merge faucet_config.json data into settings when not already set.
+        """
+        if not config:
+            return
+
+        # Accounts
+        if not self.accounts and isinstance(config.get("accounts"), dict):
+            accounts: List[AccountProfile] = []
+            for faucet, data in config["accounts"].items():
+                if not isinstance(data, dict):
+                    continue
+                if not data.get("username") or not data.get("password"):
+                    continue
+                accounts.append(
+                    AccountProfile(
+                        faucet=faucet,
+                        username=data["username"],
+                        password=data["password"],
+                        enabled=data.get("enabled", True),
+                        proxy=data.get("proxy")
+                    )
+                )
+            if accounts:
+                self.accounts = accounts
+
+        # Wallet addresses (supports dict with metadata)
+        if not self.wallet_addresses and isinstance(config.get("wallet_addresses"), dict):
+            self.wallet_addresses = config["wallet_addresses"]
+
+        # Enabled faucets
+        enabled = config.get("enabled_faucets")
+        if isinstance(enabled, list) and enabled:
+            self.enabled_faucets = enabled
+
+        # Captcha solver settings
+        security = config.get("security", {})
+        captcha = security.get("captcha_solver", {}) if isinstance(security, dict) else {}
+        if isinstance(captcha, dict):
+            if not self.twocaptcha_api_key and captcha.get("api_key"):
+                self.twocaptcha_api_key = captcha.get("api_key")
+            if captcha.get("service"):
+                self.captcha_provider = captcha.get("service")
 
     def get_account(self, faucet_name: str) -> Optional[Dict[str, str]]:
         """

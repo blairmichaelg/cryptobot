@@ -44,10 +44,11 @@ class ProxyManager:
 
     # Validation constants
     VALIDATION_TIMEOUT_SECONDS = 15
-    VALIDATION_TEST_URL = "https://www.google.com"
+    VALIDATION_TEST_URL = "https://api.ipify.org?format=json"
     LATENCY_HISTORY_MAX = 5  # Keep last 5 latency measurements per proxy
     DEAD_PROXY_THRESHOLD_MS = 5000  # Consider proxy dead if avg latency > 5s
     DEAD_PROXY_FAILURE_COUNT = 3  # Remove after 3 consecutive failures
+    IP_INFO_URLS = ["https://ipinfo.io/json", "https://ipapi.co/json"]
 
     def __init__(self, settings: BotSettings):
         self.settings = settings
@@ -65,6 +66,7 @@ class ProxyManager:
         self.dead_proxies: List[str] = []
         # Cooldown tracking: proxy_key -> timestamp when it can be reused
         self.proxy_cooldowns: Dict[str, float] = {}
+        self.ip_info_cache: Dict[str, Dict[str, Any]] = {}
         # Cooldown durations (seconds)
         self.DETECTION_COOLDOWN = 3600  # 1 hour for 403/Detection
         self.FAILURE_COOLDOWN = 300      # 5 minutes for connection errors
@@ -75,6 +77,34 @@ class ProxyManager:
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy (full string with session)."""
         return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
+
+    async def _fetch_ip_info(self, proxy: Proxy) -> Optional[Dict[str, Any]]:
+        proxy_key = self._proxy_key(proxy)
+        if proxy_key in self.ip_info_cache:
+            return self.ip_info_cache[proxy_key]
+
+        timeout = aiohttp.ClientTimeout(total=self.VALIDATION_TIMEOUT_SECONDS)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for url in self.IP_INFO_URLS:
+                try:
+                    async with session.get(url, proxy=proxy.to_string()) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            self.ip_info_cache[proxy_key] = data
+                            return data
+                except Exception:
+                    continue
+        return None
+
+    def _looks_residential(self, info: Optional[Dict[str, Any]]) -> bool:
+        if not info:
+            return True
+        org = info.get("org") or info.get("as") or info.get("orgname") or ""
+        org_lower = org.lower()
+        for keyword in self.settings.proxy_residential_denylist:
+            if keyword in org_lower:
+                return False
+        return True
 
 
 
@@ -311,8 +341,20 @@ class ProxyManager:
                     proxy=proxy_url
                 ) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        logger.debug(f"[OK] Proxy {proxy.ip}:{proxy.port} validated (origin: {data.get('origin', 'unknown')})")
+                        try:
+                            data = await resp.json()
+                            origin = data.get("ip", data.get("origin", "unknown"))
+                        except Exception:
+                            origin = "unknown"
+
+                        if self.settings.proxy_residential_filter:
+                            info = await self._fetch_ip_info(proxy)
+                            if not self._looks_residential(info):
+                                org = (info or {}).get("org") or (info or {}).get("as") or "unknown"
+                                logger.warning(f"[FILTER] Proxy {proxy.ip}:{proxy.port} rejected by org/ASN filter ({org})")
+                                return False
+
+                        logger.debug(f"[OK] Proxy {proxy.ip}:{proxy.port} validated (origin: {origin})")
                         return True
                     else:
                         logger.warning(f"[WARN] Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")

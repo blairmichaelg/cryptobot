@@ -24,7 +24,7 @@ import time
 from typing import List, Dict
 from dataclasses import dataclass
 
-from core.config import BotSettings, AccountProfile
+from core.config import BotSettings, AccountProfile, load_faucet_config
 from core.logging_setup import setup_logging
 from core.wallet_manager import WalletDaemon
 from browser.instance import BrowserManager
@@ -62,6 +62,9 @@ async def main():
     args = parser.parse_args()
 
     settings = BotSettings()
+    faucet_config = load_faucet_config()
+    if faucet_config:
+        settings.apply_faucet_config(faucet_config)
     if args.visible:
         settings.headless = False
 
@@ -131,6 +134,14 @@ async def main():
             profiles = [p for p in profiles if target in p.faucet.lower().replace("_", "")]
             if not profiles:
                 logger.warning(f"No profiles found matching '{args.single}'")
+                return
+
+        # Filter by enabled faucets (if provided)
+        if settings.enabled_faucets:
+            enabled = {f.lower().replace("_", "") for f in settings.enabled_faucets}
+            profiles = [p for p in profiles if p.faucet.lower().replace("_", "") in enabled]
+            if not profiles:
+                logger.warning("No enabled faucet profiles found after filtering")
                 return
 
         # 2Captcha Proxy Integration (Sticky Sessions)

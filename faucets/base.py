@@ -145,6 +145,15 @@ class FaucetBot:
         if hasattr(self.settings, 'wallet_addresses'):
             dict_address = self.settings.wallet_addresses.get(coin)
             if dict_address:
+                # Support both direct string and metadata dict formats
+                if isinstance(dict_address, dict):
+                    if dict_address.get("enabled", True) is False:
+                        return None
+                    for key in ("address", "wallet", "wallet_address"):
+                        if dict_address.get(key):
+                            logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict for {coin}")
+                            return dict_address.get(key)
+                    return None
                 logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict for {coin}")
                 return dict_address
         

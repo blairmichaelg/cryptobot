@@ -78,6 +78,7 @@ class DutchyBot(FaucetBot):
                 await remember.check()
             
             await self.solver.solve_captcha(self.page)
+            await self._try_click_checkbox_captcha()
             
             submit = self.page.locator('button[type="submit"]')
             await self.human_like_click(submit)
@@ -88,6 +89,23 @@ class DutchyBot(FaucetBot):
         except Exception as e:
             logger.error(f"DutchyCorp login failed: {e}")
             return False
+
+    async def _try_click_checkbox_captcha(self) -> None:
+        """Fallback click for checkbox-style captchas (reCAPTCHA/hCaptcha)."""
+        try:
+            # Give captcha iframe time to render
+            await asyncio.sleep(2)
+            for frame in self.page.frames:
+                try:
+                    checkbox = frame.locator("input[type='checkbox'], div[role='checkbox']")
+                    if await checkbox.count() > 0 and await checkbox.first.is_visible():
+                        await checkbox.first.click()
+                        await asyncio.sleep(1)
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
     async def claim(self) -> ClaimResult:
         try:
