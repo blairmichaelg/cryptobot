@@ -846,8 +846,21 @@ class JobScheduler:
         6. Sleeps dynamically until the next job is ready or timeout occurs.
         """
         logger.info("Job Scheduler loop started.")
+        
+        # Initialize withdrawal jobs on first run
+        withdrawal_jobs_scheduled = False
+        
         while not self._stop_event.is_set():
             now = time.time()
+            
+            # Schedule withdrawal jobs once at startup
+            if not withdrawal_jobs_scheduled:
+                try:
+                    await self.schedule_withdrawal_jobs()
+                    withdrawal_jobs_scheduled = True
+                except Exception as e:
+                    logger.warning(f"Failed to schedule withdrawal jobs: {e}")
+                    withdrawal_jobs_scheduled = True  # Don't retry every loop
             
             # Maintenance tasks (heartbeat and session persistence)
             if now - self.last_heartbeat_time >= HEARTBEAT_INTERVAL_SECONDS:

@@ -151,6 +151,156 @@ result = await bot.withdraw_wrapper(page)
 # No manual tracking needed.
 ```
 
+## Automated Withdrawal Scheduling (New in Gen 3.0)
+
+The JobScheduler now includes automated withdrawal scheduling that intelligently manages when and how withdrawals are executed across all faucets.
+
+### Overview
+
+The orchestrator automatically schedules withdrawal jobs for all supported faucets based on:
+- **Earnings rate**: High-earning faucets checked more frequently (24h vs 72h)
+- **Off-peak timing**: Withdrawals preferred during low-fee hours (22:00-05:00 UTC, weekends)
+- **Balance thresholds**: Only withdraws when balance meets minimum threshold
+- **Network fees**: Defers withdrawals during high-fee periods
+- **Retry logic**: Exponential backoff (1h, 6h, 24h) with max 3 attempts
+
+### Features
+
+- ✅ **Automatic Scheduling**: Withdrawal jobs auto-created on scheduler startup
+- ✅ **Smart Timing**: Prefers off-peak hours for lower network fees
+- ✅ **Analytics Integration**: Uses earnings data to optimize scheduling frequency
+- ✅ **WalletDaemon Integration**: Checks network fees before executing
+- ✅ **Retry Logic**: Exponential backoff with configurable intervals
+- ✅ **Failure Tracking**: Logs failed withdrawals to analytics
+- ✅ **Priority Management**: Withdrawals run at low priority (don't interfere with claiming)
+
+### Configuration
+
+Add these settings to your `.env` or `BotSettings`:
+
+```python
+# Withdrawal Timing Strategy
+prefer_off_peak_withdrawals = True  # Prefer off-peak hours for withdrawals
+withdrawal_schedule = "off_peak"     # Options: immediate, off_peak, weekly_batch
+off_peak_hours = [0, 1, 2, 3, 4, 5, 22, 23]  # UTC hours (low network activity)
+
+# Retry Configuration
+withdrawal_retry_intervals = [3600, 21600, 86400]  # Retry intervals: 1h, 6h, 24h
+withdrawal_max_retries = 3  # Maximum retry attempts before marking as failed
+
+# Account Profiles (required for withdrawal scheduling)
+accounts = [
+    AccountProfile(faucet="firefaucet", username="user1", password="pass1", enabled=True),
+    AccountProfile(faucet="cointiply", username="user2", password="pass2", enabled=True),
+]
+```
+
+### Usage
+
+The scheduler automatically calls `schedule_withdrawal_jobs()` on startup. No manual intervention needed!
+
+```python
+from core.orchestrator import JobScheduler
+from core.config import BotSettings
+
+settings = BotSettings()
+scheduler = JobScheduler(settings, browser_manager, proxy_manager)
+
+# Start the scheduler - withdrawal jobs are auto-scheduled
+await scheduler.scheduler_loop()
+```
+
+### Manual Scheduling (Optional)
+
+You can also manually schedule withdrawal jobs:
+
+```python
+# Schedule withdrawal jobs for all supported faucets
+await scheduler.schedule_withdrawal_jobs()
+
+# Or execute a single withdrawal
+from core.config import AccountProfile
+
+profile = AccountProfile(faucet="firefaucet", username="user", password="pass")
+result = await scheduler.execute_consolidated_withdrawal("firefaucet", profile)
+
+if result.success:
+    print(f"Withdrawal successful: {result.status}")
+else:
+    print(f"Withdrawal failed: {result.status}")
+```
+
+### Withdrawal Job Lifecycle
+
+1. **Scheduling**: Jobs created on startup with 24-72h initial delay
+2. **Pre-Execution Checks**:
+   - Balance meets minimum threshold
+   - Current time is off-peak (if enabled)
+   - Network fees are acceptable (if WalletDaemon configured)
+3. **Execution**: Calls faucet's `withdraw_wrapper()` method
+4. **Analytics**: Logs result to WithdrawalAnalytics database
+5. **Retry Logic**: On failure, reschedules with exponential backoff
+6. **Completion**: Success or max retries reached
+
+### Scheduling Strategy
+
+The scheduler uses analytics to determine optimal withdrawal frequency:
+
+| Earnings Rate | Check Interval | Rationale |
+|---------------|---------------|-----------|
+| > 100 sat/h   | 24 hours      | High earner, check daily |
+| 50-100 sat/h  | 36 hours      | Medium earner, check every 1.5 days |
+| < 50 sat/h    | 72 hours      | Low earner, check every 3 days |
+
+### Off-Peak Timing
+
+When `prefer_off_peak_withdrawals=True`, withdrawals are deferred to optimal hours:
+
+- **Time**: 22:00-05:00 UTC (late night/early morning)
+- **Days**: Weekends (Saturday, Sunday)
+- **Benefit**: 20-50% lower network fees on average
+
+### Retry Behavior
+
+Failed withdrawals retry with exponential backoff:
+
+| Attempt | Delay    | Cumulative |
+|---------|----------|------------|
+| 1       | 1 hour   | 1h         |
+| 2       | 6 hours  | 7h         |
+| 3       | 24 hours | 31h        |
+
+After 3 failures, the withdrawal is marked as permanently failed and logged to analytics.
+
+### Monitoring
+
+Check withdrawal job status:
+
+```python
+# Get all withdrawal jobs in queue
+withdrawal_jobs = [j for j in scheduler.queue if "withdraw" in j.job_type.lower()]
+
+for job in withdrawal_jobs:
+    print(f"{job.name}: Next run at {datetime.fromtimestamp(job.next_run)}")
+    print(f"  Priority: {job.priority}, Retries: {job.retry_count}")
+```
+
+### Testing
+
+Run the withdrawal scheduling tests:
+
+```bash
+pytest tests/test_orchestrator.py::TestWithdrawalScheduling -v
+```
+
+9 comprehensive tests cover:
+- Job creation and scheduling
+- Off-peak time detection
+- Balance threshold checking
+- Retry logic with exponential backoff
+- Max retries enforcement
+- Analytics integration
+
 ## Recommendation Engine Rules
 
 The recommendation engine uses the following logic:
@@ -256,10 +406,12 @@ The module is designed to fail gracefully:
 Potential improvements for future versions:
 - Machine learning model for fee prediction
 - Integration with external price APIs for USD value tracking
-- Automated withdrawal scheduling based on recommendations
-- Batch withdrawal optimization
+- ~~Automated withdrawal scheduling based on recommendations~~ ✅ **Implemented in Gen 3.0**
+- Batch withdrawal optimization across multiple faucets
 - Email/webhook notifications for optimal withdrawal windows
 - Export to CSV/JSON for external analysis
+- Gas price prediction for ERC-20 tokens
+- Multi-signature wallet support
 
 ## API Reference
 
