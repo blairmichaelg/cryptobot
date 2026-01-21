@@ -97,9 +97,7 @@ fi
 cd "$TARGET_DIR"
 
 # Ensure we are on the right branch
-# For production, we might want 'main' or 'feature/consolidated-production-upgrade'
-# Using current checked out for now or forcing checkout
-BRANCH="feature/consolidated-production-upgrade"
+BRANCH="master"
 echo "Switching to branch $BRANCH..."
 git fetch
 git checkout $BRANCH
@@ -161,7 +159,7 @@ HEALTH_OUTPUT=$(az vm run-command invoke \
   --resource-group "$RESOURCE_GROUP" \
   --name "$VM_NAME" \
   --command-id RunShellScript \
-  --scripts "tail -20 ~/Repositories/cryptobot/faucet_bot.log" \
+    --scripts "tail -20 ~/Repositories/cryptobot/logs/production_run.log" \
   --output json)
 
 echo -e "${GREEN}Recent log output:${NC}"
