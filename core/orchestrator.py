@@ -416,7 +416,7 @@ class JobScheduler:
         1. Load faucet bot instance
         2. Check if balance meets threshold
         3. Check timing optimization (off-peak hours)
-        4. Execute withdraw() method via faucet's implementation
+        4. Execute withdraw() method via wrapper
         5. Log results to WithdrawalAnalytics
         
         Args:
@@ -480,7 +480,7 @@ class JobScheduler:
                 logger.info(f"Balance {current_balance} below threshold {min_threshold}. Deferring withdrawal.")
                 return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
             
-            # 3. Check timing optimization (off-peak hours for lower network fees)
+            # 3. Check timing optimization (off-peak hours when network usage is typically lower)
             if self.settings.prefer_off_peak_withdrawals:
                 if not self.is_off_peak_time():
                     logger.info(f"Not off-peak time. Deferring withdrawal for {faucet_name}")
