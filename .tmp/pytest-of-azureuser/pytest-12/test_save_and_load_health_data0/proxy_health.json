@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "timestamp": 1769104525.2408695,
+  "proxy_latency": {
+    "proxy1:8080": [
+      100.0,
+      150.0,
+      120.0
+    ],
+    "proxy2:8080": [
+      200.0,
+      250.0
+    ]
+  },
+  "proxy_failures": {
+    "proxy1:8080": 1,
+    "proxy2:8080": 2
+  },
+  "dead_proxies": [
+    "proxy3:8080"
+  ],
+  "proxy_cooldowns": {
+    "proxy2:8080": 1769104825.240866
+  }
+}
