@@ -94,3 +94,4 @@ setup_*.ps1
 *_backup.*
 proxies.txt
 verify_solver_proxy.py
+config/price_cache.json
