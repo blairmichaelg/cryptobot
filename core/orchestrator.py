@@ -415,8 +415,8 @@ class JobScheduler:
         Steps:
         1. Load faucet bot instance
         2. Check if balance meets threshold
-        3. Call WalletDaemon.should_withdraw_now() for timing
-        4. Execute withdraw() method
+        3. Check timing optimization (off-peak hours)
+        4. Execute withdraw() method (direct to Cake Wallet)
         5. Log results to WithdrawalAnalytics
         
         Args:
@@ -427,7 +427,6 @@ class JobScheduler:
             ClaimResult with withdrawal outcome
         """
         from core.registry import get_faucet_class
-        from core.wallet_manager import WalletDaemon
         from core.withdrawal_analytics import get_analytics
         from core.analytics import get_tracker
         from faucets.base import ClaimResult
@@ -481,38 +480,11 @@ class JobScheduler:
                 logger.info(f"Balance {current_balance} below threshold {min_threshold}. Deferring withdrawal.")
                 return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
             
-            # 3. Check timing with WalletDaemon if available
+            # 3. Check timing optimization (off-peak hours for lower network fees)
             if self.settings.prefer_off_peak_withdrawals:
-                # Determine cryptocurrency for this faucet
-                crypto = bot._get_cryptocurrency_for_faucet() if hasattr(bot, '_get_cryptocurrency_for_faucet') else "BTC"
-                
-                # Check if we have wallet daemon configured
-                if self.settings.wallet_rpc_urls and self.settings.electrum_rpc_user:
-                    try:
-                        wallet_daemon = WalletDaemon(
-                            self.settings.wallet_rpc_urls,
-                            self.settings.electrum_rpc_user,
-                            self.settings.electrum_rpc_pass
-                        )
-                        
-                        should_withdraw = await wallet_daemon.should_withdraw_now(
-                            crypto,
-                            int(current_balance),
-                            min_threshold
-                        )
-                        
-                        await wallet_daemon.close()
-                        
-                        if not should_withdraw:
-                            logger.info(f"WalletDaemon recommends deferring withdrawal for {faucet_name}")
-                            return ClaimResult(success=True, status="Deferred by WalletDaemon", next_claim_minutes=360)
-                    except Exception as e:
-                        logger.warning(f"WalletDaemon check failed: {e}. Proceeding with withdrawal.")
-                else:
-                    # Use simple off-peak check
-                    if not self.is_off_peak_time():
-                        logger.info(f"Not off-peak time. Deferring withdrawal for {faucet_name}")
-                        return ClaimResult(success=True, status="Waiting for Off-Peak", next_claim_minutes=60)
+                if not self.is_off_peak_time():
+                    logger.info(f"Not off-peak time. Deferring withdrawal for {faucet_name}")
+                    return ClaimResult(success=True, status="Waiting for Off-Peak", next_claim_minutes=60)
             
             # 4. Execute withdrawal
             result = await bot.withdraw_wrapper(page)
