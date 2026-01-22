@@ -159,8 +159,8 @@ class BrowserManager:
         # Comprehensive Anti-Fingerprinting Suite using StealthHub
         await context.add_init_script(StealthHub.get_stealth_script())
 
-        # Apply Resource Blocker
-        blocker = ResourceBlocker(block_images=True, block_media=True)
+        # Apply Resource Blocker using instance settings
+        blocker = ResourceBlocker(block_images=self.block_images, block_media=self.block_media)
         await context.route("**/*", blocker.handle_route)
         context.resource_blocker = blocker
         

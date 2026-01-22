@@ -136,8 +136,8 @@ class BotSettings(BaseSettings):
                 ua = UserAgent(browsers=['chrome', 'edge', 'firefox', 'safari'])
                 # Generate a pool of 100 random modern UAs
                 self.user_agents = [ua.random for _ in range(100)]
-            except ImportError:
-                # Fallback list if fake-useragent is not installed
+            except Exception:
+                # Fallback list if fake-useragent is not installed or can't reach its data source
                 self.user_agents = [
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",

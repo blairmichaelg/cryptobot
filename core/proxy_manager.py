@@ -393,8 +393,8 @@ class ProxyManager:
                     proxy=proxy_url
                 ) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        logger.debug(f"[OK] Proxy {proxy.ip}:{proxy.port} validated (origin: {data.get('origin', 'unknown')})")
+                        # Just check status, don't parse HTML as JSON
+                        logger.debug(f"[OK] Proxy {proxy.ip}:{proxy.port} validated (status 200)")
                         return True
                     else:
                         logger.warning(f"[WARN] Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")
