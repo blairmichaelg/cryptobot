@@ -226,6 +226,91 @@ This will:
 python meta.py health
 ```
 
+---
+
+## 📊 Profitability Analytics Dashboard
+
+The bot includes a comprehensive profitability analytics dashboard accessible via `meta.py`. This dashboard provides real-time insights into earnings, costs, ROI, and performance metrics.
+
+### Usage
+
+```bash
+# View profitability dashboard for the last 24 hours (default)
+python meta.py profitability
+
+# View profitability for the last 12 hours
+python meta.py profitability --hours 12
+
+# View profitability for the last 7 days
+python meta.py profitability --hours 168
+```
+
+### Dashboard Features
+
+The profitability dashboard displays:
+
+1. **Summary Metrics**
+   - Total earnings in USD (with real-time cryptocurrency price conversion)
+   - Total costs (captcha solving, proxies, etc.)
+   - Net profit and ROI percentage
+   - Total claims and success rate
+
+2. **Per-Faucet Performance**
+   - Claims breakdown (successful/total)
+   - Success rate percentage with color coding
+   - Earnings and costs per faucet
+   - Net profit and hourly earning rate
+
+3. **Monthly Projections**
+   - Projected daily and monthly income based on current performance
+   - Performance alerts for low success rates or negative ROI
+   - System health indicators
+
+4. **Cost Breakdown**
+   - Detailed breakdown of costs by faucet and type
+   - Average cost per service
+   - Total cost tracking
+
+5. **Withdrawal Performance**
+   - Recent withdrawal transactions
+   - Network and platform fees
+   - Net amounts received
+   - Transaction status tracking
+
+### Data Sources
+
+The dashboard aggregates data from:
+- `earnings_analytics.json` - Claim records and operational costs
+- `withdrawal_analytics.db` - Withdrawal transaction history
+- Real-time cryptocurrency prices via CoinGecko API
+
+### Example Output
+
+```
+================================================================================
+                    CRYPTOBOT PROFITABILITY DASHBOARD                          
+         Analysis Period: Last 24 hours | Generated: 2026-01-22 01:34:49       
+================================================================================
+
+╭────────────────────────────── Summary Metrics (Last 24h) ──────────────────╮
+│ Total Earnings:  $2.45 USD                                                 │
+│ Total Costs:     $0.58 USD                                                 │
+│ Net Profit:      $1.87 USD                                                 │
+│ ROI:             +322.41%                                                  │
+│ Total Claims:    195 (157 successful)                                      │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+                    Per-Faucet Performance (Last 24h)                         
+╭──────────────┬────────┬───────────┬──────────────┬────────────┬──────────╮
+│ Faucet       │ Claims │ Success % │ Earnings USD │ Net Profit │ Hourly   │
+├──────────────┼────────┼───────────┼──────────────┼────────────┼──────────┤
+│ freebitcoin  │  32/41 │     78.0% │      $0.92   │    $0.80   │ $0.03/hr │
+│ firefaucet   │  38/42 │     90.5% │      $0.78   │    $0.66   │ $0.03/hr │
+│ cointiply    │  41/45 │     91.1% │      $0.52   │    $0.39   │ $0.02/hr │
+│ faucetcrypto │  28/38 │     73.7% │      $0.23   │    $0.12   │ $0.01/hr │
+╰──────────────┴────────┴───────────┴──────────────┴────────────┴──────────╯
+```
+
 ## 🧠 Architecture Overview
 
 ### The Loop (`main.py`)

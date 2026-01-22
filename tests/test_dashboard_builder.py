@@ -129,7 +129,7 @@ class TestDashboardBuilder:
         assert dashboard.hours == 24
         assert dashboard.cutoff_time > 0
         assert dashboard.low_success_rate_threshold == 40.0
-        assert dashboard.min_claims_for_stats == 10
+        assert dashboard.min_claims_for_stats == 3
         assert dashboard.claims_data == []
         assert dashboard.costs_data == []
         assert dashboard.withdrawal_data == []

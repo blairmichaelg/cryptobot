@@ -68,7 +68,7 @@ class DashboardBuilder:
         
         # Configuration thresholds
         self.low_success_rate_threshold = 40.0  # %
-        self.min_claims_for_stats = 10
+        self.min_claims_for_stats = 3  # Minimum claims to show in stats (avoid noise from incomplete data)
         
     async def load_data(self) -> Tuple[bool, bool]:
         """
