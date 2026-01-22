@@ -416,7 +416,7 @@ class JobScheduler:
         1. Load faucet bot instance
         2. Check if balance meets threshold
         3. Check timing optimization (off-peak hours)
-        4. Execute withdraw() method (direct to Cake Wallet)
+        4. Execute withdraw() method via faucet's implementation
         5. Log results to WithdrawalAnalytics
         
         Args:
