@@ -79,8 +79,12 @@ class TestBotSettingsConfiguration:
         assert settings.max_concurrent_per_profile == 1
         assert settings.scheduler_tick_rate == 1.0
         assert settings.exploration_frequency_minutes == 30
-        assert len(settings.user_agents) == 15  # Updated to match actual default list
-        assert settings.enabled_faucets == ["fire_faucet", "cointiply", "dutchy"]
+        assert len(settings.user_agents) == 100  # fake_useragent generates 100 UAs
+        # Check enabled_faucets includes core ones
+        expected_faucets = ["fire_faucet", "cointiply", "dutchy", "litepick", "tronpick", 
+                           "dogepick", "solpick", "binpick", "bchpick", "tonpick", 
+                           "polygonpick", "dashpick", "ethpick", "usdpick"]
+        assert settings.enabled_faucets == expected_faucets
     
     def test_capsolver_api_key(self, monkeypatch):
         """Test CapSolver API key configuration."""

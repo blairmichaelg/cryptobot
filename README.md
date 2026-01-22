@@ -201,6 +201,35 @@ Verify if your local Electrum daemon is reachable:
 python main.py --wallet-check
 ```
 
+### Meta Management Commands
+
+The bot includes a unified management interface (`meta.py`) for common operations:
+
+```bash
+# GitHub workflow automation (sync, PR review, issue delegation)
+python meta.py workflow                      # Dry run (preview changes)
+python meta.py workflow --execute            # Execute workflow
+python meta.py workflow --execute --auto-merge  # Full automation
+
+# System health check
+python meta.py health
+
+# Profitability dashboard
+python meta.py profitability                 # Last 24 hours
+python meta.py profitability --hours 168     # Last 7 days
+
+# Repository sync
+python meta.py sync --merge --push
+
+# Other utilities
+python meta.py clean      # Cleanup temp files
+python meta.py audit      # Check project state
+python meta.py report     # Earnings report
+python meta.py dashboard  # Interactive dashboard
+```
+
+See [docs/GITHUB_WORKFLOW.md](docs/GITHUB_WORKFLOW.md) for complete workflow documentation.
+
 ---
 
 ### 5. Deployment (Azure VM / Linux)

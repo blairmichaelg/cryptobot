@@ -53,24 +53,28 @@ def test_profile():
 @pytest.mark.asyncio
 async def test_job_priority_ordering(mock_settings, mock_browser_manager, test_profile):
     """Test that jobs are executed in priority order."""
+    from unittest.mock import patch
+    
     scheduler = JobScheduler(mock_settings, mock_browser_manager)
     
-    # Create jobs with different priorities (no func parameter)
-    job1 = Job(priority=3, next_run=time.time(), name="Low Priority", profile=test_profile, 
-               faucet_type="test", job_type="claim_wrapper")
-    job2 = Job(priority=1, next_run=time.time(), name="High Priority", profile=test_profile,
-               faucet_type="test", job_type="claim_wrapper")
-    job3 = Job(priority=2, next_run=time.time(), name="Medium Priority", profile=test_profile,
-               faucet_type="test", job_type="claim_wrapper")
-    
-    scheduler.add_job(job1)
-    scheduler.add_job(job2)
-    scheduler.add_job(job3)
-    
-    # Verify queue is sorted by priority
-    assert scheduler.queue[0].priority == 1
-    assert scheduler.queue[1].priority == 2
-    assert scheduler.queue[2].priority == 3
+    # Mock get_faucet_priority to prevent dynamic adjustment
+    with patch.object(scheduler, 'get_faucet_priority', return_value=1.0):
+        # Add jobs with different priorities
+        job1 = Job(priority=2, next_run=time.time(), name="Low Priority", profile=test_profile,
+                   faucet_type="test", job_type="claim_wrapper")
+        job2 = Job(priority=1, next_run=time.time(), name="High Priority", profile=test_profile,
+                   faucet_type="test2", job_type="claim_wrapper")
+        job3 = Job(priority=3, next_run=time.time(), name="Lowest Priority", profile=test_profile,
+                   faucet_type="test3", job_type="claim_wrapper")
+        
+        scheduler.add_job(job1)
+        scheduler.add_job(job2)
+        scheduler.add_job(job3)
+        
+        # Verify queue is sorted by priority
+        assert scheduler.queue[0].priority == 1
+        assert scheduler.queue[1].priority == 2
+        assert scheduler.queue[2].priority == 3
 
 
 @pytest.mark.asyncio

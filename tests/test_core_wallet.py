@@ -611,6 +611,14 @@ class TestWalletDaemonBatchWithdraw:
             "error": None
         }
         
+        # Mock get_network_fee_estimate
+        fee_response = AsyncMock()
+        fee_response.status = 200
+        fee_response.json.return_value = {
+            "result": 10,  # satoshis per byte
+            "error": None
+        }
+        
         # Mock sendmany to return txid
         sendmany_response = AsyncMock()
         sendmany_response.status = 200
@@ -623,13 +631,17 @@ class TestWalletDaemonBatchWithdraw:
         post_ctx_validate.__aenter__.return_value = validate_response
         post_ctx_validate.__aexit__.return_value = None
         
+        post_ctx_fee = AsyncMock()
+        post_ctx_fee.__aenter__.return_value = fee_response
+        post_ctx_fee.__aexit__.return_value = None
+        
         post_ctx_sendmany = AsyncMock()
         post_ctx_sendmany.__aenter__.return_value = sendmany_response
         post_ctx_sendmany.__aexit__.return_value = None
         
         session_instance = AsyncMock()
-        # First call validates address, second call does sendmany
-        session_instance.post = MagicMock(side_effect=[post_ctx_validate, post_ctx_sendmany])
+        # Calls: validate_address, get_network_fee_estimate, sendmany
+        session_instance.post = MagicMock(side_effect=[post_ctx_validate, post_ctx_fee, post_ctx_sendmany])
         session_instance.__aenter__.return_value = session_instance
         session_instance.__aexit__.return_value = None
         

@@ -152,6 +152,7 @@ class TestCaptchaExtra:
     async def test_manual_solve_detection(self, mock_page):
         """Test manual solve polling."""
         solver = CaptchaSolver()
+        solver.headless = False  # Set non-headless to avoid early return
         mock_page.evaluate.side_effect = ["", "token"]
         with patch("asyncio.sleep", AsyncMock()):
             assert await solver._wait_for_human(mock_page, timeout=10) is True

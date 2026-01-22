@@ -147,9 +147,10 @@ def test_adbtc_get_jobs(mock_settings, mock_page):
     
     assert len(jobs) == 3, "AdBTC should have 3 jobs (claim + surf + withdraw)"
     
-    assert jobs[0].priority == 1
-    assert jobs[1].priority == 5
-    assert jobs[2].priority == 2
+    # jobs are returned as: Claim (1), Withdraw (5), Surf (2)
+    assert jobs[0].priority == 1  # Claim
+    assert jobs[1].priority == 5  # Withdraw
+    assert jobs[2].priority == 2  # Surf
     
     for job in jobs:
         assert isinstance(job.job_type, str)

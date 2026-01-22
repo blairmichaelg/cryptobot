@@ -125,6 +125,30 @@ class CryptobotMeta:
             else:
                 print("   Azure CLI not logged in or RG not found.")
 
+    def workflow(self, args):
+        """Run the complete GitHub workflow automation"""
+        print("[WORKFLOW] Running GitHub workflow automation...")
+        
+        # Build command
+        workflow_script = os.path.join(self.root_dir, "scripts", "github_workflow.py")
+        
+        if not os.path.exists(workflow_script):
+            print(f"   Error: Workflow script not found at {workflow_script}")
+            return
+        
+        cmd_args = ["python", workflow_script]
+        
+        if args.execute:
+            cmd_args.append("--execute")
+        
+        if args.auto_merge:
+            cmd_args.append("--auto-merge")
+        
+        # Run the workflow
+        result = subprocess.run(cmd_args, cwd=self.root_dir)
+        
+        return result.returncode
+
     def sync(self, args):
         """Sync with remote, merge PRs, and maintain a clean branch"""
         print("[SYNC] Syncing with remote repository...")
@@ -397,6 +421,11 @@ def main():
     audit_parser = subparsers.add_parser("audit", help="Check local and remote project state")
     audit_parser.add_argument("--full", action="store_true", help="Include Azure resource check")
 
+    # Workflow (GitHub automation)
+    workflow_parser = subparsers.add_parser("workflow", help="Run complete GitHub workflow (sync, review PRs, delegate issues)")
+    workflow_parser.add_argument("--execute", action="store_true", help="Execute changes (default is dry-run)")
+    workflow_parser.add_argument("--auto-merge", action="store_true", help="Automatically merge PRs with passing checks")
+
     # Sync
     sync_parser = subparsers.add_parser("sync", help="Synchronize with remote and merge approved PRs")
     sync_parser.add_argument("--merge", action="store_true", help="Automatically merge approved PRs")
@@ -436,7 +465,9 @@ def main():
     args = parser.parse_args()
     meta = CryptobotMeta()
 
-    if args.command == "clean":
+    if args.command == "workflow":
+        meta.workflow(args)
+    elif args.command == "clean":
         meta.clean(args)
     elif args.command == "audit":
         meta.audit(args)

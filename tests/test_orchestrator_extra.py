@@ -236,15 +236,18 @@ class TestOrchestratorExtra:
         scheduler = JobScheduler(mock_settings, mock_browser_manager)
         
         # 1. is_off_peak_time
-        from datetime import datetime
-        # Sunday at 2 AM
-        with patch("datetime.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2024, 1, 7, 2, 0) # Sunday
-            assert scheduler.is_off_peak_time() is True
+        from datetime import datetime, timezone
+        
+        # Sunday at 2 AM UTC (weekend + off-peak hours)
+        with patch("core.orchestrator.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2024, 1, 7, 2, 0, tzinfo=timezone.utc)  # Sunday
+            result = scheduler.is_off_peak_time()
+            assert result is True
             
-            # Monday at 10 AM
-            mock_dt.now.return_value = datetime(2024, 1, 8, 10, 0)
-            assert scheduler.is_off_peak_time() is False
+            # Monday at 10 AM UTC (not off-peak)
+            mock_dt.now.return_value = datetime(2024, 1, 8, 10, 0, tzinfo=timezone.utc)
+            result = scheduler.is_off_peak_time()
+            assert result is False
 
         # 2. get_faucet_priority (184-203)
         with patch("core.analytics.get_tracker") as mock_tracker:

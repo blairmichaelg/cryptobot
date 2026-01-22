@@ -75,8 +75,12 @@ captcha_balance_tracking.json
 
 # Debug and Test Scripts (root only)
 /debug_*.py
+/debug_*.txt
 /repro_*.py
 /test_*.py
+/test_*.log
+/test_*.txt
+task.md
 
 # Deployment
 bundle.zip
