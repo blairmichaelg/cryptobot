@@ -191,10 +191,61 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             captcha_nodes = None
 
+        try:
+            form_summaries = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('form')).map(form => ({
+                    id: form.id || null,
+                    name: form.name || null,
+                    action: form.action || null,
+                    method: form.method || null,
+                    inputs: Array.from(form.querySelectorAll('input')).map(el => ({
+                        type: el.type || null,
+                        name: el.name || null,
+                        id: el.id || null,
+                        placeholder: el.placeholder || null
+                    }))
+                }))
+                """
+            )
+        except Exception:
+            form_summaries = None
+
+        try:
+            int_captcha_html = await self.page.evaluate(
+                """
+                () => {
+                    const el = document.querySelector('#int_page_captchas');
+                    if (!el) return null;
+                    const html = el.innerHTML || '';
+                    return html.length > 2000 ? html.slice(0, 2000) + '...<truncated>' : html;
+                }
+                """
+            )
+        except Exception:
+            int_captcha_html = None
+
+        try:
+            login_form_html = await self.page.evaluate(
+                """
+                () => {
+                    const el = document.querySelector('#login_form');
+                    if (!el) return null;
+                    const html = el.innerHTML || '';
+                    return html.length > 2000 ? html.slice(0, 2000) + '...<truncated>' : html;
+                }
+                """
+            )
+        except Exception:
+            login_form_html = None
+
         logger.info("[FreeBitcoin] Login diagnostics (%s): inputs=%s", context, inputs)
         logger.info("[FreeBitcoin] Login diagnostics (%s): textareas=%s", context, textareas)
         logger.info("[FreeBitcoin] Login diagnostics (%s): iframes=%s", context, iframes)
         logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_nodes=%s", context, captcha_nodes)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): forms=%s", context, form_summaries)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): int_page_captchas_html=%s", context, int_captcha_html)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): login_form_html=%s", context, login_form_html)
 
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
