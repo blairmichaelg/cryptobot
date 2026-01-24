@@ -933,7 +933,15 @@ class JobScheduler:
         # Check proxy health
         healthy_proxies = 0
         if self.proxy_manager:
-            healthy_proxies = len([p for p in self.proxy_manager.proxies if p.healthy])
+            try:
+                now = time.time()
+                healthy_proxies = len([
+                    p for p in self.proxy_manager.proxies
+                    if self.proxy_manager._proxy_key(p) not in self.proxy_manager.dead_proxies
+                    and self.proxy_manager.proxy_cooldowns.get(self.proxy_manager._proxy_key(p), 0) <= now
+                ])
+            except Exception:
+                healthy_proxies = len(self.proxy_manager.proxies)
             if healthy_proxies < self.settings.low_proxy_threshold:
                 return OperationMode.LOW_PROXY
         
