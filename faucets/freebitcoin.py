@@ -280,6 +280,9 @@ class FreeBitcoinBot(FaucetBot):
             if twofa_field:
                 logger.warning("[FreeBitcoin] 2FA DETECTED! Manual intervention required.")
                 # Don't proceed automatically with 2FA
+                max_login_attempts = 2
+                for login_attempt in range(1, max_login_attempts + 1):
+                    error_text = None
                 return False
 
             # Check for CAPTCHA on login page
@@ -387,7 +390,7 @@ class FreeBitcoinBot(FaucetBot):
         
         Implements:
         - Retry logic for network failures
-        - Fallback selectors for robustness
+                    email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
         - Human-like behavior patterns
         - Comprehensive error logging
         
@@ -451,7 +454,12 @@ class FreeBitcoinBot(FaucetBot):
                 try:
                     await roll_btn.wait_for(state="visible", timeout=8000)
                     roll_visible = True
-                except Exception:
+                    solved = await self.solver.solve_captcha(self.page)
+                    if solved is False:
+                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
+                        return False
+                    await self.random_delay(1.5, 2.5)
+                    logger.debug("[FreeBitcoin] Login CAPTCHA solved")
                     roll_visible = False
 
                 if roll_visible:
@@ -523,7 +531,7 @@ class FreeBitcoinBot(FaucetBot):
                     logger.warning("Roll button not found (possibly hidden or blocked)")
                     return ClaimResult(
                         success=False,
-                        status="Roll Button Not Found",
+                            error_text = await error_elem.text_content()
                         next_claim_minutes=15,
                         balance=balance
                     )
