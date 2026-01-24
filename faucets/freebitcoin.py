@@ -247,132 +247,170 @@ class FreeBitcoinBot(FaucetBot):
             logger.warning("[FreeBitcoin] jQuery injection failed: %s", exc)
             return False
 
-        payload = {
-            "op": "login_new",
-            "btc_address": username,
-            "password": password,
-            "tfa_code": tfa_code or "",
-        }
-
-        try:
-            result = await self.page.evaluate(
-                """
-                (data) => new Promise((resolve) => {
-                    try {
-                        window.$.post('/', data)
-                            .done((resp) => resolve(resp))
-                            .fail((xhr, status, err) => resolve(`error:${status || err || 'unknown'}`));
-                    } catch (e) {
-                        resolve(`error:${e && e.message ? e.message : 'exception'}`);
-                    }
-                })
-                """,
-                payload
-            )
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] AJAX login failed: %s", exc)
-            return False
-
-        if not result or (isinstance(result, str) and result.startswith("error:")):
-            logger.warning("[FreeBitcoin] AJAX login failed: %s", str(result)[:200])
-            return False
-
-        parts = str(result).split(":")
-        if not parts or parts[0] != "s":
-            logger.warning("[FreeBitcoin] AJAX login response unexpected: %s", str(result)[:200])
-            return False
-
-        if len(parts) < 5:
-            logger.warning("[FreeBitcoin] AJAX login response missing fields: %s", str(result)[:200])
-            return False
-
-        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-        cookies = [
-            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        payloads = [
+            {
+                "op": "login",
+                "btc_address": username,
+                "password": password,
+                "2fa_code": tfa_code or "",
+            },
+            {
+                "op": "login_new",
+                "btc_address": username,
+                "password": password,
+                "tfa_code": tfa_code or "",
+            },
         ]
 
-        try:
-            await self.page.context.add_cookies(cookies)
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] Failed to set AJAX login cookies: %s", exc)
-            return False
+        for payload in payloads:
+            try:
+                result = await self.page.evaluate(
+                    """
+                    (data) => new Promise((resolve) => {
+                        try {
+                            window.$.post('/', data)
+                                .done((resp) => resolve(resp))
+                                .fail((xhr, status, err) => resolve(`error:${status || err || 'unknown'}`));
+                        } catch (e) {
+                            resolve(`error:${e && e.message ? e.message : 'exception'}`);
+                        }
+                    })
+                    """,
+                    payload
+                )
+            except Exception as exc:
+                logger.warning("[FreeBitcoin] AJAX login failed: %s", exc)
+                continue
 
-        try:
-            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-        except Exception:
-            pass
+            if not result or (isinstance(result, str) and result.startswith("error:")):
+                logger.warning("[FreeBitcoin] AJAX login failed: %s", str(result)[:200])
+                continue
 
-        return await self.is_logged_in()
+            parts = str(result).split(":")
+            if not parts or parts[0] != "s":
+                if await self._has_session_cookie():
+                    try:
+                        await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+                    except Exception:
+                        pass
+                    if await self.is_logged_in():
+                        return True
+                logger.warning("[FreeBitcoin] AJAX login response unexpected: %s", str(result)[:200])
+                continue
+
+            if len(parts) < 5:
+                logger.warning("[FreeBitcoin] AJAX login response missing fields: %s", str(result)[:200])
+                continue
+
+            expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+            cookies = [
+                {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            ]
+
+            try:
+                await self.page.context.add_cookies(cookies)
+            except Exception as exc:
+                logger.warning("[FreeBitcoin] Failed to set AJAX login cookies: %s", exc)
+                continue
+
+            try:
+                await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+
+            if await self.is_logged_in():
+                return True
+
+        return False
 
     async def _submit_login_via_fetch(self, username: str, password: str, tfa_code: str = "") -> bool:
         """Submit login using in-page fetch to mimic AJAX without jQuery."""
-        payload = {
-            "op": "login_new",
-            "btc_address": username,
-            "password": password,
-            "tfa_code": tfa_code or "",
-        }
-
-        try:
-            result = await self.page.evaluate(
-                """
-                (data) => {
-                    const body = new URLSearchParams();
-                    Object.entries(data).forEach(([k, v]) => body.append(k, v || ''));
-                    return fetch('/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body
-                    }).then(resp => resp.text()).catch(err => `error:${err && err.message ? err.message : 'fetch_failed'}`);
-                }
-                """,
-                payload
-            )
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] Fetch login failed: %s", exc)
-            return False
-
-        if not result or (isinstance(result, str) and result.startswith("error:")):
-            logger.warning("[FreeBitcoin] Fetch login failed: %s", str(result)[:200])
-            return False
-
-        parts = str(result).split(":")
-        if not parts or parts[0] != "s":
-            logger.warning("[FreeBitcoin] Fetch login response unexpected: %s", str(result)[:200])
-            return False
-
-        if len(parts) < 5:
-            logger.warning("[FreeBitcoin] Fetch login response missing fields: %s", str(result)[:200])
-            return False
-
-        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-        cookies = [
-            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        payloads = [
+            {
+                "op": "login",
+                "btc_address": username,
+                "password": password,
+                "2fa_code": tfa_code or "",
+            },
+            {
+                "op": "login_new",
+                "btc_address": username,
+                "password": password,
+                "tfa_code": tfa_code or "",
+            },
         ]
 
-        try:
-            await self.page.context.add_cookies(cookies)
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] Failed to set fetch login cookies: %s", exc)
-            return False
+        for payload in payloads:
+            try:
+                result = await self.page.evaluate(
+                    """
+                    (data) => {
+                        const body = new URLSearchParams();
+                        Object.entries(data).forEach(([k, v]) => body.append(k, v || ''));
+                        return fetch('/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body
+                        }).then(resp => resp.text()).catch(err => `error:${err && err.message ? err.message : 'fetch_failed'}`);
+                    }
+                    """,
+                    payload
+                )
+            except Exception as exc:
+                logger.warning("[FreeBitcoin] Fetch login failed: %s", exc)
+                continue
 
-        try:
-            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-        except Exception:
-            pass
+            if not result or (isinstance(result, str) and result.startswith("error:")):
+                logger.warning("[FreeBitcoin] Fetch login failed: %s", str(result)[:200])
+                continue
 
-        return await self.is_logged_in()
+            parts = str(result).split(":")
+            if not parts or parts[0] != "s":
+                if await self._has_session_cookie():
+                    try:
+                        await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+                    except Exception:
+                        pass
+                    if await self.is_logged_in():
+                        return True
+                logger.warning("[FreeBitcoin] Fetch login response unexpected: %s", str(result)[:200])
+                continue
+
+            if len(parts) < 5:
+                logger.warning("[FreeBitcoin] Fetch login response missing fields: %s", str(result)[:200])
+                continue
+
+            expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+            cookies = [
+                {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            ]
+
+            try:
+                await self.page.context.add_cookies(cookies)
+            except Exception as exc:
+                logger.warning("[FreeBitcoin] Failed to set fetch login cookies: %s", exc)
+                continue
+
+            try:
+                await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+
+            if await self.is_logged_in():
+                return True
+
+        return False
 
     async def _has_session_cookie(self) -> bool:
         try:
