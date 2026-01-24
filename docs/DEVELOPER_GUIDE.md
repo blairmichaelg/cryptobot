@@ -6,8 +6,9 @@ This guide outlines the standard operating procedures, architecture, and workflo
 > **CRITICAL CONTEXT**
 >
 > 1. **OS**: Development is on Windows (Git Bash/Powershell), Production is Linux (Azure VM).
-> 2. **Paths**: Always use `pathlib` for cross-platform compatibility.
-> 3. **Stealth**: Standardized on `Camoufox` with session-based proxy rotation.
+> 2. **Current Deployment**: System is NOT deployed to Azure - runs locally on Windows dev machine only.
+> 3. **Paths**: Always use `pathlib` for cross-platform compatibility.
+> 4. **Stealth**: Standardized on `Camoufox` with session-based proxy rotation.
 
 ## 1. Development Workflow
 
@@ -63,11 +64,17 @@ git pull origin master
 
 ## 3. Deployment (Azure VM)
 
-The production environment is an Azure VM running Ubuntu.
+**Current Status**: No active Azure VM deployment. System runs locally on Windows development machine.
+
+See [docs/DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md) for complete deployment documentation.
+
+### When Azure VM Deployment is Active
+
+The production environment is designed for an Azure VM running Ubuntu.
 
 ### Deployment Checklist
 
-1. **Code Sync**: Ensure `deploy/deploy.sh` is used to sync code.
+1. **Code Sync**: Use `deploy/deploy.sh` or `deploy/azure_deploy.sh` to sync code.
 2. **Dependency Update**: If `requirements.txt` changed, install updates on VM.
 3. **Service Restart**:
 
@@ -79,7 +86,27 @@ The production environment is an Azure VM running Ubuntu.
 
     ```bash
     python meta.py health
+    # OR from local machine:
+    ./deploy/vm_health.sh <resource-group> <vm-name>
     ```
+
+### Local Development (Current Mode)
+
+Run the bot locally for testing:
+
+```powershell
+# Standard run
+python main.py
+
+# Visible browser (for debugging)
+python main.py --visible
+
+# Single faucet test
+python main.py --single firefaucet
+
+# Health check
+python meta.py health
+```
 
 ## 4. Architecture Standards
 
@@ -98,6 +125,63 @@ The production environment is an Azure VM running Ubuntu.
 
 ## 5. Troubleshooting & Maintenance
 
+### Common Issues
+
+#### FreeBitcoin Login Failures
+**Status**: Known issue - 100% failure rate as of Jan 24, 2026
+
+**Symptoms**: 
+- "Login failed, recording analytics and returning" in logs
+- All FreeBitcoin claims return failed status
+
+**Potential Causes**:
+- Site selectors changed (needs investigation)
+- Invalid credentials
+- Anti-bot detection triggering
+- Proxy IP blocking
+
+**Debug Steps**:
+```powershell
+# Run with visible browser to see actual behavior
+python main.py --single freebitcoin --visible
+
+# Check logs for specific error
+Get-Content logs/production_run.log | Select-String "FreeBitcoin"
+```
+
+#### Pick.io Family Implementation
+**Status**: Incomplete - 10/11 faucets missing implementation
+
+**Working**: TronPick (reference implementation)
+**Missing**: LitePick, DogePick, SolPick, BchPick, BinPick, DashPick, EthPick, PolygonPick, TonPick, UsdPick
+
+**Implementation Pattern** (use TronPick as reference):
+1. Inherit from `PickFaucetBase`
+2. Set `base_url` in __init__
+3. Implement coin-specific methods (login is in base class)
+4. Add to `core/registry.py`
+
+### System Health
+
 - **Earnings**: Monitor `earnings_analytics.json`.
-- **Proxies**: Dead proxies are automatically rotated. Check `logs/faucet_bot.log` for "Proxy mismatch" warnings if issues persist.
+- **Proxies**: Check health with `python meta.py health` - Dead proxies are automatically rotated. 
+  - Current: 98/101 healthy, avg latency 1767ms
+  - Check `logs/faucet_bot.log` for "Proxy mismatch" warnings if issues persist.
 - **Browser**: If `Camoufox` fails to launch, check for zombie Firefox processes.
+- **Heartbeat**: File `logs/heartbeat.txt` should update every 60 seconds when system is running.
+
+### Performance Monitoring
+
+```powershell
+# Check current system health
+python meta.py health
+
+# View recent activity
+Get-Content logs/production_run.log -Tail 50
+
+# Check heartbeat
+Get-Content logs/heartbeat.txt
+
+# Analyze profitability (when enough data exists)
+python meta.py profitability
+```

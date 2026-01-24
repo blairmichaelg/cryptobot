@@ -43,12 +43,12 @@ This project is a sophisticated, modular automation system designed to harvest h
 | :--- | :--- | :--- | :--- |
 | **FireFaucet** | ✅ Active | Auto-claims, PTC, Daily Bonus, Shortlinks | Turnstile selection, custom PTC captcha |
 | **Cointiply** | ✅ Active | Hourly Roll, PTC Ads | Active focus required for PTC, unique image captcha |
-| **FreeBitco.in** | ✅ Active | "Golden Tier" Hourly Roll | Standardized extraction |
+| **FreeBitcoin** | ⚠️ Issues | "Golden Tier" Hourly Roll | Currently experiencing login failures - under investigation |
 | **DutchyCorp** | ⚠️ Limited | Auto-Rolls, Shortlinks, PTC | Proxy detection may block cloud IPs |
 | **FaucetCrypto** | ✅ Active | Faucet claims, PTC | Standardized extraction |
 | **CoinPayU** | ⚠️ Limited | Multi-coin faucet, Surf Ads | Proxy detection may block cloud IPs |
 | **AdBTC** | ⚠️ Limited | Surf Ads, Math captcha | Proxy detection may block cloud IPs |
-| **Pick.io Family** | ✅ Active | 11 faucets: LTC, TRX, DOGE, SOL, BNB, BCH, TON, MATIC, DASH, ETH, USDT | Automated registration available |
+| **Pick.io Family** | ⚠️ Partial | TronPick fully working; 10 others need implementation | TronPick is reference implementation |
 
 ---
 

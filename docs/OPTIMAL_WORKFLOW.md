@@ -28,9 +28,9 @@ Maintain a clean `master` branch by following these steps:
 
 ## 3. Azure & Deployment
 
-To maintain consistency and uptime on the production VM:
+**Current Status**: No active Azure VM deployment. See [DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md) for details.
 
-### **Verification Before Deploy**
+### For Local Development (Current Mode)
 
 Always run tests in headless mode locally first:
 
@@ -38,20 +38,63 @@ Always run tests in headless mode locally first:
 $env:HEADLESS="true"; pytest
 ```
 
-### **Deployment Steps**
+Run the bot:
 
-1. **Sync Code**: Use `deploy/deploy_vm.ps1` to push latest changes to the VM.
-2. **Update Deps**: Run `pip install -r requirements.txt` on the VM if dependencies changed.
+```powershell
+# Standard run
+python main.py
+
+# Debug mode (visible browser)
+python main.py --visible
+
+# Test specific faucet
+python main.py --single firefaucet
+```
+
+### When Azure VM is Deployed (Future)
+
+To maintain consistency and uptime on the production VM:
+
+#### **Verification Before Deploy**
+
+Always run tests in headless mode locally first:
+
+```powershell
+$env:HEADLESS="true"; pytest
+```
+
+#### **Deployment Steps**
+
+1. **Provision VM** (if not exists):
+   ```bash
+   az group create --name cryptobot-rg --location eastus
+   az vm create --resource-group cryptobot-rg --name cryptobot-vm \
+     --image Ubuntu2204 --size Standard_B2s \
+     --admin-username azureuser --generate-ssh-keys
+   ```
+
+2. **Deploy Code**:
+   ```bash
+   # Option A: Azure CLI-based deployment
+   ./deploy/azure_deploy.sh --resource-group cryptobot-rg --vm-name cryptobot-vm
+   
+   # Option B: PowerShell-based deployment
+   ./deploy/deploy_vm.ps1 -VmIp <IP> -SshKey ~/.ssh/id_rsa
+   ```
+
 3. **Restart Service**:
 
    ```bash
-   sudo systemctl restart faucet_worker
+   ssh azureuser@<VM-IP> "sudo systemctl restart faucet_worker"
    ```
 
 4. **Monitor Logs**: Keep an eye on the service log:
 
    ```bash
-   journalctl -u faucet_worker -f
+   ssh azureuser@<VM-IP> "journalctl -u faucet_worker -f"
+   
+   # OR use health check script
+   ./deploy/vm_health.sh cryptobot-rg cryptobot-vm
    ```
 
 ## 4. Profitability & Stealth
