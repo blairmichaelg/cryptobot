@@ -1,0 +1,23 @@
+[Unit]
+Description=Cryptobot Health Monitor Daemon
+After=network.target faucet_worker.service
+Wants=faucet_worker.service
+
+[Service]
+Type=simple
+User=azureuser
+WorkingDirectory=%h/Repositories/cryptobot
+EnvironmentFile=%h/Repositories/cryptobot/.env
+ExecStart=%h/Repositories/cryptobot/.venv/bin/python -m core.health_monitor --daemon --alert --restart --interval 60
+
+# Restart the health monitor if it crashes
+Restart=always
+RestartSec=30
+
+# Logging
+StandardOutput=append:%h/Repositories/cryptobot/logs/health_monitor.log
+StandardError=append:%h/Repositories/cryptobot/logs/health_monitor.log
+SyslogIdentifier=cryptobot-health
+
+[Install]
+WantedBy=multi-user.target
