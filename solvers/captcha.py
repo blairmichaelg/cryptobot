@@ -412,6 +412,23 @@ class CaptchaSolver:
                 if "k=" in src:
                     sitekey = src.split("k=")[1].split("&")[0]
 
+        # HTML fallback (data-sitekey / sitekey parameters)
+        if not method:
+            try:
+                html = await page.content()
+                for pattern in [
+                    r'data-sitekey="([0-9A-Za-z_-]{20,})"',
+                    r"data-sitekey='([0-9A-Za-z_-]{20,})'",
+                    r"sitekey=([0-9A-Za-z_-]{20,})",
+                ]:
+                    match = re.search(pattern, html)
+                    if match:
+                        method = "turnstile"
+                        sitekey = match.group(1)
+                        break
+            except Exception:
+                pass
+
         # Image Captcha Detection (Fragmented/Custom)
         if not method:
              # Check for image captchas that might need coordinates (e.g. Cointiply/Freebitco.in custom ones)
