@@ -251,7 +251,13 @@ class FreeBitcoinBot(FaucetBot):
                         const el = document.querySelector('#int_page_captchas');
                         return el ? el.children.length : null;
                     })(),
-                    login_button_exists: !!document.querySelector('#login_button')
+                    login_button_exists: !!document.querySelector('#login_button'),
+                    login_button_onclick: (() => {
+                        const btn = document.querySelector('#login_button');
+                        return btn ? btn.getAttribute('onclick') : null;
+                    })(),
+                    has_do_login: typeof do_login !== 'undefined',
+                    has_login_function: typeof login !== 'undefined'
                 })
                 """
             )
