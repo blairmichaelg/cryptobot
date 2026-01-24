@@ -2,6 +2,7 @@ from .base import FaucetBot, ClaimResult
 from core.extractor import DataExtractor
 import logging
 import asyncio
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,63 @@ class FreeBitcoinBot(FaucetBot):
             return True
         except Exception:
             return False
+
+    async def _submit_login_via_request(self, username: str, password: str, tfa_code: str = "") -> bool:
+        """Submit login via direct POST and set cookies if successful."""
+        try:
+            response = await self.page.request.post(
+                f"{self.base_url}/",
+                data={
+                    "op": "login_new",
+                    "btc_address": username,
+                    "password": password,
+                    "tfa_code": tfa_code or "",
+                },
+                timeout=30000,
+            )
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] Direct login request failed: %s", exc)
+            return False
+
+        try:
+            text = (await response.text()) or ""
+        except Exception:
+            text = ""
+
+        if not text:
+            logger.warning("[FreeBitcoin] Direct login response empty")
+            return False
+
+        parts = text.split(":")
+        if not parts or parts[0] != "s":
+            logger.warning("[FreeBitcoin] Direct login failed: %s", text[:200])
+            return False
+
+        if len(parts) < 5:
+            logger.warning("[FreeBitcoin] Direct login response missing fields: %s", text[:200])
+            return False
+
+        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+        cookies = [
+            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        ]
+
+        try:
+            await self.page.context.add_cookies(cookies)
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] Failed to set login cookies: %s", exc)
+            return False
+
+        try:
+            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+
+        return await self.is_logged_in()
 
     async def _log_login_diagnostics(self, context: str) -> None:
         """Log login page diagnostics to identify captcha/input elements."""
@@ -513,6 +571,20 @@ class FreeBitcoinBot(FaucetBot):
             twofa_field = await self._find_selector_any_frame(twofa_selectors, "2FA field", timeout=2000)
             if twofa_field:
                 logger.warning("[FreeBitcoin] 2FA field present. Proceeding without 2FA unless configured.")
+
+            username = creds.get("username") or creds.get("email") or ""
+            password = creds.get("password") or ""
+
+            try:
+                has_jquery = await self.page.evaluate("() => typeof window.$ !== 'undefined'")
+            except Exception:
+                has_jquery = True
+
+            if not has_jquery:
+                logger.warning("[FreeBitcoin] jQuery not detected; attempting direct login request")
+                if await self._submit_login_via_request(username, password):
+                    logger.info("✅ [FreeBitcoin] Login successful via direct request")
+                    return True
 
             # Check for CAPTCHA on login page
             logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
