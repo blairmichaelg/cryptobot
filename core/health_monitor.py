@@ -31,6 +31,13 @@ try:
 except ImportError:
     AZURE_MONITOR_AVAILABLE = False
 
+# Try to import requests for webhook notifications
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -375,6 +382,138 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Failed to send Azure metrics: {e}")
     
+    def send_webhook_notification(self, result: HealthCheckResult):
+        """
+        Send notification to webhook URL (Slack, Discord, Teams, etc.)
+        
+        Args:
+            result: Health check result
+        """
+        webhook_url = os.getenv('ALERT_WEBHOOK_URL')
+        if not webhook_url or not REQUESTS_AVAILABLE:
+            return
+        
+        # Only send notifications for WARNING and CRITICAL
+        if result.status == HealthStatus.HEALTHY:
+            return
+        
+        try:
+            # Determine emoji and color based on status
+            if result.status == HealthStatus.CRITICAL:
+                emoji = "🔴"
+                color = "#FF0000"
+            else:  # WARNING
+                emoji = "⚠️"
+                color = "#FFA500"
+            
+            # Build message
+            message = f"{emoji} **Cryptobot Health Alert - {result.status.value}**\n\n"
+            message += f"**Timestamp:** {result.timestamp}\n"
+            message += f"**Service Active:** {'✅ Yes' if result.service_active else '❌ No'}\n"
+            message += f"**Service Running:** {'✅ Yes' if result.service_running else '❌ No'}\n"
+            message += f"**Disk Usage:** {result.disk_usage_percent}%\n"
+            message += f"**Memory Usage:** {result.memory_usage_percent}%\n"
+            message += f"**Heartbeat Age:** {result.heartbeat_age_seconds}s\n"
+            
+            if result.alerts:
+                message += f"\n**Alerts:**\n"
+                for alert in result.alerts:
+                    message += f"• {alert}\n"
+            
+            # Try Slack format first (most common)
+            slack_payload = {
+                "attachments": [{
+                    "color": color,
+                    "title": f"{emoji} Cryptobot Health Alert",
+                    "text": message,
+                    "footer": "Cryptobot Health Monitor",
+                    "ts": int(datetime.now().timestamp())
+                }]
+            }
+            
+            # Send to webhook
+            response = requests.post(
+                webhook_url,
+                json=slack_payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info("Sent webhook notification")
+            else:
+                logger.warning(f"Webhook returned status {response.status_code}")
+                
+        except Exception as e:
+            logger.error(f"Failed to send webhook notification: {e}")
+    
+    def send_email_notification(self, result: HealthCheckResult):
+        """
+        Send email notification (requires SMTP configuration)
+        
+        Args:
+            result: Health check result
+        """
+        # Only send notifications for WARNING and CRITICAL
+        if result.status == HealthStatus.HEALTHY:
+            return
+        
+        email_to = os.getenv('ALERT_EMAIL')
+        if not email_to:
+            return
+        
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Get SMTP configuration from environment
+            smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+            smtp_port = int(os.getenv('SMTP_PORT', '587'))
+            smtp_user = os.getenv('SMTP_USER')
+            smtp_pass = os.getenv('SMTP_PASSWORD')
+            
+            if not smtp_user or not smtp_pass:
+                logger.warning("SMTP credentials not configured, skipping email notification")
+                return
+            
+            # Build email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[{result.status.value}] Cryptobot Health Alert"
+            msg['From'] = smtp_user
+            msg['To'] = email_to
+            
+            # Build email body
+            text = f"""
+Cryptobot Health Alert
+
+Status: {result.status.value}
+Timestamp: {result.timestamp}
+
+Service Active: {'Yes' if result.service_active else 'No'}
+Service Running: {'Yes' if result.service_running else 'No'}
+Disk Usage: {result.disk_usage_percent}%
+Memory Usage: {result.memory_usage_percent}%
+Heartbeat Age: {result.heartbeat_age_seconds}s
+
+Alerts:
+"""
+            for alert in result.alerts:
+                text += f"  • {alert}\n"
+            
+            part = MIMEText(text, 'plain')
+            msg.attach(part)
+            
+            # Send email
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+            
+            logger.info("Sent email notification")
+            
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {e}")
+    
     def restart_service_with_backoff(self) -> bool:
         """
         Restart the service with exponential backoff
@@ -434,7 +573,7 @@ class HealthMonitor:
         Run a single health check
         
         Args:
-            send_alerts: Send alerts to Azure Monitor
+            send_alerts: Send alerts to Azure Monitor, webhook, and email
             auto_restart: Automatically restart service if critical
             
         Returns:
@@ -442,9 +581,17 @@ class HealthMonitor:
         """
         result = self.perform_health_check()
         
-        # Send to Azure Monitor if enabled
-        if send_alerts and self.azure_enabled:
-            self.send_azure_metrics(result)
+        # Send alerts if enabled
+        if send_alerts:
+            # Send to Azure Monitor if enabled
+            if self.azure_enabled:
+                self.send_azure_metrics(result)
+            
+            # Send webhook notification
+            self.send_webhook_notification(result)
+            
+            # Send email notification
+            self.send_email_notification(result)
         
         # Auto-restart if critical and enabled
         if auto_restart and result.status == HealthStatus.CRITICAL:

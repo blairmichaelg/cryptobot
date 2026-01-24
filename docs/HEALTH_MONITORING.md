@@ -280,22 +280,88 @@ The health monitor automatically generates alerts for:
 
 ### Manual Alerting
 
-To receive alerts via email or webhook:
+Configure webhook and email notifications in .env:
 
-1. **Configure environment variables** in .env:
+#### Webhook Notifications (Slack, Discord, Teams)
+
+1. **Slack Webhook Setup:**
    ```bash
-   ALERT_EMAIL=your@email.com
+   # Create an Incoming Webhook in Slack:
+   # 1. Go to https://api.slack.com/apps
+   # 2. Create a new app or select existing
+   # 3. Add "Incoming Webhooks" feature
+   # 4. Create webhook for a channel
+   # 5. Copy the webhook URL
+   
+   # Add to .env:
    ALERT_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
    ```
 
-2. **Implement webhook notification** (TODO in health_monitor.py):
-   ```python
-   # Add to send_alerts() method
-   import requests
-   webhook_url = os.getenv('ALERT_WEBHOOK_URL')
-   if webhook_url:
-       requests.post(webhook_url, json={'text': alert_message})
+2. **Discord Webhook Setup:**
+   ```bash
+   # Create webhook in Discord:
+   # 1. Go to Server Settings → Integrations → Webhooks
+   # 2. Create New Webhook
+   # 3. Copy webhook URL
+   # 4. Append "/slack" to the URL for Slack-compatible format
+   
+   # Add to .env:
+   ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN/slack
    ```
+
+3. **Microsoft Teams Webhook Setup:**
+   ```bash
+   # Create webhook in Teams:
+   # 1. Go to channel → Connectors → Incoming Webhook
+   # 2. Configure and create
+   # 3. Copy webhook URL
+   
+   # Add to .env:
+   ALERT_WEBHOOK_URL=https://outlook.office.com/webhook/YOUR_WEBHOOK_URL
+   ```
+
+#### Email Notifications
+
+1. **Gmail SMTP Setup:**
+   ```bash
+   # Enable "App Passwords" in Google Account:
+   # 1. Go to Google Account → Security
+   # 2. Enable 2-Step Verification
+   # 3. Generate App Password for "Mail"
+   
+   # Add to .env:
+   ALERT_EMAIL=recipient@example.com
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=your-gmail@gmail.com
+   SMTP_PASSWORD=your-app-password
+   ```
+
+2. **Other SMTP Providers:**
+   ```bash
+   # Outlook/Office365:
+   SMTP_HOST=smtp-mail.outlook.com
+   SMTP_PORT=587
+   
+   # SendGrid:
+   SMTP_HOST=smtp.sendgrid.net
+   SMTP_PORT=587
+   SMTP_USER=apikey
+   SMTP_PASSWORD=your-sendgrid-api-key
+   
+   # Mailgun:
+   SMTP_HOST=smtp.mailgun.org
+   SMTP_PORT=587
+   ```
+
+3. **Test Notifications:**
+   ```bash
+   # Run a health check with alerts enabled
+   python -m core.health_monitor --check --alert
+   
+   # This will send notifications if status is WARNING or CRITICAL
+   ```
+
 
 ## Auto-Restart Behavior
 
