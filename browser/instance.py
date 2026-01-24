@@ -58,8 +58,10 @@ class BrowserManager:
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
         kwargs = {
             "headless": self.headless,
-            "geoip": True,
-            "humanize": True,
+            # Disable geoip and humanize for server environments to avoid fingerprint generation errors
+            # Re-enable on local dev if needed
+            "geoip": False if self.headless else True,
+            "humanize": False if self.headless else True,
             "block_images": self.block_images,
             "fonts": ["Arial", "Courier New", "Georgia", "Times New Roman", "Verdana"] # Fix for Camoufox TypeError
         }
