@@ -102,6 +102,33 @@ class FreeBitcoinBot(FaucetBot):
         logger.warning(f"[FreeBitcoin] Could not find {element_name} in any frame. Tried selectors: {selectors}")
         return None
 
+    async def _wait_for_captcha_token(self, timeout: int = 15000) -> bool:
+        """Wait for a captcha token to be injected into the page."""
+        try:
+            await self.page.wait_for_function(
+                """
+                () => {
+                    const selectors = [
+                        'textarea[name="g-recaptcha-response"]',
+                        'textarea[name="h-captcha-response"]',
+                        'input[name="cf-turnstile-response"]',
+                        'textarea[name="cf-turnstile-response"]'
+                    ];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el && el.value && el.value.trim().length > 0) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                """,
+                timeout=timeout
+            )
+            return True
+        except Exception:
+            return False
+
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
@@ -280,9 +307,6 @@ class FreeBitcoinBot(FaucetBot):
             if twofa_field:
                 logger.warning("[FreeBitcoin] 2FA DETECTED! Manual intervention required.")
                 # Don't proceed automatically with 2FA
-                max_login_attempts = 2
-                for login_attempt in range(1, max_login_attempts + 1):
-                    error_text = None
                 return False
 
             # Check for CAPTCHA on login page
@@ -295,7 +319,13 @@ class FreeBitcoinBot(FaucetBot):
                     )
                 except Exception:
                     pass
-                await self.solver.solve_captcha(self.page)
+                solved = await self.solver.solve_captcha(self.page)
+                if solved is False:
+                    logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
+                    return False
+                if not await self._wait_for_captcha_token():
+                    logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
+                await self.random_delay(1.5, 2.5)
                 logger.debug("[FreeBitcoin] Login CAPTCHA solved")
             except Exception as captcha_err:
                 logger.debug(f"[FreeBitcoin] No CAPTCHA required or solve failed: {captcha_err}")
@@ -392,7 +422,12 @@ class FreeBitcoinBot(FaucetBot):
             if error_text_norm and any(token in error_text_norm for token in ["captcha", "expired", "try again"]):
                 try:
                     logger.info("[FreeBitcoin] Captcha error detected. Attempting re-solve and re-submit...")
-                    await self.solver.solve_captcha(self.page)
+                    solved = await self.solver.solve_captcha(self.page)
+                    if solved is False:
+                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed on retry")
+                        return False
+                    if not await self._wait_for_captcha_token():
+                        logger.warning("[FreeBitcoin] CAPTCHA token not detected after retry solve")
                     await self.random_delay(1.0, 2.0)
                     submit_btn_retry = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
                     if submit_btn_retry:
