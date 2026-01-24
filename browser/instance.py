@@ -77,6 +77,50 @@ class BrowserManager:
         except Exception as e:
             logger.error("Failed to safely write %s: %s", filepath, e)
 
+    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
+        """Read JSON with fallback to backups if corrupted."""
+        candidates = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                continue
+        return None
+
+    def _normalize_proxy_key(self, proxy: str) -> str:
+        if not proxy:
+            return ""
+        return proxy.split("://", 1)[1] if "://" in proxy else proxy
+
+    def _is_proxy_blacklisted(self, proxy: str) -> bool:
+        """Check if a proxy is dead or in cooldown based on proxy_health.json."""
+        try:
+            health_file = CONFIG_DIR / "proxy_health.json"
+            data = self._safe_json_read(str(health_file))
+            if not data:
+                return False
+
+            key = self._normalize_proxy_key(proxy)
+            if not key:
+                return False
+
+            dead = set(data.get("dead_proxies", []))
+            if key in dead:
+                return True
+
+            cooldowns = data.get("proxy_cooldowns", {})
+            cooldown_until = cooldowns.get(key)
+            if cooldown_until and cooldown_until > time.time():
+                return True
+
+        except Exception as e:
+            logger.debug("Failed to read proxy health data: %s", e)
+
+        return False
+
     async def launch(self):
         """Launches a highly stealthy Camoufox instance."""
         logger.info("Launching Camoufox (Headless: %s)...", self.headless)
@@ -124,11 +168,23 @@ class BrowserManager:
         # Load or generate persistent fingerprint settings for this profile
         locale = None
         timezone_id = None
+        languages = None
+        platform_name = None
+        viewport_width = None
+        viewport_height = None
+        device_scale_factor = None
+        audio_seed = None
         if profile_name:
             fingerprint = await self.load_profile_fingerprint(profile_name)
             if fingerprint:
                 locale = fingerprint.get("locale")
                 timezone_id = fingerprint.get("timezone_id")
+                languages = fingerprint.get("languages")
+                platform_name = fingerprint.get("platform")
+                viewport_width = fingerprint.get("viewport_width")
+                viewport_height = fingerprint.get("viewport_height")
+                device_scale_factor = fingerprint.get("device_scale_factor")
+                audio_seed = fingerprint.get("audio_seed")
                 logger.debug("🔒 Using persistent fingerprint for %s: %s, %s", profile_name, locale, timezone_id)
         
         # Generate new fingerprint if not found
@@ -142,10 +198,31 @@ class BrowserManager:
         if not locale or not timezone_id:
             locale = random.choice(["en-US", "en-GB", "en-CA", "en-AU"])
             timezone_id = random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"])
-            
+
+            if not languages:
+                languages = [locale, locale.split("-")[0]]
+            if not platform_name:
+                platform_name = random.choice(["Win32", "MacIntel", "Linux x86_64"])
+            if viewport_width is None or viewport_height is None:
+                viewport_width, viewport_height = dims
+            if device_scale_factor is None:
+                device_scale_factor = random.choice([1.0, 1.25, 1.5])
+
             # Save for future use (canvas_seed and gpu_index will be auto-generated)
             if profile_name:
-                await self.save_profile_fingerprint(profile_name, locale, timezone_id)
+                await self.save_profile_fingerprint(
+                    profile_name,
+                    locale,
+                    timezone_id,
+                    canvas_seed=canvas_seed,
+                    gpu_index=gpu_index,
+                    audio_seed=audio_seed,
+                    languages=languages,
+                    platform=platform_name,
+                    viewport_width=viewport_width,
+                    viewport_height=viewport_height,
+                    device_scale_factor=device_scale_factor
+                )
                 logger.info("📌 Generated and saved fingerprint for %s: %s, %s", profile_name, locale, timezone_id)
         else:
             # Load canvas and WebGL params from existing fingerprint
@@ -154,14 +231,43 @@ class BrowserManager:
             raw_gpu_index = fingerprint_data.get("gpu_index")
             canvas_seed = int(raw_canvas_seed) if raw_canvas_seed is not None else None
             gpu_index = int(raw_gpu_index) if raw_gpu_index is not None else None
+            raw_audio_seed = fingerprint_data.get("audio_seed")
+            audio_seed = int(raw_audio_seed) if raw_audio_seed is not None else None
 
         if profile_name and (locale_override or timezone_override):
-            await self.save_profile_fingerprint(profile_name, locale, timezone_id, canvas_seed=canvas_seed, gpu_index=gpu_index)
+            await self.save_profile_fingerprint(
+                profile_name,
+                locale,
+                timezone_id,
+                canvas_seed=canvas_seed,
+                gpu_index=gpu_index,
+                audio_seed=audio_seed,
+                languages=languages,
+                platform=platform_name,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                device_scale_factor=device_scale_factor
+            )
+
+        if profile_name and any(v is None for v in [audio_seed, languages, platform_name, viewport_width, viewport_height, device_scale_factor]):
+            await self.save_profile_fingerprint(
+                profile_name,
+                locale,
+                timezone_id,
+                canvas_seed=canvas_seed,
+                gpu_index=gpu_index,
+                audio_seed=audio_seed,
+                languages=languages,
+                platform=platform_name,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                device_scale_factor=device_scale_factor
+            )
 
         context_args = {
             "user_agent": user_agent or StealthHub.get_human_ua(self.user_agents),
-            "viewport": {"width": dims[0], "height": dims[1]},
-            "device_scale_factor": random.choice([1.0, 1.25, 1.5]),
+            "viewport": {"width": viewport_width or dims[0], "height": viewport_height or dims[1]},
+            "device_scale_factor": device_scale_factor if device_scale_factor is not None else random.choice([1.0, 1.25, 1.5]),
             "permissions": ["geolocation", "notifications"],
             "locale": locale,
             "timezone_id": timezone_id,
@@ -172,6 +278,12 @@ class BrowserManager:
             # Load existing binding
             saved_proxy = await self.load_proxy_binding(profile_name)
             
+            if saved_proxy:
+                if self._is_proxy_blacklisted(saved_proxy):
+                    logger.warning("⚠️ Sticky proxy for %s is dead/cooldown. Clearing binding: %s", profile_name, saved_proxy)
+                    await self.remove_proxy_binding(profile_name)
+                    saved_proxy = None
+                
             if saved_proxy:
                 # Sticky session: Use saved proxy unless a new one is explicitly requested (Rotation)
                 if proxy and proxy != saved_proxy:
@@ -212,14 +324,30 @@ class BrowserManager:
             canvas_seed = hash(profile_name) % 1000000
         if gpu_index is None and profile_name:
             gpu_index = hash(profile_name + "_gpu") % 13
+        if audio_seed is None and profile_name:
+            audio_seed = hash(profile_name + "_audio") % 1000000
         
         # Use defaults for anonymous profiles
         if canvas_seed is None:
             canvas_seed = 12345
         if gpu_index is None:
             gpu_index = 0
+        if audio_seed is None:
+            audio_seed = 98765
         
-        await context.add_init_script(StealthHub.get_stealth_script(canvas_seed=canvas_seed, gpu_index=gpu_index))
+        if not languages:
+            languages = [locale or "en-US", (locale or "en-US").split("-")[0]]
+        if not platform_name:
+            platform_name = "Win32"
+        await context.add_init_script(
+            StealthHub.get_stealth_script(
+                canvas_seed=canvas_seed,
+                gpu_index=gpu_index,
+                audio_seed=audio_seed,
+                languages=languages,
+                platform=platform_name
+            )
+        )
         logger.debug("🎨 Injected fingerprint: canvas_seed=%s, gpu_index=%s", canvas_seed, gpu_index)
 
         # Apply Resource Blocker using instance settings
@@ -305,11 +433,8 @@ class BrowserManager:
     def _load_cookie_profile(self) -> dict:
         profile_file = CONFIG_DIR / "cookie_profiles.json"
         if os.path.exists(profile_file):
-            try:
-                with open(profile_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
+            data = self._safe_json_read(str(profile_file))
+            return data or {}
         return {}
 
     def _save_cookie_profile(self, data: dict) -> None:
@@ -385,24 +510,47 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"Failed to save proxy binding for {profile_name}: {e}")
 
+    async def remove_proxy_binding(self, profile_name: str):
+        """Remove a sticky proxy binding for a profile."""
+        try:
+            bindings_file = CONFIG_DIR / "proxy_bindings.json"
+            if not os.path.exists(bindings_file):
+                return
+            data = self._safe_json_read(str(bindings_file)) or {}
+            if profile_name in data:
+                data.pop(profile_name, None)
+                self._safe_json_write(str(bindings_file), data)
+        except Exception as e:
+            logger.error(f"Failed to remove proxy binding for {profile_name}: {e}")
+
     async def load_proxy_binding(self, profile_name: str) -> Optional[str]:
         """Load the sticky proxy for a profile."""
         try:
             bindings_file = CONFIG_DIR / "proxy_bindings.json"
             if os.path.exists(bindings_file):
-                with open(bindings_file, "r") as f:
-                    try:
-                        data = json.load(f)
-                        return data.get(profile_name)
-                    except json.JSONDecodeError:
-                        pass
+                data = self._safe_json_read(str(bindings_file))
+                if data:
+                    return data.get(profile_name)
             return None
         except Exception as e:
             logger.error(f"Failed to load proxy binding for {profile_name}: {e}")
             return None
 
-    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str, canvas_seed: Optional[int] = None, gpu_index: Optional[int] = None):
-        """Save the fingerprint settings for a profile including canvas and WebGL parameters."""
+    async def save_profile_fingerprint(
+        self,
+        profile_name: str,
+        locale: str,
+        timezone_id: str,
+        canvas_seed: Optional[int] = None,
+        gpu_index: Optional[int] = None,
+        audio_seed: Optional[int] = None,
+        languages: Optional[List[str]] = None,
+        platform: Optional[str] = None,
+        viewport_width: Optional[int] = None,
+        viewport_height: Optional[int] = None,
+        device_scale_factor: Optional[float] = None
+    ):
+        """Save the fingerprint settings for a profile including canvas, WebGL, and audio parameters."""
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
             data = {}
@@ -421,12 +569,27 @@ class BrowserManager:
             if gpu_index is None:
                 # Use hash to select GPU from 13 available configs (0-12)
                 gpu_index = hash(profile_name + "_gpu") % 13
+
+            if audio_seed is None:
+                audio_seed = hash(profile_name + "_audio") % 1000000
+
+            if languages is None:
+                languages = [locale, locale.split("-")[0]]
+
+            if platform is None:
+                platform = "Win32"
             
             data[profile_name] = {
                 "locale": locale,
                 "timezone_id": timezone_id,
                 "canvas_seed": canvas_seed,
-                "gpu_index": gpu_index
+                "gpu_index": gpu_index,
+                "audio_seed": audio_seed,
+                "languages": languages,
+                "platform": platform,
+                "viewport_width": viewport_width,
+                "viewport_height": viewport_height,
+                "device_scale_factor": device_scale_factor
             }
 
             self._safe_json_write(str(fingerprint_file), data)
@@ -440,12 +603,9 @@ class BrowserManager:
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
             if os.path.exists(fingerprint_file):
-                with open(fingerprint_file, "r") as f:
-                    try:
-                        data = json.load(f)
-                        return data.get(profile_name)
-                    except json.JSONDecodeError:
-                        pass
+                data = self._safe_json_read(str(fingerprint_file))
+                if data:
+                    return data.get(profile_name)
             return None
         except Exception as e:
             logger.error(f"Failed to load fingerprint for {profile_name}: {e}")

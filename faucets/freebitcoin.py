@@ -21,6 +21,10 @@ class FreeBitcoinBot(FaucetBot):
             "#balance_small",
             "#balance_small span",
             ".balance-amount",
+            "a[href*='logout']",
+            "a:has-text('Logout')",
+            "#logout",
+            ".logout",
         ]
         for selector in balance_selectors:
             try:
@@ -74,6 +78,9 @@ class FreeBitcoinBot(FaucetBot):
             # Try multiple selectors for email/username field
             email_selectors = [
                 "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
+                "input[name='login_form[btc_address]']",
+                "input[name='login_form[login]']",
+                "input[name='login_form[email]']",
                 "input[name='login_email_input']",
                 "input[type='email']",
                 "input[name='email']",
@@ -87,20 +94,39 @@ class FreeBitcoinBot(FaucetBot):
             # Try multiple selectors for password field
             password_selectors = [
                 "input[name='password']",
+                "input[name='login_form[password]']",
+                "input[name='login_form[pass]']",
                 "input[name='login_password_input']",
                 "input[type='password']",
                 "#password",
                 "#login_form_password",
             ]
 
+            login_trigger_selectors = [
+                "a[href*='login']",
+                "button:has-text('Login')",
+                "button:has-text('Log In')",
+                "a:has-text('Login')",
+                "a:has-text('Log In')",
+                "#login_link",
+                ".login-link",
+            ]
+
             for login_url in login_urls:
                 logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
                 # Use shorter timeout and more lenient wait strategy for slow proxies
                 try:
-                    await self.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                    response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
                 except Exception as e:
                     logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
-                    await self.page.goto(login_url, wait_until="commit", timeout=45000)
+                    response = await self.page.goto(login_url, wait_until="commit", timeout=45000)
+                if response is not None:
+                    try:
+                        status = response.status
+                        if status >= 400:
+                            logger.error(f"[FreeBitcoin] Login page returned HTTP {status}. URL: {response.url}")
+                    except Exception:
+                        pass
                 await self.random_delay(2, 4)
 
                 # Handle Cloudflare if present
@@ -112,7 +138,14 @@ class FreeBitcoinBot(FaucetBot):
                 # Log current page state for debugging
                 logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
 
-                email_field = await self._find_selector(email_selectors, "email/username field", timeout=10000)
+                email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
+                if not email_field:
+                    login_trigger = await self._find_selector(login_trigger_selectors, "login trigger", timeout=4000)
+                    if login_trigger:
+                        logger.debug("[FreeBitcoin] Opening login form/modal...")
+                        await self.human_like_click(login_trigger)
+                        await self.random_delay(1.0, 2.0)
+                        email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
                 if email_field:
                     password_field = await self._find_selector(password_selectors, "password field", timeout=5000)
                     if password_field:
@@ -200,6 +233,7 @@ class FreeBitcoinBot(FaucetBot):
             # Wait for navigation or login success
             logger.debug("[FreeBitcoin] Waiting for login to complete...")
             try:
+                await self.page.wait_for_load_state("networkidle", timeout=15000)
                 await self.page.wait_for_url(f"{self.base_url}/**", timeout=60000)
                 logger.debug(f"[FreeBitcoin] Navigation completed to: {self.page.url}")
             except asyncio.TimeoutError:
@@ -208,22 +242,10 @@ class FreeBitcoinBot(FaucetBot):
             # Small delay to let page settle
             await self.random_delay(2, 3)
             
-            # Check if logged in - try multiple selectors for balance
-            balance_selectors = [
-                "#balance",
-                ".balance",
-                "[data-balance]",
-                ".user-balance",
-                "span.balance",
-            ]
-            
-            for selector in balance_selectors:
-                try:
-                    if await self.page.locator(selector).is_visible(timeout=5000):
-                        logger.info(f"✅ [FreeBitcoin] Login successful! Balance element found: {selector}")
-                        return True
-                except Exception:
-                    continue
+            # Check if logged in
+            if await self.is_logged_in():
+                logger.info("✅ [FreeBitcoin] Login successful (session detected)")
+                return True
             
             # Login failed - check for error messages
             logger.error("[FreeBitcoin] Login failed - balance element not found")
@@ -233,6 +255,9 @@ class FreeBitcoinBot(FaucetBot):
                 ".alert-danger",
                 ".error",
                 ".login-error",
+                "#login_error",
+                "#login_error_msg",
+                ".alert",
                 "[class*='error']",
             ]
             
