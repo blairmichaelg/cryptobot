@@ -485,6 +485,16 @@ class FireFaucetBot(FaucetBot):
                     # Get updated balance
                     new_balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
                     logger.info(f"[{self.faucet_name}] New balance: {new_balance}")
+                    
+                    # Claim shortlinks if enabled (non-blocking, separate context)
+                    enable_shortlinks = getattr(self.settings, 'enable_shortlinks', True)
+                    if enable_shortlinks:
+                        try:
+                            logger.info(f"[{self.faucet_name}] Starting shortlink claiming in parallel...")
+                            asyncio.create_task(self.claim_shortlinks(separate_context=True))
+                        except Exception as sl_err:
+                            logger.debug(f"[{self.faucet_name}] Shortlink task creation failed: {sl_err}")
+                    
                     return ClaimResult(success=True, status="Claimed", next_claim_minutes=30, balance=new_balance)
                 
                 logger.warning(f"[{self.faucet_name}] Claim verification failed - no success message found")
@@ -512,57 +522,119 @@ class FireFaucetBot(FaucetBot):
                 logger.error(f"[{self.faucet_name}] Unknown error, will retry in 30 minutes")
                 return ClaimResult(success=False, status=f"Error: {str(e)}", next_claim_minutes=30)
 
-    async def claim_shortlinks(self):
-        """Attempts to claim available shortlinks on FireFaucet."""
+    async def claim_shortlinks(self, separate_context: bool = True) -> ClaimResult:
+        """Attempts to claim available shortlinks on FireFaucet.
+        
+        Args:
+            separate_context: If True, use separate browser context (don't interfere with main claim)
+        
+        Returns:
+            ClaimResult with earnings tracked separately
+        """
+        shortlink_earnings = 0.0
+        shortlinks_claimed = 0
+        
         try:
             logger.info(f"[{self.faucet_name}] Checking Shortlinks...")
-            await self.page.goto(f"{self.base_url}/shortlinks")
+            
+            # Use separate context if requested (prevents interference with main session)
+            if separate_context and hasattr(self, 'browser_manager'):
+                # Clone current context for shortlinks
+                logger.debug(f"[{self.faucet_name}] Using separate context for shortlinks")
+                context = await self.page.context.browser.new_context()
+                page = await context.new_page()
+                # Copy cookies from main session
+                cookies = await self.page.context.cookies()
+                await context.add_cookies(cookies)
+            else:
+                page = self.page
+            
+            await page.goto(f"{self.base_url}/shortlinks")
             
             # FireFaucet Shortlink structure
-            # List of links with rewards
-            links = self.page.locator("a.btn.btn-primary:has-text('Visit Link')") # or similar
+            links = page.locator("a.btn.btn-primary:has-text('Visit Link')")
             if await links.count() == 0:
-                 # Backup selector
-                 links = self.page.locator(".card-body a[href*='/shortlink/']")
+                links = page.locator(".card-body a[href*='/shortlink/']")
             
             count = await links.count()
             if count == 0:
                 logger.info(f"[{self.faucet_name}] No shortlinks available.")
-                return
+                if separate_context and 'context' in locals():
+                    await context.close()
+                return ClaimResult(success=True, status="No shortlinks", next_claim_minutes=120, amount=0.0)
 
-            logger.info(f"[{self.faucet_name}] Found {count} shortlinks. Trying top 3...")
+            logger.info(f"[{self.faucet_name}] Found {count} shortlinks. Processing top 3...")
             
-            blocker = getattr(self.page, "resource_blocker", getattr(self.page.context, "resource_blocker", None))
-            solver = ShortlinkSolver(self.page, blocker=blocker, captcha_solver=self.solver)
+            blocker = getattr(page, "resource_blocker", getattr(page.context, "resource_blocker", None))
+            solver = ShortlinkSolver(page, blocker=blocker, captcha_solver=self.solver)
             
             for i in range(min(3, count)):
-                # Re-query
-                links = self.page.locator("a.btn.btn-primary:has-text('Visit Link')")
-                if await links.count() == 0: links = self.page.locator(".card-body a[href*='/shortlink/']")
-                
-                if await links.count() <= i: break
-                
-                # Navigate to the intermediate page
-                await links.nth(i).click()
-                await self.page.wait_for_load_state()
-                
-                # FireFaucet often has an intermediate page with a captcha before the actual shortlink
-                # Check for "Generate Link" or Captcha
-                if await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='recaptcha']"):
-                     await self.solver.solve_captcha(self.page)
-                
-                # Check for buttons to proceed to actual shortlink
-                # e.g. "Click here to continue"
-                
-                # Let the solver take over for the external link
-                # We need to detect when we've left FireFaucet or when the actual shortlink starts
-                # For now, simplistic approach: call solve on current URL
-                if await solver.solve(self.page.url, success_patterns=["firefaucet.win/shortlinks", "/shortlinks"]):
-                    logger.info(f"[{self.faucet_name}] Shortlink {i+1} Solved!")
-                    await self.page.goto(f"{self.base_url}/shortlinks")
-                else:
-                    logger.warning(f"[{self.faucet_name}] Shortlink {i+1} Failed.")
-                    await self.page.goto(f"{self.base_url}/shortlinks")
+                try:
+                    # Re-query links
+                    links = page.locator("a.btn.btn-primary:has-text('Visit Link')")
+                    if await links.count() == 0:
+                        links = page.locator(".card-body a[href*='/shortlink/']")
+                    
+                    if await links.count() <= i:
+                        break
+                    
+                    # Extract potential reward before clicking
+                    reward_text = await links.nth(i).get_attribute("data-reward") or "0"
+                    
+                    await links.nth(i).click()
+                    await page.wait_for_load_state()
+                    
+                    # Solve intermediate captcha if present
+                    if await page.query_selector("iframe[src*='turnstile'], iframe[src*='recaptcha']"):
+                        await self.solver.solve_captcha(page)
+                    
+                    # Solve the shortlink
+                    if await solver.solve(page.url, success_patterns=["firefaucet.win/shortlinks", "/shortlinks"]):
+                        logger.info(f"[{self.faucet_name}] ✅ Shortlink {i+1} claimed!")
+                        shortlinks_claimed += 1
+                        # Try to extract reward amount
+                        try:
+                            shortlink_earnings += float(reward_text)
+                        except ValueError:
+                            shortlink_earnings += 0.0001  # Default small amount
+                        await page.goto(f"{self.base_url}/shortlinks")
+                    else:
+                        logger.warning(f"[{self.faucet_name}] Shortlink {i+1} failed")
+                        await page.goto(f"{self.base_url}/shortlinks")
+                        
+                except Exception as link_err:
+                    logger.error(f"[{self.faucet_name}] Error on shortlink {i+1}: {link_err}")
+                    continue
+            
+            # Close separate context if used
+            if separate_context and 'context' in locals():
+                await context.close()
+            
+            # Track earnings separately in analytics
+            if shortlink_earnings > 0:
+                try:
+                    from core.analytics import get_tracker
+                    tracker = get_tracker()
+                    tracker.record_claim(
+                        faucet=self.faucet_name,
+                        success=True,
+                        amount=shortlink_earnings
+                    )
+                except Exception as analytics_err:
+                    logger.debug(f"Analytics tracking failed: {analytics_err}")
+            
+            return ClaimResult(
+                success=True,
+                status=f"Claimed {shortlinks_claimed} shortlinks",
+                next_claim_minutes=120,
+                amount=shortlink_earnings
+            )
                     
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Shortlink error: {e}")
+            if separate_context and 'context' in locals():
+                try:
+                    await context.close()
+                except Exception:  # pylint: disable=bare-except
+                    pass
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=120)

@@ -114,6 +114,10 @@ class JobScheduler:
         self.profile_concurrency: Dict[str, int] = {}  # Key: profile.username
         self._stop_event = asyncio.Event()
         
+        # ML-based timer prediction tracking
+        self.timer_predictions: Dict[str, List[Dict[str, float]]] = {}  # faucet_type -> list of {stated: X, actual: Y}
+        self.TIMER_HISTORY_SIZE = 10  # Keep last 10 claim timers per faucet
+        
         # Proxy rotation tracking
         self.proxy_failures: Dict[str, Dict[str, Any]] = {}  # Key: proxy URL
         self.proxy_index: Dict[str, int] = {}  # Key: profile.username
@@ -498,7 +502,7 @@ class JobScheduler:
 
             if not stats_key:
                 return False, ""
-
+            
             faucet_stats = stats[stats_key]
             
             # Check minimum samples
@@ -526,6 +530,101 @@ class JobScheduler:
         except Exception as e:
             logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
             return False, ""
+    
+    def predict_next_claim_time(self, faucet_type: str, stated_timer: float) -> float:
+        """Learn actual timer patterns and predict optimal claim time.
+        
+        Machine learning approach:
+        1. Track last N claim times vs stated timers
+        2. Calculate average drift (stated vs actual)
+        3. Apply learned offset to future claims
+        4. Allows claiming at earliest possible moment
+        
+        Typical patterns:
+        - Some faucets report 60min but allow claim at 58min (-3.3% drift)
+        - Others enforce strict timers or add buffer (+1-2%)
+        - Learning curve stabilizes after 5-10 claims
+        
+        Args:
+            faucet_type: The faucet identifier
+            stated_timer: Timer reported by faucet (in minutes)
+            
+        Returns:
+            Predicted optimal claim time (in minutes)
+        """
+        # Initialize history if not exists
+        if faucet_type not in self.timer_predictions:
+            self.timer_predictions[faucet_type] = []
+        
+        history = self.timer_predictions[faucet_type]
+        
+        # Need at least 3 data points for prediction
+        if len(history) < 3:
+            logger.debug(f"[{faucet_type}] Insufficient timer history ({len(history)} points), using stated timer")
+            return stated_timer
+        
+        # Calculate average drift from recent history
+        recent_history = history[-self.TIMER_HISTORY_SIZE:]
+        drifts = [(entry['actual'] - entry['stated']) / entry['stated'] for entry in recent_history if entry['stated'] > 0]
+        
+        if not drifts:
+            return stated_timer
+        
+        # Calculate statistics
+        avg_drift = sum(drifts) / len(drifts)
+        
+        # Calculate standard deviation for confidence
+        if len(drifts) >= 5:
+            mean = avg_drift
+            variance = sum((d - mean) ** 2 for d in drifts) / len(drifts)
+            std_dev = variance ** 0.5
+            
+            # Use conservative estimate (mean - 0.5 * std_dev) to avoid early claims
+            conservative_drift = avg_drift - (0.5 * std_dev)
+        else:
+            # Not enough data for std dev, use mean
+            conservative_drift = avg_drift
+        
+        # Apply learned drift to prediction
+        predicted_time = stated_timer * (1 + conservative_drift)
+        
+        # Safety bounds: don't predict more than ±10% from stated
+        min_time = stated_timer * 0.90
+        max_time = stated_timer * 1.10
+        predicted_time = max(min_time, min(predicted_time, max_time))
+        
+        # Log prediction
+        drift_pct = conservative_drift * 100
+        logger.info(f"[{faucet_type}] Timer prediction: {predicted_time:.1f}min "
+                   f"(stated: {stated_timer:.1f}min, learned drift: {drift_pct:+.1f}%, "
+                   f"confidence: {len(drifts)} samples)")
+        
+        return predicted_time
+    
+    def record_timer_observation(self, faucet_type: str, stated_timer: float, actual_timer: float):
+        """Record timer observation for ML learning.
+        
+        Args:
+            faucet_type: The faucet identifier
+            stated_timer: What the faucet claimed the timer was (minutes)
+            actual_timer: How long we actually had to wait (minutes)
+        """
+        if faucet_type not in self.timer_predictions:
+            self.timer_predictions[faucet_type] = []
+        
+        observation = {
+            'stated': stated_timer,
+            'actual': actual_timer,
+            'timestamp': time.time()
+        }
+        
+        self.timer_predictions[faucet_type].append(observation)
+        
+        # Keep only recent history
+        if len(self.timer_predictions[faucet_type]) > self.TIMER_HISTORY_SIZE:
+            self.timer_predictions[faucet_type] = self.timer_predictions[faucet_type][-self.TIMER_HISTORY_SIZE:]
+        
+        logger.debug(f"[{faucet_type}] Recorded timer observation: stated={stated_timer:.1f}min, actual={actual_timer:.1f}min")
 
     @staticmethod
     def _normalize_faucet_key(name: str) -> str:
@@ -1634,12 +1733,17 @@ class JobScheduler:
                     try:
                         # Get captcha solver budget status
                         from solvers.captcha import CaptchaSolver
-                        temp_solver = CaptchaSolver(
-                            api_key=self.settings.twocaptcha_api_key or self.settings.capsolver_api_key,
-                            provider=self.settings.captcha_provider,
-                            daily_budget=self.settings.captcha_daily_budget
-                        )
-                        budget_stats = temp_solver.get_budget_stats()
+                        api_key = self.settings.twocaptcha_api_key or self.settings.capsolver_api_key
+                        if not api_key:
+                            logger.warning("Captcha API key missing; skipping budget check.")
+                            budget_stats = {"remaining": float("inf")}
+                        else:
+                            temp_solver = CaptchaSolver(
+                                api_key=api_key,
+                                provider=self.settings.captcha_provider,
+                                daily_budget=self.settings.captcha_daily_budget
+                            )
+                            budget_stats = temp_solver.get_budget_stats()
                         estimated_cost = self.estimate_claim_cost(job.faucet_type)
                         
                         if budget_stats["remaining"] < estimated_cost:

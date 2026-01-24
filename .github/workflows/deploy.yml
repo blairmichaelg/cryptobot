@@ -1,6 +1,8 @@
 name: deploy
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       action:
@@ -33,10 +35,47 @@ on:
         default: "false"
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest mypy pylint
+      
+      - name: Run syntax checks (mypy)
+        run: |
+          mypy --config-file .pylintrc core/ faucets/ || true
+        continue-on-error: true
+      
+      - name: Run linting (pylint)
+        run: |
+          pylint core/ faucets/ --max-line-length=120 --disable=C0103,C0114,C0115,C0116 || true
+        continue-on-error: true
+      
+      - name: Run tests
+        run: |
+          HEADLESS=true pytest -v --maxfail=5
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || inputs.action == 'deploy' }}
     env:
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,19 +84,115 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ env.AZURE_CREDENTIALS }}
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 4.155.230.212 >> ~/.ssh/known_hosts
 
-      - name: Deploy
-        if: ${{ inputs.action == 'deploy' }}
+      - name: Deploy to Azure VM
         run: |
           chmod +x deploy/azure_deploy.sh
           ./deploy/azure_deploy.sh \
-            --resource-group "${{ inputs.resource_group }}" \
-            --vm-name "${{ inputs.vm_name }}" \
+            --resource-group "${{ inputs.resource_group || 'APPSERVRG' }}" \
+            --vm-name "${{ inputs.vm_name || 'DevNode01' }}" \
             ${{ inputs.canary_profile && format('--canary-profile {0}', inputs.canary_profile) || '' }} \
             ${{ inputs.canary_reset == 'true' && '--canary-reset' || '' }}
+      
+      - name: Wait for service startup
+        run: |
+          echo "Waiting 60 seconds for service to start..."
+          sleep 60
+      
+      - name: Health check
+        id: health_check
+        run: |
+          MAX_RETRIES=5
+          RETRY_DELAY=60
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $i/$MAX_RETRIES..."
+            
+            # Check systemd service status
+            SERVICE_STATUS=$(ssh azureuser@4.155.230.212 "sudo systemctl is-active faucet_worker" || echo "failed")
+            
+            if [ "$SERVICE_STATUS" = "active" ]; then
+              echo "✅ Service is active"
+              
+              # Check heartbeat file (should be updated within last 2 minutes)
+              HEARTBEAT=$(ssh azureuser@4.155.230.212 "cat /tmp/cryptobot_heartbeat 2>/dev/null | head -1" || echo "0")
+              CURRENT_TIME=$(date +%s)
+              AGE=$((CURRENT_TIME - ${HEARTBEAT:-0}))
+              
+              if [ $AGE -lt 120 ]; then
+                echo "✅ Heartbeat is fresh (${AGE}s old)"
+                echo "healthy=true" >> $GITHUB_OUTPUT
+                exit 0
+              else
+                echo "⚠️ Heartbeat is stale (${AGE}s old)"
+              fi
+            else
+              echo "❌ Service is not active: $SERVICE_STATUS"
+            fi
+            
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "healthy=false" >> $GITHUB_OUTPUT
+          exit 1
+      
+      - name: Rollback on failure
+        if: steps.health_check.outputs.healthy == 'false'
+        run: |
+          echo "Health check failed, rolling back..."
+          chmod +x deploy/azure_rollback.sh
+          ./deploy/azure_rollback.sh \
+            --resource-group "${{ inputs.resource_group || 'APPSERVRG' }}" \
+            --vm-name "${{ inputs.vm_name || 'DevNode01' }}"
+      
+      - name: Send notification
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ steps.health_check.outputs.healthy }}' === 'true' ? '✅ Success' : '❌ Failed';
+            const sha = context.sha.substring(0, 7);
+            const message = `Deployment ${status}\\nCommit: ${sha}\\nBranch: ${context.ref}`;
+            
+            console.log(message);
+            
+            // Can add Discord/Slack webhook here
+            // await fetch(process.env.DISCORD_WEBHOOK, { method: 'POST', body: JSON.stringify({ content: message }) })
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.action == 'rollback' }}
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ env.AZURE_CREDENTIALS }}
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 4.155.230.212 >> ~/.ssh/known_hosts
 
       - name: Rollback
-        if: ${{ inputs.action == 'rollback' }}
         run: |
           chmod +x deploy/azure_rollback.sh
           ./deploy/azure_rollback.sh \

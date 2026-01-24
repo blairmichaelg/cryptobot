@@ -48,6 +48,7 @@ class BotSettings(BaseSettings):
     captcha_provider: str = "2captcha"
     twocaptcha_api_key: Optional[str] = None
     use_2captcha_proxies: bool = True  # Set to True to enable 2Captcha proxy integration
+    enable_shortlinks: bool = False  # Enable multi-session shortlink claiming (experimental)
     capsolver_api_key: Optional[str] = None
     captcha_daily_budget: float = 5.0  # Daily spend cap for captcha solving
     captcha_fallback_provider: Optional[str] = None  # Optional fallback provider (e.g., capsolver)

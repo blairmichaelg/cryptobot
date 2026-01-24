@@ -168,9 +168,9 @@ class CryptoPriceFeed:
 
 def get_price_feed() -> CryptoPriceFeed:
     """Get or create the global price feed."""
-    if not hasattr(get_price_feed, "_instance"):
-        get_price_feed._instance = CryptoPriceFeed()
-    return get_price_feed._instance
+    if not hasattr(get_price_feed, "instance"):
+        get_price_feed.instance = CryptoPriceFeed()
+    return get_price_feed.instance
 
 
 @dataclass
@@ -881,7 +881,7 @@ class ProfitabilityOptimizer:
 
 def get_tracker() -> EarningsTracker:
     """Get or create the global earnings tracker."""
-    if not hasattr(get_tracker, "_instance"):
-        get_tracker._instance = EarningsTracker()
-    return get_tracker._instance
+    if not hasattr(get_tracker, "instance"):
+        get_tracker.instance = EarningsTracker()
+    return get_tracker.instance
 

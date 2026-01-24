@@ -379,7 +379,7 @@ async def test_claim_success(mock_settings, mock_page, mock_solver):
     assert result.status == "Claimed"
     assert "0.015" in result.amount
     assert result.next_claim_minutes == 60
-    bot.solver.solve_captcha.assert_called()
+    mock_solver.solve_captcha.assert_called()
 
 
 @pytest.mark.asyncio

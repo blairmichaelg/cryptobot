@@ -17,6 +17,107 @@ class CoinPayUBot(FaucetBot):
     async def is_logged_in(self) -> bool:
         return "dashboard" in self.page.url or await self.page.query_selector("a[href*='logout']") is not None
 
+    async def claim_shortlinks(self, separate_context: bool = True) -> ClaimResult:
+        """Claim available shortlinks on CoinPayU.
+        
+        Args:
+            separate_context: Use separate browser context to avoid interference
+            
+        Returns:
+            ClaimResult with shortlink earnings
+        """
+        shortlink_earnings = 0.0
+        shortlinks_claimed = 0
+        
+        try:
+            logger.info(f"[{self.faucet_name}] Checking shortlinks...")
+            
+            # Use separate context if requested
+            if separate_context and hasattr(self, 'browser_manager'):
+                context = await self.page.context.browser.new_context()
+                page = await context.new_page()
+                cookies = await self.page.context.cookies()
+                await context.add_cookies(cookies)
+            else:
+                page = self.page
+            
+            await page.goto(f"{self.base_url}/dashboard/shortlinks", wait_until="domcontentloaded")
+            await self.handle_cloudflare(max_wait_seconds=20)
+            
+            # CoinPayU shortlink selectors
+            links = page.locator("a.shortlink-card, a[href*='visit']:has-text('Visit'), button:has-text('Visit Link')")
+            count = await links.count()
+            
+            if count == 0:
+                logger.info(f"[{self.faucet_name}] No shortlinks available")
+                if separate_context and 'context' in locals():
+                    await context.close()
+                return ClaimResult(success=True, status="No shortlinks", next_claim_minutes=120)
+            
+            logger.info(f"[{self.faucet_name}] Found {count} shortlinks, processing top 3...")
+            
+            from solvers.shortlink import ShortlinkSolver
+            blocker = getattr(page, "resource_blocker", None)
+            solver = ShortlinkSolver(page, blocker=blocker, captcha_solver=self.solver)
+            
+            for i in range(min(3, count)):
+                try:
+                    links = page.locator("a.shortlink-card, a[href*='visit']:has-text('Visit')")
+                    if await links.count() <= i:
+                        break
+                    
+                    await links.nth(i).click()
+                    await page.wait_for_load_state()
+                    
+                    # Handle Cloudflare and captchas
+                    await self.handle_cloudflare(max_wait_seconds=15)
+                    if await page.query_selector("iframe[src*='turnstile'], iframe[src*='hcaptcha']"):
+                        await self.solver.solve_captcha(page)
+                    
+                    # Solve shortlink
+                    if await solver.solve(page.url, success_patterns=["coinpayu.com", "/shortlinks"]):
+                        logger.info(f"[{self.faucet_name}] ✅ Shortlink {i+1} claimed")
+                        shortlinks_claimed += 1
+                        shortlink_earnings += 0.0001
+                    
+                    await page.goto(f"{self.base_url}/dashboard/shortlinks")
+                    
+                except Exception as link_err:
+                    logger.error(f"[{self.faucet_name}] Shortlink {i+1} error: {link_err}")
+                    continue
+            
+            if separate_context and 'context' in locals():
+                await context.close()
+            
+            # Track in analytics
+            if shortlink_earnings > 0:
+                try:
+                    from core.analytics import get_tracker
+                    tracker = get_tracker()
+                    tracker.record_claim(
+                        faucet=self.faucet_name,
+                        success=True,
+                        amount=shortlink_earnings
+                    )
+                except Exception:  # pylint: disable=broad-except
+                    pass
+            
+            return ClaimResult(
+                success=True,
+                status=f"Claimed {shortlinks_claimed} shortlinks",
+                next_claim_minutes=120,
+                amount=shortlink_earnings
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Shortlink error: {e}")
+            if separate_context and 'context' in locals():
+                try:
+                    await context.close()
+                except Exception:  # pylint: disable=bare-except
+                    pass
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=120)
+
     async def login(self) -> bool:
         """
         Perform login to CoinPayU with stealth and robust error handling.

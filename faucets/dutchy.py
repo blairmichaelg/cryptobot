@@ -81,6 +81,105 @@ class DutchyBot(FaucetBot):
         
         return jobs
 
+    async def claim_shortlinks(self, separate_context: bool = True) -> ClaimResult:
+        """Claim available shortlinks on DutchyCorp.
+        
+        Args:
+            separate_context: Use separate browser context to avoid interference
+            
+        Returns:
+            ClaimResult with shortlink earnings
+        """
+        shortlink_earnings = 0.0
+        shortlinks_claimed = 0
+        
+        try:
+            logger.info(f"[{self.faucet_name}] Checking shortlinks...")
+            
+            # Use separate context if requested
+            if separate_context and hasattr(self, 'browser_manager'):
+                context = await self.page.context.browser.new_context()
+                page = await context.new_page()
+                cookies = await self.page.context.cookies()
+                await context.add_cookies(cookies)
+            else:
+                page = self.page
+            
+            await page.goto(f"{self.base_url}/shortlinks.php", wait_until="networkidle")
+            
+            # DutchyCorp shortlink selectors (adjust based on actual site structure)
+            links = page.locator("a[href*='shortlink']:has-text('Claim'), .shortlink-btn, a.btn:has-text('Visit')")
+            count = await links.count()
+            
+            if count == 0:
+                logger.info(f"[{self.faucet_name}] No shortlinks available")
+                if separate_context and 'context' in locals():
+                    await context.close()
+                return ClaimResult(success=True, status="No shortlinks", next_claim_minutes=120)
+            
+            logger.info(f"[{self.faucet_name}] Found {count} shortlinks, processing top 3...")
+            
+            from solvers.shortlink import ShortlinkSolver
+            blocker = getattr(page, "resource_blocker", None)
+            solver = ShortlinkSolver(page, blocker=blocker, captcha_solver=self.solver)
+            
+            for i in range(min(3, count)):
+                try:
+                    links = page.locator("a[href*='shortlink']:has-text('Claim'), .shortlink-btn")
+                    if await links.count() <= i:
+                        break
+                    
+                    await links.nth(i).click()
+                    await page.wait_for_load_state()
+                    
+                    # Solve any captchas
+                    if await page.query_selector("iframe[src*='turnstile'], iframe[src*='hcaptcha'], iframe[src*='recaptcha']"):
+                        await self.solver.solve_captcha(page)
+                    
+                    # Solve shortlink
+                    if await solver.solve(page.url, success_patterns=["dutchycorp.space", "/shortlinks"]):
+                        logger.info(f"[{self.faucet_name}] ✅ Shortlink {i+1} claimed")
+                        shortlinks_claimed += 1
+                        shortlink_earnings += 0.0001
+                    
+                    await page.goto(f"{self.base_url}/shortlinks.php")
+                    
+                except Exception as link_err:
+                    logger.error(f"[{self.faucet_name}] Shortlink {i+1} error: {link_err}")
+                    continue
+            
+            if separate_context and 'context' in locals():
+                await context.close()
+            
+            # Track in analytics
+            if shortlink_earnings > 0:
+                try:
+                    from core.analytics import get_tracker
+                    tracker = get_tracker()
+                    tracker.record_claim(
+                        faucet=self.faucet_name,
+                        success=True,
+                        amount=shortlink_earnings
+                    )
+                except Exception:  # pylint: disable=broad-except
+                    pass
+            
+            return ClaimResult(
+                success=True,
+                status=f"Claimed {shortlinks_claimed} shortlinks",
+                next_claim_minutes=120,
+                amount=shortlink_earnings
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.faucet_name}] Shortlink error: {e}")
+            if separate_context and 'context' in locals():
+                try:
+                    await context.close()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=120)
+
     async def login(self) -> bool:
         """
         Perform login to DutchyCorp with enhanced stealth and error handling.
@@ -246,77 +345,6 @@ class DutchyBot(FaucetBot):
                 status=f"Error: {str(e)[:100]}", 
                 next_claim_minutes=15
             )
-
-    async def claim_shortlinks(self) -> None:
-        """
-        Attempt to claim available shortlinks with robust error handling.
-        
-        Shortlinks are bonus earnings - failures are logged but don't stop
-        the main claim cycle.
-        """
-        try:
-            logger.info(f"[{self.faucet_name}] Checking shortlinks...")
-            await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
-            
-            # Close any popups that might interfere
-            await self.close_popups()
-            
-            # Find available shortlink buttons
-            links = self.page.locator(".transparent-btn.tooltipped, a.btn.btn-primary:has-text('Claim')")
-            count = await links.count()
-            
-            if count == 0:
-                logger.info(f"[{self.faucet_name}] No shortlinks available")
-                return
-
-            logger.info(f"[{self.faucet_name}] Found {count} shortlinks, attempting top 3...")
-            
-            # Get resource blocker for shortlink solver
-            blocker = getattr(self.page, "resource_blocker", getattr(self.page.context, "resource_blocker", None))
-            solver = ShortlinkSolver(self.page, blocker=blocker, captcha_solver=self.solver)
-            
-            successful = 0
-            for i in range(min(3, count)):
-                try:
-                    # Re-query DOM as it changes after each claim
-                    links = self.page.locator("a.btn.btn-primary:has-text('Claim')")
-                    current_count = await links.count()
-                    
-                    if current_count <= i:
-                        logger.debug(f"[{self.faucet_name}] No more shortlinks available")
-                        break
-                    
-                    # Stealth: Random delay before clicking
-                    await self.random_delay(1, 3)
-                    await self.idle_mouse(0.5)
-                    
-                    # Click to start shortlink flow
-                    await links.nth(i).click()
-                    await asyncio.sleep(2)
-                    
-                    # Solve shortlink flow
-                    if await solver.solve(self.page.url):
-                        successful += 1
-                        logger.info(f"[{self.faucet_name}] ✅ Shortlink {i+1} completed")
-                        await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
-                    else:
-                        logger.warning(f"[{self.faucet_name}] ❌ Shortlink {i+1} failed")
-                        # Ensure we're back on shortlinks page
-                        if "shortlinks-wall" not in self.page.url:
-                            await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
-                            
-                except Exception as link_err:
-                    logger.warning(f"[{self.faucet_name}] Shortlink {i+1} error: {link_err}")
-                    # Try to recover by navigating back
-                    try:
-                        await self.page.goto(f"{self.base_url}/shortlinks-wall.php", wait_until="networkidle")
-                    except Exception:
-                        break  # Give up on remaining shortlinks
-            
-            logger.info(f"[{self.faucet_name}] Shortlinks complete: {successful}/{min(3, count)} successful")
-                        
-        except Exception as e:
-            logger.error(f"[{self.faucet_name}] Shortlinks error: {e}")
 
     async def _do_roll(self, page_slug: str, roll_name: str) -> Optional[float]:
         """

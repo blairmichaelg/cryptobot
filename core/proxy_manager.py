@@ -958,3 +958,73 @@ class ProxyManager:
             return profile.proxy
         
         return current_proxy_str
+    
+    async def auto_provision_proxies(self, min_threshold: int = 10, provision_count: int = 5) -> int:
+        """Auto-buy proxies when pool drops below threshold.
+        
+        Integrates with WebShare API to automatically purchase proxies
+        when healthy proxy count falls below minimum threshold.
+        
+        Args:
+            min_threshold: Trigger provisioning when healthy proxies < this number
+            provision_count: How many proxies to fetch/provision
+            
+        Returns:
+            Number of proxies added
+        """
+        # Count healthy proxies
+        healthy_count = len([p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies])
+        
+        if healthy_count >= min_threshold:
+            logger.debug(f"Proxy count healthy: {healthy_count}/{min_threshold}")
+            return 0
+        
+        logger.warning(f"LOW PROXY COUNT: {healthy_count}/{min_threshold}. Auto-provisioning {provision_count} proxies...")
+        
+        try:
+            # Use existing fetch method if using API
+            if self.proxy_provider in ["2captcha", "webshare"]:
+                added = await self.fetch_proxies_from_api(provision_count)
+                if added > 0:
+                    logger.info(f"✅ Auto-provisioned {added} new proxies via API")
+                    return added
+            else:
+                logger.warning(f"Auto-provisioning not supported for provider: {self.proxy_provider}")
+                return 0
+            
+        except Exception as e:
+            logger.error(f"Auto-provisioning failed: {e}")
+        
+        return 0
+    
+    async def auto_remove_dead_proxies(self, failure_threshold: int = 3) -> int:
+        """Remove proxies after consecutive failures.
+        
+        Args:
+            failure_threshold: Remove after this many consecutive failures
+            
+        Returns:
+            Number of proxies removed
+        """
+        removed = 0
+        
+        # Filter out dead proxies from in-memory list
+        original_count = len(self.proxies)
+        self.proxies = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
+        removed = original_count - len(self.proxies)
+        
+        # Also check failure counts
+        for proxy in list(self.proxies):
+            proxy_key = self._proxy_key(proxy)
+            failures = self.proxy_failures.get(proxy_key, 0)
+            if failures >= failure_threshold:
+                logger.info(f"Removing proxy with {failures} failures: {proxy_key}")
+                self.proxies.remove(proxy)
+                self.dead_proxies.append(proxy_key)
+                removed += 1
+        
+        if removed > 0:
+            logger.info(f"✅ Removed {removed} dead/failing proxies from pool")
+            self._save_health_data()
+        
+        return removed

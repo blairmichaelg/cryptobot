@@ -16,4 +16,5 @@ opentelemetry-api>=1.20.0
 opentelemetry-sdk>=1.20.0
 fake-useragent>=1.4.0
 rich>=13.0.0
+faker>=20.0.0  # For auto-registration credential generation
 
