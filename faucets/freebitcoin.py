@@ -129,6 +129,73 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             return False
 
+    async def _log_login_diagnostics(self, context: str) -> None:
+        """Log login page diagnostics to identify captcha/input elements."""
+        try:
+            inputs = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('input')).map(el => ({
+                    type: el.type || null,
+                    name: el.name || null,
+                    id: el.id || null,
+                    placeholder: el.placeholder || null,
+                    className: el.className || null
+                }))
+                """
+            )
+        except Exception:
+            inputs = None
+
+        try:
+            textareas = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('textarea')).map(el => ({
+                    name: el.name || null,
+                    id: el.id || null,
+                    className: el.className || null
+                }))
+                """
+            )
+        except Exception:
+            textareas = None
+
+        try:
+            iframes = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('iframe')).map(el => ({
+                    src: el.src || null,
+                    name: el.name || null,
+                    id: el.id || null,
+                    title: el.title || null,
+                    className: el.className || null
+                }))
+                """
+            )
+        except Exception:
+            iframes = None
+
+        try:
+            captcha_nodes = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('*')).filter(el => {
+                    const id = (el.id || '').toLowerCase();
+                    const cls = (el.className || '').toString().toLowerCase();
+                    return id.includes('captcha') || cls.includes('captcha');
+                }).slice(0, 50).map(el => ({
+                    tag: el.tagName,
+                    id: el.id || null,
+                    className: el.className || null
+                }))
+                """
+            )
+        except Exception:
+            captcha_nodes = None
+
+        logger.info("[FreeBitcoin] Login diagnostics (%s): inputs=%s", context, inputs)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): textareas=%s", context, textareas)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): iframes=%s", context, iframes)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_nodes=%s", context, captcha_nodes)
+
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
@@ -345,6 +412,8 @@ class FreeBitcoinBot(FaucetBot):
                     )
                     if captcha_text:
                         await captcha_input.fill(captcha_text)
+                else:
+                    await self._log_login_diagnostics("captcha_input_not_found")
                 await self.random_delay(1.5, 2.5)
                 logger.debug("[FreeBitcoin] Login CAPTCHA solved")
             except Exception as captcha_err:
@@ -415,6 +484,7 @@ class FreeBitcoinBot(FaucetBot):
             
             # Login failed - check for error messages
             logger.error("[FreeBitcoin] Login failed - balance element not found")
+            await self._log_login_diagnostics("login_failed")
             
             # Try to capture error message
             error_selectors = [
