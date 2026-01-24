@@ -308,6 +308,72 @@ class FreeBitcoinBot(FaucetBot):
 
         return await self.is_logged_in()
 
+    async def _submit_login_via_fetch(self, username: str, password: str, tfa_code: str = "") -> bool:
+        """Submit login using in-page fetch to mimic AJAX without jQuery."""
+        payload = {
+            "op": "login_new",
+            "btc_address": username,
+            "password": password,
+            "tfa_code": tfa_code or "",
+        }
+
+        try:
+            result = await self.page.evaluate(
+                """
+                (data) => {
+                    const body = new URLSearchParams();
+                    Object.entries(data).forEach(([k, v]) => body.append(k, v || ''));
+                    return fetch('/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body
+                    }).then(resp => resp.text()).catch(err => `error:${err && err.message ? err.message : 'fetch_failed'}`);
+                }
+                """,
+                payload
+            )
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] Fetch login failed: %s", exc)
+            return False
+
+        if not result or (isinstance(result, str) and result.startswith("error:")):
+            logger.warning("[FreeBitcoin] Fetch login failed: %s", str(result)[:200])
+            return False
+
+        parts = str(result).split(":")
+        if not parts or parts[0] != "s":
+            logger.warning("[FreeBitcoin] Fetch login response unexpected: %s", str(result)[:200])
+            return False
+
+        if len(parts) < 5:
+            logger.warning("[FreeBitcoin] Fetch login response missing fields: %s", str(result)[:200])
+            return False
+
+        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+        cookies = [
+            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        ]
+
+        try:
+            await self.page.context.add_cookies(cookies)
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] Failed to set fetch login cookies: %s", exc)
+            return False
+
+        try:
+            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+
+        return await self.is_logged_in()
+
     async def _has_session_cookie(self) -> bool:
         try:
             cookies = await self.page.context.cookies(self.base_url)
@@ -741,7 +807,11 @@ class FreeBitcoinBot(FaucetBot):
                 has_jquery = True
 
             if not has_jquery:
-                logger.warning("[FreeBitcoin] jQuery not detected; attempting AJAX login fallback")
+                logger.warning("[FreeBitcoin] jQuery not detected; attempting fetch login fallback")
+                if await self._submit_login_via_fetch(username, password):
+                    logger.info("✅ [FreeBitcoin] Login successful via fetch fallback")
+                    return True
+                logger.warning("[FreeBitcoin] Fetch fallback failed; attempting AJAX login fallback")
                 if await self._submit_login_via_ajax(username, password):
                     logger.info("✅ [FreeBitcoin] Login successful via AJAX fallback")
                     return True
