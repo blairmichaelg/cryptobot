@@ -454,12 +454,7 @@ class FreeBitcoinBot(FaucetBot):
                 try:
                     await roll_btn.wait_for(state="visible", timeout=8000)
                     roll_visible = True
-                    solved = await self.solver.solve_captcha(self.page)
-                    if solved is False:
-                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
-                        return False
-                    await self.random_delay(1.5, 2.5)
-                    logger.debug("[FreeBitcoin] Login CAPTCHA solved")
+                except Exception:
                     roll_visible = False
 
                 if roll_visible:
