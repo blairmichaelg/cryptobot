@@ -56,15 +56,23 @@ class BrowserManager:
         
         # Construct arguments
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
-        # Keep parameters minimal to avoid fingerprint generation conflicts
-        # Camoufox will auto-detect appropriate values based on the environment
+        # For headless Linux servers, we need to specify realistic screen constraints
+        # because auto-detection defaults to 1024x768 which has limited fingerprints
+        from camoufox.utils import Screen
+        
         kwargs = {
             "headless": self.headless,
             "geoip": True,  # Auto-detect location
             "humanize": True,  # Add human-like timing
             "block_images": self.block_images,
-            # Don't override fonts - let Camoufox use appropriate defaults for the OS
-            # Don't specify os/screen/locale - let Camoufox auto-detect to avoid conflicts
+            # Provide realistic screen constraints for headless servers
+            # Common desktop resolutions have better fingerprint coverage in browserforge
+            "screen": Screen(
+                min_width=1280,
+                max_width=1920,
+                min_height=720,
+                max_height=1080
+            )
         }
 
         # We keep the camoufox instance wrapper
