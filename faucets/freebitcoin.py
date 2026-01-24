@@ -485,9 +485,7 @@ class FreeBitcoinBot(FaucetBot):
             ]
             twofa_field = await self._find_selector_any_frame(twofa_selectors, "2FA field", timeout=2000)
             if twofa_field:
-                logger.warning("[FreeBitcoin] 2FA DETECTED! Manual intervention required.")
-                # Don't proceed automatically with 2FA
-                return False
+                logger.warning("[FreeBitcoin] 2FA field present. Proceeding without 2FA unless configured.")
 
             # Check for CAPTCHA on login page
             logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
