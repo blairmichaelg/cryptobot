@@ -903,8 +903,14 @@ class CaptchaSolver:
         Uses defensive checks to avoid null-pointer errors.
         """
         await page.evaluate(f"""(token) => {{
-            const setVal = (sel, val) => {{
-                const el = document.querySelector(sel);
+            const setVal = (sel, val, ensure = false) => {{
+                let el = document.querySelector(sel);
+                if (!el && ensure) {{
+                    el = document.createElement('input');
+                    el.type = 'hidden';
+                    el.name = sel.replace('[name="', '').replace('"]', '');
+                    (document.querySelector('form') || document.body).appendChild(el);
+                }}
                 if (el) {{
                     if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') el.value = val;
                     else el.innerHTML = val;
@@ -918,7 +924,7 @@ class CaptchaSolver:
                 setVal('#g-recaptcha-response', token);
                 setVal('[name="g-recaptcha-response"]', token);
             }} else if ("{method}" === "turnstile") {{
-                setVal('[name="cf-turnstile-response"]', token);
+                setVal('[name="cf-turnstile-response"]', token, true);
             }}
             
             // Trigger generic callbacks that many sites use to proceed after token injection
