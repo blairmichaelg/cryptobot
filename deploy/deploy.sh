@@ -43,15 +43,56 @@ install_service() {
         echo "CANARY_ONLY=true" >> .env
     fi
     
-    echo "⚙️  Updating systemd service..."
-    # Ensure the service file exists
+    echo "⚙️  Updating systemd services..."
+    # Ensure the service files exist
     if [ -f "deploy/faucet_worker.service" ]; then
         sudo cp deploy/faucet_worker.service /etc/systemd/system/
+        
+        # Install health monitoring services
+        if [ -f "deploy/health_monitor.service" ]; then
+            echo "📊 Installing health monitor service..."
+            sudo cp deploy/health_monitor.service /etc/systemd/system/
+        fi
+        
+        if [ -f "deploy/health_endpoint.service" ]; then
+            echo "🌐 Installing health endpoint service..."
+            sudo cp deploy/health_endpoint.service /etc/systemd/system/
+        fi
+        
         sudo systemctl daemon-reload
         
-        echo "🔄 Restarting service..."
+        echo "🔄 Restarting services..."
         sudo systemctl restart faucet_worker
-        sudo systemctl status faucet_worker --no-pager
+        
+        # Enable and start health monitoring services
+        if [ -f "deploy/health_monitor.service" ]; then
+            sudo systemctl enable health_monitor
+            sudo systemctl restart health_monitor
+        fi
+        
+        if [ -f "deploy/health_endpoint.service" ]; then
+            sudo systemctl enable health_endpoint
+            sudo systemctl restart health_endpoint
+        fi
+        
+        # Show service status
+        echo ""
+        echo "📊 Service Status:"
+        sudo systemctl status faucet_worker --no-pager | head -15
+        
+        if [ -f "deploy/health_monitor.service" ]; then
+            echo ""
+            echo "🔍 Health Monitor Status:"
+            sudo systemctl status health_monitor --no-pager | head -10
+        fi
+        
+        if [ -f "deploy/health_endpoint.service" ]; then
+            echo ""
+            echo "🌐 Health Endpoint Status:"
+            sudo systemctl status health_endpoint --no-pager | head -10
+        fi
+        
+        echo ""
         echo "🩺 Running health gate..."
         python meta.py health || true
         HEARTBEAT_FILE="/tmp/cryptobot_heartbeat"
@@ -68,6 +109,8 @@ install_service() {
         fi
         echo "✅ Health gate passed."
         echo "✅ Local Installation & Service Restart Complete!"
+        echo ""
+        echo "🌐 Health endpoint available at: http://localhost:8080/health"
     else
         echo "❌ Service file not found at deploy/faucet_worker.service"
         exit 1
@@ -165,18 +208,59 @@ fi
 pip install -r requirements.txt
 
 
-echo '⚙️  Updating systemd service...'
+echo '⚙️  Updating systemd services...'
 # Cleanup old service if exists
 sudo systemctl stop faucet_bot || true
 sudo systemctl disable faucet_bot || true
 
+# Install main service
 sudo cp deploy/faucet_worker.service /etc/systemd/system/
+
+# Install health monitoring services
+if [ -f deploy/health_monitor.service ]; then
+    echo '📊 Installing health monitor service...'
+    sudo cp deploy/health_monitor.service /etc/systemd/system/
+fi
+
+if [ -f deploy/health_endpoint.service ]; then
+    echo '🌐 Installing health endpoint service...'
+    sudo cp deploy/health_endpoint.service /etc/systemd/system/
+fi
+
 sudo systemctl daemon-reload
 
-echo '🔄 Restarting service...'
+echo '🔄 Restarting services...'
 sudo systemctl restart faucet_worker
-sudo systemctl status faucet_worker --no-pager
 
+# Enable and start health monitoring
+if [ -f deploy/health_monitor.service ]; then
+    sudo systemctl enable health_monitor
+    sudo systemctl restart health_monitor
+fi
+
+if [ -f deploy/health_endpoint.service ]; then
+    sudo systemctl enable health_endpoint
+    sudo systemctl restart health_endpoint
+fi
+
+# Show status
+echo ''
+echo '📊 Service Status:'
+sudo systemctl status faucet_worker --no-pager | head -15
+
+if [ -f deploy/health_monitor.service ]; then
+    echo ''
+    echo '🔍 Health Monitor Status:'
+    sudo systemctl status health_monitor --no-pager | head -10
+fi
+
+if [ -f deploy/health_endpoint.service ]; then
+    echo ''
+    echo '🌐 Health Endpoint Status:'
+    sudo systemctl status health_endpoint --no-pager | head -10
+fi
+
+echo ''
 echo '🩺 Running health gate...'
 python meta.py health || true
 HEARTBEAT_FILE="/tmp/cryptobot_heartbeat"
@@ -191,6 +275,8 @@ if [ -z "$HB_TS" ] || [ $((NOW - HB_TS)) -gt 300 ]; then
     exit 1
 fi
 echo '✅ Health gate passed.'
+echo ''
+echo '🌐 Health endpoint available at: http://localhost:8080/health'
 "
 
 # Execute via Azure CLI
