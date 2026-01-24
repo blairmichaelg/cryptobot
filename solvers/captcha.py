@@ -399,15 +399,39 @@ class CaptchaSolver:
                  method = "image"
                  logger.info("Custom Image Captcha detected.")
 
+        # Normalize/validate sitekey
+        if sitekey is not None and not isinstance(sitekey, str):
+            try:
+                sitekey = str(sitekey)
+            except Exception:
+                sitekey = None
+        if sitekey:
+            sitekey = sitekey.strip()
+        if not sitekey or len(sitekey) < 10:
+            sitekey = None
+
         if not method or not sitekey:
             # 2. Search in Scripts & Global Variables if still missing sitekey
             sitekey = await self._extract_sitekey_from_scripts(page, method or "any")
+
+            if sitekey is not None and not isinstance(sitekey, str):
+                try:
+                    sitekey = str(sitekey)
+                except Exception:
+                    sitekey = None
+            if sitekey:
+                sitekey = sitekey.strip()
+            if not sitekey or len(sitekey) < 10:
+                sitekey = None
             
             if not sitekey:
                 # Check if any captcha frames exist at all as a last resort
                 has_frames = await page.query_selector("iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile']")
                 if not has_frames:
                     return True
+                if self.headless:
+                    logger.error("Captcha detected but Sitekey not found in headless mode.")
+                    return False
                 logger.warning("Captcha detected but Sitekey not found. Falling back to manual.")
             else:
                 if not method:
