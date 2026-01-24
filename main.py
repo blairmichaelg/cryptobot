@@ -52,6 +52,10 @@ async def main():
     if args.visible:
         settings.headless = False
 
+    if settings.headless and not (settings.twocaptcha_api_key or settings.capsolver_api_key):
+        logger.warning("⚠️ Headless mode with no CAPTCHA API key will block claims. Switching to visible mode.")
+        settings.headless = False
+
     setup_logging(settings.log_level)
 
     # Wallet Check

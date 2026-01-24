@@ -1096,7 +1096,8 @@ class JobScheduler:
                 user_agent=ua,
                 profile_name=profile.username,
                 locale_override=locale_hint,
-                timezone_override=timezone_hint
+                timezone_override=timezone_hint,
+                allow_sticky_proxy=not self._should_bypass_proxy(faucet_name)
             )
             page = await self.browser_manager.new_page(context=context)
             
@@ -1209,16 +1210,28 @@ class JobScheduler:
         self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
         logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")
 
+    def _should_bypass_proxy(self, faucet_type: Optional[str]) -> bool:
+        if not faucet_type:
+            return False
+
+        def _normalize(name: str) -> str:
+            return str(name).lower().replace("_", "").replace(" ", "")
+
+        faucet_key = _normalize(faucet_type)
+        bypass_raw = getattr(self.settings, "proxy_bypass_faucets", None) or []
+        if not bypass_raw:
+            bypass_raw = ["freebitcoin"]
+        bypass = {_normalize(name) for name in bypass_raw}
+        return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
+
     
     def get_next_proxy(self, profile: AccountProfile, faucet_type: Optional[str] = None) -> Optional[str]:
         """
         Get the next proxy for a profile based on rotation strategy.
         Delegates to ProxyManager if available for advanced rotation.
         """
-        if faucet_type:
-            bypass = {name.lower() for name in getattr(self.settings, "proxy_bypass_faucets", [])}
-            if faucet_type.lower() in bypass:
-                return None
+        if self._should_bypass_proxy(faucet_type):
+            return None
         if self.proxy_manager:
             return self.proxy_manager.rotate_proxy(profile)
             
@@ -1254,10 +1267,10 @@ class JobScheduler:
         
         return proxy
 
-    def record_proxy_failure(self, proxy: str, detected: bool = False):
+    def record_proxy_failure(self, proxy: str, detected: bool = False, status_code: int = 0):
         """Record a proxy failure, delegating to ProxyManager if available."""
         if self.proxy_manager:
-            self.proxy_manager.record_failure(proxy, detected=detected)
+            self.proxy_manager.record_failure(proxy, detected=detected, status_code=status_code)
             return
 
         if proxy not in self.proxy_failures:
@@ -1322,7 +1335,7 @@ class JobScheduler:
         
         elif error_type == ErrorType.PROXY_ISSUE:
             if current_proxy:
-                self.record_proxy_failure(current_proxy, detected=True)
+                self.record_proxy_failure(current_proxy, detected=True, status_code=403)
                 return 1800, "Rotate proxy, requeue +30min"
             else:
                 return 1800, "No proxy available, requeue +30min"
@@ -1365,7 +1378,8 @@ class JobScheduler:
                 user_agent=ua,
                 profile_name=username,
                 locale_override=locale_hint,
-                timezone_override=timezone_hint
+                timezone_override=timezone_hint,
+                allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type)
             )
             page = await self.browser_manager.new_page(context=context)
             
@@ -1412,13 +1426,13 @@ class JobScheduler:
             if status_info["blocked"]:
                 logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
                 if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=True)
+                    self.record_proxy_failure(current_proxy, detected=True, status_code=status_info.get("status", 0))
                     if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
                         self.proxy_manager.record_soft_signal(current_proxy, signal_type="blocked")
             elif status_info["network_error"]:
                 logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
                 if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=False)
+                    self.record_proxy_failure(current_proxy, detected=False, status_code=status_info.get("status", 0))
                     if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
                         self.proxy_manager.record_soft_signal(current_proxy, signal_type="network_error")
 
@@ -1429,7 +1443,7 @@ class JobScheduler:
             if hasattr(result, 'status') and "Proxy Detected" in result.status:
                 logger.error(f"❌ Proxy detected for {job.name} ({username}). Rotating proxy...")
                 if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=True)
+                    self.record_proxy_failure(current_proxy, detected=True, status_code=403)
                 # Reschedule with exponential backoff for proxy issues
                 job.next_run = time.time() + PROXY_RETRY_DELAY_SECONDS * (2 ** min(job.retry_count, 4))
                 job.retry_count += 1  # Track consecutive proxy failures

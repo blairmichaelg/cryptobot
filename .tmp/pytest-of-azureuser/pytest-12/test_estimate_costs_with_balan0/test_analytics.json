@@ -1,1 +1,0 @@
-{"claims": [{"timestamp": 1769104522.581914, "faucet": "firefaucet", "success": true, "amount": 100.0, "currency": "BTC", "balance_after": 0.0}, {"timestamp": 1769104522.5825403, "faucet": "cointiply", "success": true, "amount": 50.0, "currency": "LTC", "balance_after": 0.0}], "costs": [], "last_updated": 1769104522.582563}

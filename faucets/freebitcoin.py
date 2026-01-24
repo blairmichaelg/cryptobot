@@ -23,8 +23,12 @@ class FreeBitcoinBot(FaucetBot):
             ".balance-amount",
             "a[href*='logout']",
             "a:has-text('Logout')",
+            "a:has-text('Sign out')",
+            "a[href*='logout.php']",
             "#logout",
             ".logout",
+            ".account-balance",
+            "[data-testid='logout']",
         ]
         for selector in balance_selectors:
             try:
@@ -34,7 +38,7 @@ class FreeBitcoinBot(FaucetBot):
                 continue
         return False
 
-    async def _find_selector(self, selectors: list, element_name: str = "element", timeout: int = 5000):
+    async def _find_selector(self, selectors: list, element_name: str = "element", timeout: int = 5000, include_frames: bool = True):
         """
         Try multiple selectors and return the first one that exists and is visible.
         
@@ -55,8 +59,47 @@ class FreeBitcoinBot(FaucetBot):
                     return locator
             except Exception:
                 continue
+
+        if include_frames:
+            for frame in self.page.frames:
+                if frame == self.page.main_frame:
+                    continue
+                for selector in selectors:
+                    try:
+                        locator = frame.locator(selector).first
+                        if await locator.is_visible(timeout=timeout):
+                            logger.debug(f"[FreeBitcoin] Found {element_name} in frame with selector: {selector}")
+                            return locator
+                    except Exception:
+                        continue
         
         logger.warning(f"[FreeBitcoin] Could not find {element_name}. Tried selectors: {selectors}")
+        return None
+
+    async def _find_selector_any_frame(self, selectors: list, element_name: str = "element", timeout: int = 5000):
+        """
+        Try multiple selectors across the main page and iframes.
+
+        Returns:
+            Locator if found, None otherwise
+        """
+        locator = await self._find_selector(selectors, element_name=element_name, timeout=timeout)
+        if locator:
+            return locator
+
+        for frame in self.page.frames:
+            if frame == self.page.main_frame:
+                continue
+            for selector in selectors:
+                try:
+                    candidate = frame.locator(selector).first
+                    if await candidate.is_visible(timeout=timeout):
+                        logger.debug(f"[FreeBitcoin] Found {element_name} in iframe with selector: {selector}")
+                        return candidate
+                except Exception:
+                    continue
+
+        logger.warning(f"[FreeBitcoin] Could not find {element_name} in any frame. Tried selectors: {selectors}")
         return None
 
     async def login(self) -> bool:
@@ -71,7 +114,13 @@ class FreeBitcoinBot(FaucetBot):
             return False
 
         try:
-            login_urls = [f"{self.base_url}/login", self.base_url]
+            login_urls = [
+                f"{self.base_url}/?op=login",
+                f"{self.base_url}/login",
+                f"{self.base_url}/login.php",
+                self.base_url,
+                f"{self.base_url}/?op=home",
+            ]
             email_field = None
             password_field = None
 
@@ -79,12 +128,19 @@ class FreeBitcoinBot(FaucetBot):
             email_selectors = [
                 "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
                 "input[name='login_form[btc_address]']",
+                "input[name='login_form[username]']",
                 "input[name='login_form[login]']",
                 "input[name='login_form[email]']",
+                "input[name='login_form[username_or_email]']",
+                "input[name='login']",
+                "input[name='username']",
                 "input[name='login_email_input']",
                 "input[type='email']",
                 "input[name='email']",
                 "#email",
+                "#login_form_email",
+                "#login_form_login",
+                "#login_form_username",
                 "#login_form_btc_address",
                 "input#login_form_btc_address",
                 "#login_form_bt_address",  # legacy misspelling seen in older versions
@@ -96,6 +152,7 @@ class FreeBitcoinBot(FaucetBot):
                 "input[name='password']",
                 "input[name='login_form[password]']",
                 "input[name='login_form[pass]']",
+                "input[name='login_form[password_confirmation]']",
                 "input[name='login_password_input']",
                 "input[type='password']",
                 "#password",
@@ -104,33 +161,51 @@ class FreeBitcoinBot(FaucetBot):
 
             login_trigger_selectors = [
                 "a[href*='login']",
+                "a[href*='op=login']",
                 "button:has-text('Login')",
                 "button:has-text('Log In')",
+                "button:has-text('Sign in')",
                 "a:has-text('Login')",
                 "a:has-text('Log In')",
                 "#login_link",
                 ".login-link",
             ]
 
+            login_form_selectors = [
+                "form#login_form",
+                "#login_form",
+                "form[action*='login']",
+                "form[action*='op=login']",
+            ]
+
+            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+
             for login_url in login_urls:
                 logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
                 # Use shorter timeout and more lenient wait strategy for slow proxies
                 try:
-                    response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                    response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=nav_timeout)
                 except Exception as e:
                     logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
-                    response = await self.page.goto(login_url, wait_until="commit", timeout=45000)
+                    response = await self.page.goto(login_url, wait_until="commit", timeout=nav_timeout)
                 if response is not None:
                     try:
                         status = response.status
                         if status >= 400:
                             logger.error(f"[FreeBitcoin] Login page returned HTTP {status}. URL: {response.url}")
+                            try:
+                                self.last_error_type = self.classify_error(None, None, status)
+                            except Exception:
+                                pass
+                            if status in (401, 403, 429):
+                                await self.random_delay(1.0, 2.0)
+                                continue
                     except Exception:
                         pass
                 await self.random_delay(2, 4)
 
                 # Handle Cloudflare if present
-                await self.handle_cloudflare(max_wait_seconds=30)
+                await self.handle_cloudflare(max_wait_seconds=60)
 
                 # Close cookie banner if present
                 await self.close_popups()
@@ -138,16 +213,28 @@ class FreeBitcoinBot(FaucetBot):
                 # Log current page state for debugging
                 logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
 
-                email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
+                if await self.is_logged_in():
+                    logger.info("✅ [FreeBitcoin] Session already active after navigation")
+                    return True
+
+                try:
+                    await self.page.wait_for_selector(",".join(login_form_selectors), timeout=6000)
+                except Exception:
+                    pass
+
+                email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
                 if not email_field:
-                    login_trigger = await self._find_selector(login_trigger_selectors, "login trigger", timeout=4000)
+                    login_trigger = await self._find_selector_any_frame(login_trigger_selectors, "login trigger", timeout=4000)
                     if login_trigger:
                         logger.debug("[FreeBitcoin] Opening login form/modal...")
                         await self.human_like_click(login_trigger)
                         await self.random_delay(1.0, 2.0)
-                        email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
+                        email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
+                    if not email_field and await self.is_logged_in():
+                        logger.info("✅ [FreeBitcoin] Session active after login trigger")
+                        return True
                 if email_field:
-                    password_field = await self._find_selector(password_selectors, "password field", timeout=5000)
+                    password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
                     if password_field:
                         break
 
@@ -190,7 +277,7 @@ class FreeBitcoinBot(FaucetBot):
                 "input[name='twofa']",
                 "input[placeholder*='2FA' i]",
             ]
-            twofa_field = await self._find_selector(twofa_selectors, "2FA field", timeout=2000)
+            twofa_field = await self._find_selector_any_frame(twofa_selectors, "2FA field", timeout=2000)
             if twofa_field:
                 logger.warning("[FreeBitcoin] 2FA DETECTED! Manual intervention required.")
                 # Don't proceed automatically with 2FA
@@ -217,7 +304,7 @@ class FreeBitcoinBot(FaucetBot):
                 "#login_form_button",
             ]
             
-            submit_btn = await self._find_selector(submit_selectors, "submit button", timeout=5000)
+            submit_btn = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
             if not submit_btn:
                 logger.error("[FreeBitcoin] Could not find submit button")
                 try:
@@ -233,8 +320,8 @@ class FreeBitcoinBot(FaucetBot):
             # Wait for navigation or login success
             logger.debug("[FreeBitcoin] Waiting for login to complete...")
             try:
-                await self.page.wait_for_load_state("networkidle", timeout=15000)
-                await self.page.wait_for_url(f"{self.base_url}/**", timeout=60000)
+                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                await self.page.wait_for_url(f"{self.base_url}/**", timeout=45000)
                 logger.debug(f"[FreeBitcoin] Navigation completed to: {self.page.url}")
             except asyncio.TimeoutError:
                 logger.warning("[FreeBitcoin] Login redirect timeout, checking if logged in anyway...")
@@ -263,8 +350,8 @@ class FreeBitcoinBot(FaucetBot):
             
             for selector in error_selectors:
                 try:
-                    error_elem = self.page.locator(selector).first
-                    if await error_elem.is_visible(timeout=2000):
+                    error_elem = await self._find_selector_any_frame([selector], "error message", timeout=2000)
+                    if error_elem:
                         error_text = await error_elem.text_content()
                         logger.error(f"[FreeBitcoin] Login error message: {error_text}")
                         break
@@ -304,10 +391,26 @@ class FreeBitcoinBot(FaucetBot):
         logger.info("[DEBUG] FreeBitcoin claim() method started")
         
         max_retries = 3
+        nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
         for attempt in range(max_retries):
             try:
                 logger.info(f"[DEBUG] Attempt {attempt + 1}/{max_retries}: Navigating to {self.base_url}/")
-                await self.page.goto(f"{self.base_url}/")
+            response = await self.page.goto(f"{self.base_url}/", wait_until="domcontentloaded", timeout=nav_timeout)
+                if response is not None:
+                    try:
+                        status = response.status
+                        if status in (401, 403, 429):
+                            from core.orchestrator import ErrorType
+                            logger.error(f"[FreeBitcoin] Claim page returned HTTP {status}. URL: {response.url}")
+                            return ClaimResult(
+                                success=False,
+                                status=f"HTTP {status}",
+                                next_claim_minutes=30,
+                                error_type=ErrorType.PROXY_ISSUE if status == 403 else ErrorType.RATE_LIMIT
+                            )
+                    except Exception:
+                        pass
+                await self.handle_cloudflare(max_wait_seconds=60)
                 await self.close_popups()
                 await self.random_delay(2, 4)
 
@@ -334,10 +437,26 @@ class FreeBitcoinBot(FaucetBot):
                 # Check for Roll Button Presence BEFORE Solving (Save $$)
                 # Use multiple selector options for robustness
                 roll_btn = self.page.locator(
-                    "#free_play_form_button, button[id*='play'], .claim-btn, button:has-text('Roll')"
+                    "#free_play_form_button, input#free_play_form_button, input[name='free_play_form_button'], "
+                    "button#free_play_form_button, button[id*='play'], .claim-btn, button:has-text('Roll'), "
+                    "button:has-text('Play')"
                 ).first
-                
-                if await roll_btn.is_visible():
+
+                try:
+                    await roll_btn.wait_for(state="visible", timeout=8000)
+                    roll_visible = True
+                except Exception:
+                    roll_visible = False
+
+                if roll_visible:
+                    if hasattr(roll_btn, "is_enabled") and not await roll_btn.is_enabled():
+                        logger.warning("[DEBUG] Roll button is visible but disabled")
+                        return ClaimResult(
+                            success=False,
+                            status="Roll Disabled",
+                            next_claim_minutes=15,
+                            balance=balance
+                        )
                     logger.info("[DEBUG] Roll button found. Initiating Captcha Solve...")
                     
                     # Handle Cloudflare & Captcha

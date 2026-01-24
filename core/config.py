@@ -168,6 +168,9 @@ class BotSettings(BaseSettings):
     degraded_slow_delay_multiplier: float = 2.0
     performance_alert_slow_threshold: int = 2
 
+    # Proxy routing overrides
+    proxy_bypass_faucets: List[str] = Field(default_factory=list)
+
     # Canary rollout (optional)
     canary_profile: Optional[str] = Field(default=None, alias="CANARY_PROFILE")
     canary_only: bool = Field(default=False, alias="CANARY_ONLY")

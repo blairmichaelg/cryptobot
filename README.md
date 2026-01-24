@@ -493,7 +493,7 @@ Enable visible mode and verbose logging:
 python main.py --visible --single <faucet_name>
 ```
 
-Check logs in `faucet_bot.log` for detailed error messages.
+Check logs in `logs/faucet_bot.log` for detailed error messages.
 
 ---
 

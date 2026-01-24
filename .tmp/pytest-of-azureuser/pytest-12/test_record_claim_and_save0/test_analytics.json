@@ -1,1 +1,0 @@
-{"claims": [{"timestamp": 1769104110.5980084, "faucet": "f1", "success": true, "amount": 1.0, "currency": "BTC", "balance_after": 0.0}, {"timestamp": 1769104110.6408439, "faucet": "f2", "success": true, "amount": 0.5, "currency": "LTC", "balance_after": 0.0}], "costs": [], "last_updated": 1769104110.6408947}

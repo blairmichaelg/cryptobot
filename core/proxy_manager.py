@@ -127,6 +127,25 @@ class ProxyManager:
         """Generate a unique key for a proxy (full string with session)."""
         return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
 
+    def _proxy_host_port_from_str(self, proxy_str: str) -> str:
+        if not proxy_str:
+            return ""
+        try:
+            from urllib.parse import urlparse
+            candidate = proxy_str if "://" in proxy_str else f"http://{proxy_str}"
+            parsed = urlparse(candidate)
+            if parsed.hostname and parsed.port:
+                return f"{parsed.hostname}:{parsed.port}"
+        except Exception:
+            return ""
+        return ""
+
+    def _proxy_host_port(self, proxy: Proxy) -> str:
+        try:
+            return f"{proxy.ip}:{proxy.port}"
+        except Exception:
+            return ""
+
     def _load_health_data(self):
         """
         Load persisted proxy health data from disk.
@@ -172,6 +191,37 @@ class ProxyManager:
             logger.warning(f"Failed to parse proxy health file: {e}. Starting fresh.")
         except Exception as e:
             logger.warning(f"Failed to save proxy health data: {e}")
+
+    def _prune_health_data_for_active_proxies(self, active_proxies: List[Proxy]) -> None:
+        """Remove stale health data entries for proxies no longer in the pool."""
+        if not active_proxies:
+            return
+
+        active_keys = {self._proxy_key(p) for p in active_proxies}
+        if not active_keys:
+            return
+
+        def _filter_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+            return {k: v for k, v in data.items() if k in active_keys}
+
+        before_cooldowns = len(self.proxy_cooldowns)
+        self.proxy_latency = _filter_dict(self.proxy_latency)
+        self.proxy_failures = _filter_dict(self.proxy_failures)
+        self.proxy_reputation = _filter_dict(self.proxy_reputation)
+        self.proxy_soft_signals = _filter_dict(self.proxy_soft_signals)
+        self.proxy_cooldowns = _filter_dict(self.proxy_cooldowns)
+        self.dead_proxies = [k for k in self.dead_proxies if k in active_keys]
+
+        # If everything is in cooldown after pruning, release the earliest one
+        if active_keys and len(self.proxy_cooldowns) >= len(active_keys):
+            oldest_key = min(self.proxy_cooldowns, key=self.proxy_cooldowns.get)
+            self.proxy_cooldowns.pop(oldest_key, None)
+            if oldest_key in self.proxy_failures:
+                self.proxy_failures[oldest_key] = 0
+            logger.warning("⚠️ All proxies were in cooldown; releasing one to avoid empty pool.")
+
+        if before_cooldowns != len(self.proxy_cooldowns):
+            self._save_health_data()
 
     async def get_proxy_geolocation(self, proxy: Proxy) -> Optional[Tuple[str, str]]:
         """Get geolocation (timezone, locale) for a proxy IP.
@@ -378,6 +428,7 @@ class ProxyManager:
         proxy_key = proxy_str
         if "://" in proxy_key:
             proxy_key = proxy_key.split("://", 1)[1]
+        host_port = self._proxy_host_port_from_str(proxy_str)
             
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
 
@@ -391,6 +442,15 @@ class ProxyManager:
             # 403 or detection: 1 hour cooldown for THIS session
             self.proxy_cooldowns[proxy_key] = now + self.DETECTION_COOLDOWN
             logger.error(f"[COOLDOWN] Proxy session {proxy_key} detected/403. Cooling down for 1h.")
+
+            if proxy_key not in self.dead_proxies:
+                self.dead_proxies.append(proxy_key)
+
+            if host_port:
+                self.proxy_cooldowns[host_port] = now + self.DETECTION_COOLDOWN
+                if host_port not in self.dead_proxies:
+                    self.dead_proxies.append(host_port)
+                logger.warning(f"[COOLDOWN] Proxy host {host_port} flagged after detection.")
             
             # If we see MANY sessions from the same IP failing, we could ban the IP,
             # but for now, let's just rotate sessions.
@@ -498,6 +558,7 @@ class ProxyManager:
         # 2. Filter active proxies
         # We start with ALL proxies and exclude ONLY those that are currently cooling down
         current_cooldowns = set(self.proxy_cooldowns.keys())
+        dead_set = set(self.dead_proxies)
         
         # Safety check: If all proxies are in cooldown, we might want to release the oldest one
         # or just force a fetch. For now, we respect the cooldowns.
@@ -505,7 +566,10 @@ class ProxyManager:
         active_proxies = []
         for p in self.all_proxies:
             key = self._proxy_key(p)
-            if key not in current_cooldowns:
+            host_port = self._proxy_host_port(p)
+            if key not in current_cooldowns and (not host_port or host_port not in current_cooldowns):
+                if key in dead_set or (host_port and host_port in dead_set):
+                    continue
                 if getattr(self.settings, "proxy_reputation_enabled", True):
                     score = self.get_proxy_reputation(p.to_string())
                     if score < getattr(self.settings, "proxy_reputation_min_score", 20.0):
@@ -532,6 +596,24 @@ class ProxyManager:
         if slow_proxies_keys:
             logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {slow_proxies_keys[:3]}...")
 
+        # If we removed everything, try to salvage at least one proxy to avoid a hard stall
+        if not final_proxies and self.all_proxies:
+            candidates = list(self.all_proxies)
+
+            def candidate_score(proxy: Proxy) -> Tuple[float, float]:
+                key = self._proxy_key(proxy)
+                cooldown_until = self.proxy_cooldowns.get(key, 0)
+                rep = self.get_proxy_reputation(proxy.to_string()) if getattr(self.settings, "proxy_reputation_enabled", True) else 100.0
+                return (cooldown_until, -rep)
+
+            candidates.sort(key=candidate_score)
+            best = candidates[0]
+            best_key = self._proxy_key(best)
+            if best_key in self.proxy_cooldowns:
+                logger.warning("⚠️ All proxies are in cooldown. Temporarily reusing %s to avoid zero-proxy stall.", best_key)
+                self.proxy_cooldowns.pop(best_key, None)
+            final_proxies = [best]
+
         # Update the active list
         self.proxies = final_proxies
         self.validated_proxies = [p for p in self.validated_proxies if self._proxy_key(p) not in current_cooldowns and self._proxy_key(p) not in slow_proxies_keys]
@@ -540,9 +622,19 @@ class ProxyManager:
         if removed > 0:
             logger.info(f"[CLEANUP] Removed {removed} proxies (Dead/Slow). Active: {len(self.proxies)} / Total: {len(self.all_proxies)}")
         
-        # If we removed everything, try to salvage at least one if possible, or just let the fetcher handle it
+        # If we removed everything, salvage at least one proxy to avoid a hard-stop
         if not self.proxies and self.all_proxies:
             logger.warning("⚠️ All proxies are currently in cooldown or slow!")
+            if self.proxy_cooldowns:
+                oldest_key = min(self.proxy_cooldowns, key=self.proxy_cooldowns.get)
+                self.proxy_cooldowns.pop(oldest_key, None)
+                if oldest_key in self.proxy_failures:
+                    self.proxy_failures[oldest_key] = 0
+                restored = [p for p in self.all_proxies if self._proxy_key(p) == oldest_key]
+                if restored:
+                    self.proxies = restored
+                    logger.info("[RESTORE] Re-enabled one proxy to avoid empty pool: %s", oldest_key)
+                    self._save_health_data()
              
         return removed
 
@@ -646,6 +738,7 @@ class ProxyManager:
             
             self.all_proxies = new_proxies
             self.proxies = list(new_proxies)
+            self._prune_health_data_for_active_proxies(new_proxies)
             logger.info(f"[OK] Loaded {count} proxies from file.")
             return count
             
@@ -908,6 +1001,7 @@ class ProxyManager:
                 
                 self.all_proxies = new_proxies
                 self.proxies = list(new_proxies)
+                self._prune_health_data_for_active_proxies(new_proxies)
                 logger.info(f"✅ Generated and saved {len(new_proxies)} unique residential proxies to {abs_path}")
                 return len(new_proxies)
             except Exception as e:
@@ -996,11 +1090,14 @@ class ProxyManager:
             logger.warning("No 2Captcha proxies loaded. Creating fallback assignments from config.")
             return
 
-        logger.info(f"Assigning {len(self.proxies)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
+        session_proxies = [p for p in self.proxies if "-session-" in (p.username or "")]
+        assignable = session_proxies if session_proxies else list(self.proxies)
+
+        logger.info(f"Assigning {len(assignable)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
         
         for i, profile in enumerate(profiles):
             # Round-robin assignment
-            proxy = self.proxies[i % len(self.proxies)]
+            proxy = assignable[i % len(assignable)]
             
             # Store assignment
             self.assignments[profile.username] = proxy
@@ -1031,30 +1128,46 @@ class ProxyManager:
         current_key = current_proxy_str or ""
         if "://" in current_key:
             current_key = current_key.split("://", 1)[1]
+        current_host = self._proxy_host_port_from_str(current_proxy_str or "")
                 
         # If current is dead/low reputation or we just want to rotate
         current_score = None
         if current_key and getattr(self.settings, "proxy_reputation_enabled", True):
             current_score = self.get_proxy_reputation(current_key)
 
+        now = time.time()
+        cooldown_until = self.proxy_cooldowns.get(current_key)
+        cooldown_active = bool(cooldown_until and cooldown_until > now)
+        host_cooldown_until = self.proxy_cooldowns.get(current_host) if current_host else None
+        host_cooldown_active = bool(host_cooldown_until and host_cooldown_until > now)
+
         if (
             not current_key
             or current_key in self.dead_proxies
+            or (current_host and current_host in self.dead_proxies)
+            or cooldown_active
+            or host_cooldown_active
             or profile.proxy_rotation_strategy == "random"
             or (current_score is not None and current_score < getattr(self.settings, "proxy_reputation_min_score", 20.0))
         ):
             if not self.proxies:
                 # Check if we can fetch more
+                profile.proxy = None
                 return None
                 
             # Filter out dead ones and low reputation if enabled
-            healthy = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
+            healthy = [
+                p for p in self.proxies
+                if self._proxy_key(p) not in self.dead_proxies
+                and self.proxy_cooldowns.get(self._proxy_key(p), 0) <= now
+            ]
             if getattr(self.settings, "proxy_reputation_enabled", True):
                 min_score = getattr(self.settings, "proxy_reputation_min_score", 20.0)
                 healthy = [p for p in healthy if self.get_proxy_reputation(p.to_string()) >= min_score]
             if not healthy:
                 logger.warning(f"No healthy proxies left for {profile.username}. Trying to replenish pool...")
                 # We return None but the orchestrator might trigger a retry or replenishment
+                profile.proxy = None
                 return None
 
             # Choose new one based on rotation strategy

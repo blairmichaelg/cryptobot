@@ -23,8 +23,10 @@ def setup_logging(log_level: str = "INFO"):
     level = getattr(logging, log_level.upper(), logging.INFO)
     
     # Create handlers
+    log_path = os.path.join("logs", "faucet_bot.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     file_handler = CompressedRotatingFileHandler(
-        'faucet_bot.log',
+        log_path,
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding='utf-8'

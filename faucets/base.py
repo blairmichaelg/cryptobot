@@ -93,6 +93,7 @@ class FaucetBot:
         
         # Human timing profile for advanced stealth
         self.human_profile = None  # Will be loaded from fingerprint or set on first use
+        self.last_error_type = None
 
     def set_behavior_profile(self, profile_name: Optional[str] = None, profile_hint: Optional[str] = None):
         """
@@ -183,6 +184,9 @@ class FaucetBot:
             elif status_code == 429:
                 logger.debug(f"[{self.faucet_name}] Classified as RATE_LIMIT (status 429)")
                 return ErrorType.RATE_LIMIT
+            elif status_code == 403:
+                logger.debug(f"[{self.faucet_name}] Classified as PROXY_ISSUE (status 403)")
+                return ErrorType.PROXY_ISSUE
         
         # Check exception type and message
         if exception:
@@ -953,16 +957,58 @@ class FaucetBot:
             else:
                 # Fallback to faucet name as profile identifier
                 self.load_human_profile(self.faucet_name)
+
+        # Attempt to clear Cloudflare/turnstile before failure checks
+        try:
+            await self.handle_cloudflare(max_wait_seconds=30)
+        except Exception:
+            pass
         
+        self.last_error_type = None
         failure = await self.check_failure_states()
         if failure:
+            # Retry once after reload in case we hit a transient challenge page
+            if failure in {"Proxy Detected", "Site Maintenance / Blocked"}:
+                try:
+                    await self.page.reload()
+                    await self.handle_cloudflare(max_wait_seconds=30)
+                except Exception:
+                    pass
+                failure = await self.check_failure_states()
+
+        if failure:
+            error_type = None
+            try:
+                from core.orchestrator import ErrorType
+                failure_lower = failure.lower()
+                if "proxy" in failure_lower or "blocked" in failure_lower:
+                    error_type = ErrorType.PROXY_ISSUE
+                elif "maintenance" in failure_lower or "cloudflare" in failure_lower:
+                    error_type = ErrorType.RATE_LIMIT
+                elif "banned" in failure_lower or "suspended" in failure_lower:
+                    error_type = ErrorType.PERMANENT
+            except Exception:
+                error_type = None
+
+            self.last_error_type = error_type
             logger.error(f"[{self.faucet_name}] Failure state detected: {failure}")
             return False
             
         if await self.is_logged_in():
             return True
-            
-        return await self.login()
+
+        logged_in = await self.login()
+        if not logged_in:
+            try:
+                page_content = await self.page.content()
+            except Exception:
+                page_content = None
+            try:
+                self.last_error_type = self.classify_error(None, page_content, None)
+            except Exception:
+                self.last_error_type = None
+
+        return logged_in
 
     async def view_ptc_ads(self):
         """
@@ -1153,7 +1199,7 @@ class FaucetBot:
                     pass
                 
                 # Classify login failure
-                error_type = self.classify_error(None, page_content, status_code)
+                error_type = self.last_error_type or self.classify_error(None, page_content, status_code)
                 return ClaimResult(
                     success=False, 
                     status="Login/Access Failed", 

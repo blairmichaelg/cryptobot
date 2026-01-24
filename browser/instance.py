@@ -95,6 +95,19 @@ class BrowserManager:
             return ""
         return proxy.split("://", 1)[1] if "://" in proxy else proxy
 
+    def _proxy_host_port(self, proxy: str) -> str:
+        if not proxy:
+            return ""
+        try:
+            from urllib.parse import urlparse
+            candidate = proxy if "://" in proxy else f"http://{proxy}"
+            parsed = urlparse(candidate)
+            if parsed.hostname and parsed.port:
+                return f"{parsed.hostname}:{parsed.port}"
+        except Exception:
+            return ""
+        return ""
+
     def _is_proxy_blacklisted(self, proxy: str) -> bool:
         """Check if a proxy is dead or in cooldown based on proxy_health.json."""
         try:
@@ -107,12 +120,14 @@ class BrowserManager:
             if not key:
                 return False
 
+            host_port = self._proxy_host_port(proxy)
+
             dead = set(data.get("dead_proxies", []))
-            if key in dead:
+            if key in dead or (host_port and host_port in dead):
                 return True
 
             cooldowns = data.get("proxy_cooldowns", {})
-            cooldown_until = cooldowns.get(key)
+            cooldown_until = cooldowns.get(key) or (cooldowns.get(host_port) if host_port else None)
             if cooldown_until and cooldown_until > time.time():
                 return True
 
@@ -148,7 +163,7 @@ class BrowserManager:
         self.browser = await self.camoufox.__aenter__()
         return self
 
-    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None) -> BrowserContext:
+    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True) -> BrowserContext:
         """
         Creates a new isolated browser context with specific proxy and user agent.
         Includes enhanced anti-detection measures and sticky session support.
@@ -274,9 +289,14 @@ class BrowserManager:
         }
         
         # Sticky Session Logic: Resolve and Persist Proxy
-        if profile_name:
+        if profile_name and allow_sticky_proxy:
             # Load existing binding
             saved_proxy = await self.load_proxy_binding(profile_name)
+
+            if proxy and self._is_proxy_blacklisted(proxy):
+                logger.warning("⚠️ Requested proxy for %s is dead/cooldown. Ignoring: %s", profile_name, proxy)
+                proxy = None
+                await self.remove_proxy_binding(profile_name)
             
             if saved_proxy:
                 if self._is_proxy_blacklisted(saved_proxy):
@@ -298,6 +318,11 @@ class BrowserManager:
                 # No existing binding, create one
                 logger.info(f"📌 Binding {profile_name} to proxy {proxy}")
                 await self.save_proxy_binding(profile_name, proxy)
+        elif profile_name and not allow_sticky_proxy:
+            if proxy:
+                logger.debug("🚫 Sticky proxy disabled for %s; using explicit proxy %s", profile_name, proxy)
+            else:
+                logger.debug("🚫 Sticky proxy disabled for %s; no proxy will be used", profile_name)
 
         if proxy:
             # Parse proxy string if it's a URL
