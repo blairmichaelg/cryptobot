@@ -357,6 +357,7 @@ class CaptchaSolver:
         # 1. Detection & Extraction
         sitekey = None
         method = None
+        turnstile_input_only = False
 
         # Small wait for captcha widgets to render (non-blocking if absent)
         try:
@@ -390,6 +391,7 @@ class CaptchaSolver:
             )
             if turnstile_input:
                 method = "turnstile"
+                turnstile_input_only = True
                 try:
                     sitekey = await page.evaluate(
                         """
@@ -432,6 +434,7 @@ class CaptchaSolver:
             )
             if turnstile_elem:
                 method = "turnstile"
+                turnstile_input_only = False
                 sitekey = await turnstile_elem.get_attribute("data-sitekey")
                 if not sitekey:
                     # Try to extract from iframe src
@@ -530,10 +533,12 @@ class CaptchaSolver:
                 sitekey = None
             
             if not sitekey:
+                if method == "turnstile" and turnstile_input_only:
+                    logger.info("Turnstile response input detected without widget/sitekey; skipping auto-solve.")
+                    return True
                 # Check if any captcha frames exist at all as a last resort
                 has_frames = await page.query_selector(
-                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey], "
-                    "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
+                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey]"
                 )
                 if not has_frames:
                     return True
