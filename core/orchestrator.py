@@ -1086,7 +1086,7 @@ class JobScheduler:
         context = None
         try:
             # Get proxy for this profile
-            current_proxy = self.get_next_proxy(profile)
+            current_proxy = self.get_next_proxy(profile, faucet_type=faucet_name)
             
             # Create context
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
@@ -1210,11 +1210,15 @@ class JobScheduler:
         logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")
 
     
-    def get_next_proxy(self, profile: AccountProfile) -> Optional[str]:
+    def get_next_proxy(self, profile: AccountProfile, faucet_type: Optional[str] = None) -> Optional[str]:
         """
         Get the next proxy for a profile based on rotation strategy.
         Delegates to ProxyManager if available for advanced rotation.
         """
+        if faucet_type:
+            bypass = {name.lower() for name in getattr(self.settings, "proxy_bypass_faucets", [])}
+            if faucet_type.lower() in bypass:
+                return None
         if self.proxy_manager:
             return self.proxy_manager.rotate_proxy(profile)
             
@@ -1350,7 +1354,7 @@ class JobScheduler:
             self.profile_concurrency[username] = self.profile_concurrency.get(username, 0) + 1
             
             # Get proxy using rotation logic
-            current_proxy = self.get_next_proxy(job.profile)
+            current_proxy = self.get_next_proxy(job.profile, faucet_type=job.faucet_type)
             
             # Create isolated context for the job
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None

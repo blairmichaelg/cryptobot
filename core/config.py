@@ -59,6 +59,7 @@ class BotSettings(BaseSettings):
     proxy_provider: str = "2captcha"  # Options: 2captcha, webshare
     webshare_api_key: Optional[str] = None
     webshare_page_size: int = 50
+    proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
     
     # Optimization
     block_images: bool = True
