@@ -141,6 +141,11 @@ class FreeBitcoinBot(FaucetBot):
                     "password": password,
                     "tfa_code": tfa_code or "",
                 },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": f"{self.base_url}/?op=login",
+                    "Origin": self.base_url,
+                },
                 timeout=30000,
             )
         except Exception as exc:
@@ -566,6 +571,8 @@ class FreeBitcoinBot(FaucetBot):
                 "#login_2fa_input",
                 "input[name='2fa']",
                 "input[name='twofa']",
+                "input[name='2fa_code']",
+                "#login_form_2fa",
                 "input[placeholder*='2FA' i]",
             ]
             twofa_field = await self._find_selector_any_frame(twofa_selectors, "2FA field", timeout=2000)
@@ -591,12 +598,21 @@ class FreeBitcoinBot(FaucetBot):
             try:
                 captcha_present = False
                 try:
-                    captcha_present = await self.page.query_selector(
-                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], "
-                            "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], #int_page_captchas img, #int_page_captchas input, "
-                            "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
-                    ) is not None
+                    captcha_present = await self.page.evaluate(
+                        """
+                        () => {
+                            const intCaptcha = document.querySelector('#int_page_captchas');
+                            if (intCaptcha && intCaptcha.children.length > 0) return true;
+                            const loginForm = document.querySelector('#login_form');
+                            if (loginForm && loginForm.querySelector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], iframe[src*='hcaptcha'], iframe[src*='recaptcha'], input[name*='captcha'], input[id*='captcha']")) {
+                                return true;
+                            }
+                            return false;
+                        }
+                        """
+                    )
                 except Exception:
+                    captcha_present = False
                     captcha_present = False
 
                 if captcha_present:
