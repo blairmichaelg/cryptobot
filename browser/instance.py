@@ -56,14 +56,15 @@ class BrowserManager:
         
         # Construct arguments
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
+        # Keep parameters minimal to avoid fingerprint generation conflicts
+        # Camoufox will auto-detect appropriate values based on the environment
         kwargs = {
             "headless": self.headless,
-            # Disable geoip and humanize for server environments to avoid fingerprint generation errors
-            # Re-enable on local dev if needed
-            "geoip": False if self.headless else True,
-            "humanize": False if self.headless else True,
+            "geoip": True,  # Auto-detect location
+            "humanize": True,  # Add human-like timing
             "block_images": self.block_images,
-            "fonts": ["Arial", "Courier New", "Georgia", "Times New Roman", "Verdana"] # Fix for Camoufox TypeError
+            # Don't override fonts - let Camoufox use appropriate defaults for the OS
+            # Don't specify os/screen/locale - let Camoufox auto-detect to avoid conflicts
         }
 
         # We keep the camoufox instance wrapper
