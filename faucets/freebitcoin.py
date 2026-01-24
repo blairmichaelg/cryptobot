@@ -157,12 +157,16 @@ class FreeBitcoinBot(FaucetBot):
                         "X-Requested-With": "XMLHttpRequest",
                         "Referer": f"{self.base_url}/?op=login",
                         "Origin": self.base_url,
+                        "Accept": "*/*",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                     },
                     timeout=30000,
                 )
             except Exception as exc:
                 logger.warning("[FreeBitcoin] Direct login request failed: %s", exc)
                 continue
+
+            logger.info("[FreeBitcoin] Direct login response status: %s", response.status)
 
             try:
                 text = (await response.text()) or ""
@@ -233,6 +237,43 @@ class FreeBitcoinBot(FaucetBot):
                 logger.warning("[FreeBitcoin] Direct login response missing fields: %s", text[:200])
 
         return False
+
+    async def _has_session_cookie(self) -> bool:
+        try:
+            cookies = await self.page.context.cookies(self.base_url)
+        except Exception:
+            return False
+        names = {cookie.get("name") for cookie in cookies}
+        return "fbtc_session" in names or "fbtc_userid" in names
+
+    async def _submit_login_via_form(self, username: str, password: str, tfa_code: str = "") -> None:
+        try:
+            await self.page.evaluate(
+                """
+                (payload) => {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = 'https://freebitco.in/';
+                    for (const [key, value] of Object.entries(payload)) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = key;
+                        input.value = value || '';
+                        form.appendChild(input);
+                    }
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+                """,
+                {
+                    "op": "login",
+                    "btc_address": username,
+                    "password": password,
+                    "2fa_code": tfa_code or "",
+                }
+            )
+        except Exception:
+            pass
 
     async def _log_login_diagnostics(self, context: str) -> None:
         """Log login page diagnostics to identify captcha/input elements."""
@@ -810,6 +851,25 @@ class FreeBitcoinBot(FaucetBot):
             # Check if logged in
             if await self.is_logged_in():
                 logger.info("✅ [FreeBitcoin] Login successful (session detected)")
+                return True
+
+            if await self._has_session_cookie():
+                try:
+                    await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    pass
+                if await self.is_logged_in():
+                    logger.info("✅ [FreeBitcoin] Login successful via session cookies")
+                    return True
+
+            logger.debug("[FreeBitcoin] Attempting form-based login fallback...")
+            await self._submit_login_via_form(login_id, creds.get("password", ""), "")
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+            if await self.is_logged_in():
+                logger.info("✅ [FreeBitcoin] Login successful via form submit")
                 return True
             
             # Login failed - check for error messages
