@@ -362,7 +362,8 @@ class CaptchaSolver:
         try:
             await page.wait_for_selector(
                 "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [data-sitekey], "
-                "iframe[src*='hcaptcha'], iframe[src*='recaptcha']",
+                "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], "
+                "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']",
                 timeout=6000
             )
         except Exception:
@@ -381,6 +382,47 @@ class CaptchaSolver:
                     method = "turnstile"
                     sitekey = frame_url.split("k=")[1].split("&")[0]
                     break
+
+        # 1b) Check for Turnstile response input (some pages render without iframe)
+        if not method:
+            turnstile_input = await page.query_selector(
+                "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
+            )
+            if turnstile_input:
+                method = "turnstile"
+                try:
+                    sitekey = await page.evaluate(
+                        """
+                        () => {
+                            const input = document.querySelector('input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"]');
+                            if (!input) return null;
+                            const inputId = input.id || '';
+                            const widgetId = inputId.replace(/_response$/, '');
+                            if (widgetId) {
+                                const widget = document.getElementById(widgetId);
+                                if (widget) {
+                                    const dk = widget.getAttribute('data-sitekey') || (widget.dataset ? widget.dataset.sitekey : null);
+                                    if (dk) return dk;
+                                }
+                            }
+                            const elem = document.querySelector('.cf-turnstile[data-sitekey], [data-sitekey][class*="turnstile"]');
+                            if (elem) return elem.getAttribute('data-sitekey');
+                            if (typeof turnstile !== 'undefined' && turnstile._render_parameters && turnstile._render_parameters.sitekey) {
+                                return turnstile._render_parameters.sitekey;
+                            }
+                            if (window.___cf_turnstile_cfg) {
+                                const cfg = window.___cf_turnstile_cfg;
+                                const values = Object.values(cfg || {});
+                                for (const v of values) {
+                                    if (v && v.sitekey) return v.sitekey;
+                                }
+                            }
+                            return null;
+                        }
+                        """
+                    )
+                except Exception:
+                    sitekey = None
 
         # 2) Fallback to DOM selectors
         if not method:
@@ -490,7 +532,8 @@ class CaptchaSolver:
             if not sitekey:
                 # Check if any captcha frames exist at all as a last resort
                 has_frames = await page.query_selector(
-                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey]"
+                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey], "
+                    "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
                 )
                 if not has_frames:
                     return True
@@ -1000,6 +1043,7 @@ class CaptchaSolver:
             const patterns = [
                 /sitekey["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /site-key["']\\s*:\\s*["']([^"']{20,})["']/i,
+                /siteKey["']\s*:\s*["']([^"']{20,})["']/i,
                 /key["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /render\\(.+?["']([^"']{20,})["']/i
             ];

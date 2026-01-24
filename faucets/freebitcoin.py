@@ -521,7 +521,8 @@ class FreeBitcoinBot(FaucetBot):
                 try:
                     captcha_present = await self.page.query_selector(
                         "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], "
-                        "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], #int_page_captchas img, #int_page_captchas input"
+                            "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], #int_page_captchas img, #int_page_captchas input, "
+                            "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
                     ) is not None
                 except Exception:
                     captcha_present = False
@@ -666,7 +667,8 @@ class FreeBitcoinBot(FaucetBot):
             try:
                 try:
                     await self.page.wait_for_selector(
-                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile']",
+                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], "
+                        "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']",
                         timeout=8000
                     )
                 except Exception:
