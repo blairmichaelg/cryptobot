@@ -413,6 +413,12 @@ class CaptchaSolver:
                 sitekey = None
         if sitekey:
             sitekey = sitekey.strip()
+            # If we got a blob or JSON-like string, extract the first plausible token
+            if any(ch in sitekey for ch in ["{", "}", ",", ":"]):
+                import re
+                match = re.search(r"[0-9A-Za-z_-]{20,}", sitekey)
+                if match:
+                    sitekey = match.group(0)
         if not sitekey or len(sitekey) < 10:
             sitekey = None
 
