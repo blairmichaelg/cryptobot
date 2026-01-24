@@ -239,6 +239,25 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             login_form_html = None
 
+        try:
+            captcha_state = await self.page.evaluate(
+                """
+                () => ({
+                    captcha_type: typeof captcha_type !== 'undefined' ? captcha_type : null,
+                    has_turnstile: typeof turnstile !== 'undefined',
+                    has_hcaptcha: typeof hcaptcha !== 'undefined',
+                    has_grecaptcha: typeof grecaptcha !== 'undefined',
+                    int_page_captchas_children: (() => {
+                        const el = document.querySelector('#int_page_captchas');
+                        return el ? el.children.length : null;
+                    })(),
+                    login_button_exists: !!document.querySelector('#login_button')
+                })
+                """
+            )
+        except Exception:
+            captcha_state = None
+
         logger.info("[FreeBitcoin] Login diagnostics (%s): inputs=%s", context, inputs)
         logger.info("[FreeBitcoin] Login diagnostics (%s): textareas=%s", context, textareas)
         logger.info("[FreeBitcoin] Login diagnostics (%s): iframes=%s", context, iframes)
@@ -246,6 +265,7 @@ class FreeBitcoinBot(FaucetBot):
         logger.info("[FreeBitcoin] Login diagnostics (%s): forms=%s", context, form_summaries)
         logger.info("[FreeBitcoin] Login diagnostics (%s): int_page_captchas_html=%s", context, int_captcha_html)
         logger.info("[FreeBitcoin] Login diagnostics (%s): login_form_html=%s", context, login_form_html)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_state=%s", context, captcha_state)
 
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
