@@ -124,6 +124,30 @@ async def main():
                 profiles.append(AccountProfile(faucet="freebitcoin", username=settings.freebitcoin_username, password=settings.freebitcoin_password))
             if settings.dutchy_username:
                 profiles.append(AccountProfile(faucet="dutchy", username=settings.dutchy_username, password=settings.dutchy_password))
+            
+            # Pick.io Family
+            if settings.litepick_username:
+                profiles.append(AccountProfile(faucet="litepick", username=settings.litepick_username, password=settings.litepick_password))
+            if settings.tronpick_username:
+                profiles.append(AccountProfile(faucet="tronpick", username=settings.tronpick_username, password=settings.tronpick_password))
+            if settings.dogepick_username:
+                profiles.append(AccountProfile(faucet="dogepick", username=settings.dogepick_username, password=settings.dogepick_password))
+            if settings.bchpick_username:
+                profiles.append(AccountProfile(faucet="bchpick", username=settings.bchpick_username, password=settings.bchpick_password))
+            if settings.solpick_username:
+                profiles.append(AccountProfile(faucet="solpick", username=settings.solpick_username, password=settings.solpick_password))
+            if settings.tonpick_username:
+                profiles.append(AccountProfile(faucet="tonpick", username=settings.tonpick_username, password=settings.tonpick_password))
+            if settings.polygonpick_username:
+                profiles.append(AccountProfile(faucet="polygonpick", username=settings.polygonpick_username, password=settings.polygonpick_password))
+            if settings.binpick_username:
+                profiles.append(AccountProfile(faucet="binpick", username=settings.binpick_username, password=settings.binpick_password))
+            if settings.dashpick_username:
+                profiles.append(AccountProfile(faucet="dashpick", username=settings.dashpick_username, password=settings.dashpick_password))
+            if settings.ethpick_username:
+                profiles.append(AccountProfile(faucet="ethpick", username=settings.ethpick_username, password=settings.ethpick_password))
+            if settings.usdpick_username:
+                profiles.append(AccountProfile(faucet="usdpick", username=settings.usdpick_username, password=settings.usdpick_password))
         
         # Filter if --single provided
         if args.single:

@@ -167,6 +167,30 @@ class BotSettings(BaseSettings):
 
     dutchy_username: Optional[str] = None
     dutchy_password: Optional[str] = None
+    
+    # Pick.io Family Credentials
+    litepick_username: Optional[str] = None
+    litepick_password: Optional[str] = None
+    tronpick_username: Optional[str] = None
+    tronpick_password: Optional[str] = None
+    dogepick_username: Optional[str] = None
+    dogepick_password: Optional[str] = None
+    bchpick_username: Optional[str] = None
+    bchpick_password: Optional[str] = None
+    solpick_username: Optional[str] = None
+    solpick_password: Optional[str] = None
+    tonpick_username: Optional[str] = None
+    tonpick_password: Optional[str] = None
+    polygonpick_username: Optional[str] = None
+    polygonpick_password: Optional[str] = None
+    binpick_username: Optional[str] = None
+    binpick_password: Optional[str] = None
+    dashpick_username: Optional[str] = None
+    dashpick_password: Optional[str] = None
+    ethpick_username: Optional[str] = None
+    ethpick_password: Optional[str] = None
+    usdpick_username: Optional[str] = None
+    usdpick_password: Optional[str] = None
 
     # Multi-Account Profiles
     # This list can be populated from JSON env var or config file
@@ -197,7 +221,7 @@ class BotSettings(BaseSettings):
             if acc.enabled and acc.faucet.lower() in name:
                 return {"username": acc.username, "password": acc.password, "proxy": acc.proxy}
 
-        # Fallback to Legacy
+        # Fallback to Legacy Fields
         if "fire" in name and self.firefaucet_username:
             return {"username": self.firefaucet_username, "password": self.firefaucet_password}
         elif "cointiply" in name and self.cointiply_username:
@@ -206,6 +230,30 @@ class BotSettings(BaseSettings):
             return {"username": self.freebitcoin_username, "password": self.freebitcoin_password}
         elif "dutchy" in name and self.dutchy_username:
             return {"username": self.dutchy_username, "password": self.dutchy_password}
+        
+        # Pick.io Family Fallbacks
+        elif "litepick" in name and self.litepick_username:
+            return {"username": self.litepick_username, "password": self.litepick_password}
+        elif "tronpick" in name and self.tronpick_username:
+            return {"username": self.tronpick_username, "password": self.tronpick_password}
+        elif "dogepick" in name and self.dogepick_username:
+            return {"username": self.dogepick_username, "password": self.dogepick_password}
+        elif "bchpick" in name and self.bchpick_username:
+            return {"username": self.bchpick_username, "password": self.bchpick_password}
+        elif "solpick" in name and self.solpick_username:
+            return {"username": self.solpick_username, "password": self.solpick_password}
+        elif "tonpick" in name and self.tonpick_username:
+            return {"username": self.tonpick_username, "password": self.tonpick_password}
+        elif "polygonpick" in name and self.polygonpick_username:
+            return {"username": self.polygonpick_username, "password": self.polygonpick_password}
+        elif "binpick" in name and self.binpick_username:
+            return {"username": self.binpick_username, "password": self.binpick_password}
+        elif "dashpick" in name and self.dashpick_username:
+            return {"username": self.dashpick_username, "password": self.dashpick_password}
+        elif "ethpick" in name and self.ethpick_username:
+            return {"username": self.ethpick_username, "password": self.ethpick_password}
+        elif "usdpick" in name and self.usdpick_username:
+            return {"username": self.usdpick_username, "password": self.usdpick_password}
         
         return None
 
