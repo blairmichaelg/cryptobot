@@ -597,11 +597,74 @@ class ProxyManager:
             
         return False
 
+    async def fetch_proxy_config_from_2captcha(self) -> Optional[Proxy]:
+        """
+        Fetches residential proxy configuration from 2Captcha API.
+        This retrieves the proxy gateway details (host, port, credentials) from your account.
+        
+        Returns:
+            Proxy object if successful, None otherwise
+        """
+        if not self.api_key:
+            logger.error("2Captcha API key missing.")
+            return None
+        
+        # Try multiple API endpoints to get proxy configuration
+        endpoints = [
+            ("https://2captcha.com/res.php", {"key": self.api_key, "action": "getproxies", "json": 1}),
+            ("https://api.2captcha.com/proxy/info", {"key": self.api_key}),
+        ]
+        
+        logger.info("[2CAPTCHA] Fetching residential proxy configuration from API...")
+        
+        async with aiohttp.ClientSession() as session:
+            for url, params in endpoints:
+                try:
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            try:
+                                data = await resp.json()
+                                logger.debug(f"[2CAPTCHA] Response from {url}: {data}")
+                                
+                                # Parse response based on expected formats
+                                # Format 1: Direct proxy list
+                                if isinstance(data, dict):
+                                    if data.get("status") == 1 or data.get("status") == "OK":
+                                        proxy_data = data.get("request") or data.get("data") or data.get("proxies")
+                                        if proxy_data:
+                                            # If it's a list, take the first one
+                                            if isinstance(proxy_data, list) and proxy_data:
+                                                proxy_str = proxy_data[0]
+                                            else:
+                                                proxy_str = proxy_data
+                                            
+                                            # Parse proxy string
+                                            proxy = self._parse_proxy_string(f"http://{proxy_str}" if not proxy_str.startswith("http") else proxy_str)
+                                            if proxy:
+                                                logger.info(f"[2CAPTCHA] ✅ Fetched proxy config: {proxy.ip}:{proxy.port}")
+                                                return proxy
+                            except (json.JSONDecodeError, ValueError) as e:
+                                logger.debug(f"[2CAPTCHA] Non-JSON response from {url}: {await resp.text()}")
+                                continue
+                        else:
+                            logger.debug(f"[2CAPTCHA] Endpoint {url} returned status {resp.status}")
+                except Exception as e:
+                    logger.debug(f"[2CAPTCHA] Error fetching from {url}: {e}")
+                    continue
+        
+        logger.warning("[2CAPTCHA] Could not fetch proxy configuration from API. You may need to:")
+        logger.warning("  1. Purchase residential proxy traffic at https://2captcha.com/proxy/residential-proxies")
+        logger.warning("  2. Manually add your proxy credentials to config/proxies.txt")
+        logger.warning("  Format: username:password@proxy.2captcha.com:port")
+        return None
+
     async def fetch_proxies_from_api(self, quantity: int = 10) -> int:
         """
         Generates residential proxies by rotating session IDs.
         Since 2Captcha (and similar providers) use a single gateway with session-based rotation,
         we generate unique sessions from the base configured proxy.
+        
+        If no base proxy exists, attempts to fetch configuration from 2Captcha API first.
         """
         if not self.api_key:
             logger.error("2Captcha API key missing.")
@@ -611,9 +674,16 @@ class ProxyManager:
         if not self.proxies:
             self.load_proxies_from_file()
             
+        # If still no proxies, try to fetch from API
         if not self.proxies:
-            logger.error("Cannot generate proxies: No base proxy found in proxies.txt to use as template.")
-            return 0
+            logger.info("[2CAPTCHA] No base proxy found in file. Attempting to fetch from API...")
+            base_proxy = await self.fetch_proxy_config_from_2captcha()
+            if base_proxy:
+                self.proxies = [base_proxy]
+                self.all_proxies = [base_proxy]
+            else:
+                logger.error("Cannot generate proxies: No base proxy found in proxies.txt and API fetch failed.")
+                return 0
 
         # Use the first proxy as a template
         template_proxy = self.proxies[0]
@@ -631,14 +701,17 @@ class ProxyManager:
             
         new_proxies = []
         lines_to_write = []
-        lines_to_write.append("# Auto-generated from Base Proxy with Session Rotation")
+        lines_to_write.append("# Auto-generated from 2Captcha Residential Proxy with Session Rotation")
+        lines_to_write.append("# Base proxy configuration:")
         # Keep the base one
         lines_to_write.append(template_proxy.to_string())
         new_proxies.append(template_proxy)
         
+        lines_to_write.append("# Session-rotated proxies:")
         for i in range(quantity):
             # Construct new username using rotate_session_id helper
-            new_username = self.rotate_session_id(template_proxy.username)
+            # Use base_username to avoid nested session IDs
+            new_username = self.rotate_session_id(base_username)
             
             # Create proxy string
             # Format: http://user:pass@ip:port

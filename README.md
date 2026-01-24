@@ -390,6 +390,39 @@ Standardized utility for parsing timers and balances:
 
 ## 🔧 Troubleshooting
 
+### Residential Proxy Configuration
+
+The bot supports automatic proxy fetching from 2Captcha residential proxy service.
+
+**Setup**:
+
+1. Purchase residential proxy traffic at [2Captcha Residential Proxies](https://2captcha.com/proxy/residential-proxies)
+2. Enable in `.env`:
+   ```
+   USE_2CAPTCHA_PROXIES=true
+   ```
+3. The bot will automatically:
+   - Fetch proxy configuration from 2Captcha API
+   - Generate session-rotated proxies
+   - Save them to `config/proxies.txt`
+   - Assign proxies to accounts (sticky sessions)
+
+**Manual Configuration** (if API fetch fails):
+
+Add your proxy credentials to `config/proxies.txt`:
+```
+# Format: username:password@host:port
+your-username:your-password@proxy.2captcha.com:8080
+```
+
+**How It Works**:
+
+- The bot uses session-based rotation (appends `-session-XXXXX` to username)
+- Each account gets a sticky proxy assignment
+- Proxies respect cooldown (5 min for failures, 1 hour for detection/403) windows
+- Health monitoring tracks latency and failures
+- Dead proxies are automatically rotated out
+
 ### Proxy Detection Issues
 
 Some faucets (DutchyCorp, CoinPayU, AdBTC) have aggressive proxy detection that blocks cloud/VPS IPs.
@@ -402,7 +435,7 @@ Some faucets (DutchyCorp, CoinPayU, AdBTC) have aggressive proxy detection that 
 
 **Solutions**:
 
-- Use residential proxies
+- Use residential proxies (see above)
 - Run from home internet connection
 - Disable affected faucets in configuration
 

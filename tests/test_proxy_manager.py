@@ -68,3 +68,101 @@ def test_assign_proxies_fallback(settings):
     assert profiles[0].proxy == "http://u1:p1@1.1.1.1:80"
     assert profiles[1].proxy == "http://u2:p2@2.2.2.2:80"
     assert profiles[2].proxy == "http://u1:p1@1.1.1.1:80" # Wrap around
+
+class TestProxyFetching:
+    """Test 2Captcha API proxy fetching functionality"""
+    
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.get")
+    async def test_fetch_proxy_config_from_2captcha_success(self, mock_get, settings):
+        """Test successful API response with proxy config"""
+        # Mock API response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            "status": 1,
+            "request": "testuser:testpass@proxy.2captcha.com:8080"
+        })
+        mock_get.return_value.__aenter__.return_value = mock_response
+        
+        manager = ProxyManager(settings)
+        proxy = await manager.fetch_proxy_config_from_2captcha()
+        
+        assert proxy is not None
+        assert proxy.ip == "proxy.2captcha.com"
+        assert proxy.port == 8080
+        assert proxy.username == "testuser"
+        assert proxy.password == "testpass"
+    
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.get")
+    async def test_fetch_proxy_config_from_2captcha_with_data_field(self, mock_get, settings):
+        """Test API response with data field containing proxy list"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            "status": "OK",
+            "data": ["proxyuser:proxypass@gw.2captcha.com:9090"]
+        })
+        mock_get.return_value.__aenter__.return_value = mock_response
+        
+        manager = ProxyManager(settings)
+        proxy = await manager.fetch_proxy_config_from_2captcha()
+        
+        assert proxy is not None
+        assert proxy.ip == "gw.2captcha.com"
+        assert proxy.port == 9090
+        assert proxy.username == "proxyuser"
+        assert proxy.password == "proxypass"
+    
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.get")
+    async def test_fetch_proxy_config_from_2captcha_failure(self, mock_get, settings):
+        """Test failed API response"""
+        mock_response = AsyncMock()
+        mock_response.status = 403
+        mock_get.return_value.__aenter__.return_value = mock_response
+        
+        manager = ProxyManager(settings)
+        proxy = await manager.fetch_proxy_config_from_2captcha()
+        
+        assert proxy is None
+    
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.get")
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("os.path.exists", return_value=False)
+    @patch("os.path.abspath", return_value="/test/proxies.txt")
+    async def test_fetch_proxies_from_api_with_api_fallback(self, mock_abs, mock_exists, mock_file, mock_get, settings):
+        """Test that fetch_proxies_from_api falls back to API when file is empty"""
+        # Mock API response to provide base proxy
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            "status": 1,
+            "request": "apiuser:apipass@api.proxy.com:8080"
+        })
+        mock_get.return_value.__aenter__.return_value = mock_response
+        
+        manager = ProxyManager(settings)
+        # Simulate empty proxies
+        manager.proxies = []
+        manager.all_proxies = []
+        
+        count = await manager.fetch_proxies_from_api(quantity=5)
+        
+        # Should have fetched base + generated sessions
+        assert count == 6  # 1 base + 5 generated
+        assert len(manager.proxies) == 6
+        assert manager.proxies[0].username == "apiuser"
+        # Check session rotation
+        assert "-session-" in manager.proxies[1].username
+    
+    @pytest.mark.asyncio
+    async def test_fetch_proxy_config_no_api_key(self, settings):
+        """Test that fetching fails gracefully without API key"""
+        settings.twocaptcha_api_key = None
+        manager = ProxyManager(settings)
+        
+        proxy = await manager.fetch_proxy_config_from_2captcha()
+        assert proxy is None
