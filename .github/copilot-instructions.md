@@ -5,12 +5,14 @@
 - Do not force reset/delete/push; if extra branches exist, review PRs/issues, sync, then delete only with approval.
 
 ## Current Project Status (Last Updated: 2026-01-24)
-- **Environment**: Running on local Windows dev machine (C:\Users\azureuser)
-- **Deployment**: No active Azure VM deployment (deployment scripts exist but unused)
+- **Environment**: Dual - Local Windows dev machine + Azure VM (DevNode01 in APPSERVRG)
+- **Azure VM**: 4.155.230.212 (West US 2) - RUNNING but service CRASHING
+- **Critical Issue**: faucet_worker service in crash loop - NameError: Dict not defined in browser/instance.py
+- **VM Has Two Installations**: ~/backend_service (active, broken) + ~/Repositories/cryptobot (newer, not used)
 - **Faucet Status**: 7 fully implemented, 11 Pick.io faucets partially implemented (missing login)
 - **Known Issues**: FreeBitcoin bot has 100% login failure rate - needs investigation
 - **Testing Phase**: Most analytics data is test data, limited production usage
-- See PROJECT_STATUS_REPORT.md for complete system audit
+- See PROJECT_STATUS_REPORT.md and AZURE_VM_STATUS.md for complete details
 
 ## Architecture Snapshot
 - main.py bootstraps JobScheduler in core/orchestrator.py; jobs carry next_run and requeue themselves—avoid manual event loops or asyncio.sleep in main flows.
@@ -38,11 +40,13 @@
 - Prefer HEADLESS=true for prod parity; bots should catch/log exceptions instead of propagating.
 
 ## Deployment
-- Azure VM/Linux: deploy/deploy.sh (installs/updates systemd via deploy/faucet_worker.service, logrotate); health check: python meta.py health.
-- **Current Status**: No active Azure VM deployment. Scripts are ready but system runs locally on Windows dev machine.
-- To deploy to Azure: Use deploy/azure_deploy.sh --resource-group <RG> --vm-name <VM> OR deploy/deploy_vm.ps1 -VmIp <IP> -SshKey <path>
-- Service runs: python main.py via systemd on Linux; logs to logs/production_run.log.
-- Health monitoring: Heartbeat file updates every 60s; check with meta.py health.
+- Azure VM: DevNode01 in APPSERVRG (4.155.230.212, West US 2) - RUNNING but service FAILING
+- **Critical Issue**: faucet_worker service crashing - missing Dict import in browser/instance.py
+- **Two Code Locations**: ~/backend_service (systemd active, has bugs) vs ~/Repositories/cryptobot (newer, not used)
+- **Fix Required**: Either update ~/backend_service code OR reconfigure systemd to use ~/Repositories/cryptobot
+- To deploy updates: Use deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
+- Health check: ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"
+- See AZURE_VM_STATUS.md for critical service failure details and remediation steps
 
 ## Common Tasks
 - New faucet: create faucets/<name>.py subclassing FaucetBot; wire login/claim/balance/timer via DataExtractor; register in core/registry.py; add env creds and tests in tests/.

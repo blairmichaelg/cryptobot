@@ -6,21 +6,37 @@
 
 ## Current Deployment Configuration
 
-### Deployment Environment: LOCAL WINDOWS DEV MACHINE
+### Deployment Environment: AZURE VM (DISCOVERED JAN 24, 2026)
 
-The Cryptobot system is currently **NOT deployed to Azure VM**. It runs locally on:
+**UPDATE:** Azure VM deployment WAS found but is currently failing!
 
-- **Host**: Windows development machine
+#### Production VM Details
+- **VM Name**: DevNode01
+- **Resource Group**: APPSERVRG
+- **Location**: West US 2
+- **Public IP**: 4.155.230.212
+- **Size**: Standard_D2s_v3 (2 vCPUs, 8 GB RAM)
+- **OS**: Ubuntu 22.04 LTS (Jammy)
+- **Status**: VM is running, service is crashing
+
+#### Service Status: FAILING ⚠️
+- **systemd service**: faucet_worker
+- **Status**: Crash loop (auto-restarting every 10s)
+- **Error**: `NameError: name 'Dict' is not defined` in browser/instance.py
+- **Working Directory**: /home/azureuser/backend_service (NOT ~/Repositories/cryptobot)
+- **Last Attempt**: Jan 24, 2026 06:19:05 UTC
+
+#### Two Installation Locations Found
+1. **~/backend_service/** - Active (used by systemd), but has import errors
+2. **~/Repositories/cryptobot/** - Newer code, but not configured in service
+
+### Local Development Environment
+
+Additionally runs locally on:
+- **Host**: Windows development machine  
 - **User**: azureuser
 - **Path**: C:\Users\azureuser\Repositories\cryptobot
 - **Execution**: Manual via `python main.py` or tests
-
-### Azure VM Status: NOT PROVISIONED
-
-- ❌ No Azure VM is currently running the bot
-- ❌ No Resource Group configured
-- ❌ No VM Name documented
-- ❌ systemd service not active (Windows environment)
 
 ### Why No Azure Deployment?
 
