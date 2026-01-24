@@ -3,6 +3,7 @@ from core.extractor import DataExtractor
 import logging
 import asyncio
 import time
+from http.cookies import SimpleCookie
 
 logger = logging.getLogger(__name__)
 
@@ -132,65 +133,106 @@ class FreeBitcoinBot(FaucetBot):
 
     async def _submit_login_via_request(self, username: str, password: str, tfa_code: str = "") -> bool:
         """Submit login via direct POST and set cookies if successful."""
-        try:
-            response = await self.page.request.post(
-                f"{self.base_url}/",
-                data={
-                    "op": "login_new",
-                    "btc_address": username,
-                    "password": password,
-                    "tfa_code": tfa_code or "",
-                },
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{self.base_url}/?op=login",
-                    "Origin": self.base_url,
-                },
-                timeout=30000,
-            )
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] Direct login request failed: %s", exc)
-            return False
-
-        try:
-            text = (await response.text()) or ""
-        except Exception:
-            text = ""
-
-        if not text:
-            logger.warning("[FreeBitcoin] Direct login response empty")
-            return False
-
-        parts = text.split(":")
-        if not parts or parts[0] != "s":
-            logger.warning("[FreeBitcoin] Direct login failed: %s", text[:200])
-            return False
-
-        if len(parts) < 5:
-            logger.warning("[FreeBitcoin] Direct login response missing fields: %s", text[:200])
-            return False
-
-        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-        cookies = [
-            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        payloads = [
+            {
+                "op": "login",
+                "btc_address": username,
+                "password": password,
+                "2fa_code": tfa_code or "",
+            },
+            {
+                "op": "login_new",
+                "btc_address": username,
+                "password": password,
+                "tfa_code": tfa_code or "",
+            },
         ]
 
-        try:
-            await self.page.context.add_cookies(cookies)
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] Failed to set login cookies: %s", exc)
-            return False
+        for payload in payloads:
+            try:
+                response = await self.page.request.post(
+                    f"{self.base_url}/",
+                    data=payload,
+                    headers={
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": f"{self.base_url}/?op=login",
+                        "Origin": self.base_url,
+                    },
+                    timeout=30000,
+                )
+            except Exception as exc:
+                logger.warning("[FreeBitcoin] Direct login request failed: %s", exc)
+                continue
 
-        try:
-            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-        except Exception:
-            pass
+            try:
+                text = (await response.text()) or ""
+            except Exception:
+                text = ""
 
-        return await self.is_logged_in()
+            if not text:
+                logger.warning("[FreeBitcoin] Direct login response empty")
+                continue
+
+            parts = text.split(":")
+            if parts and parts[0] == "s" and len(parts) >= 5:
+                expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+                cookies = [
+                    {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                    {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                    {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                    {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                    {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+                ]
+
+                try:
+                    await self.page.context.add_cookies(cookies)
+                except Exception as exc:
+                    logger.warning("[FreeBitcoin] Failed to set login cookies: %s", exc)
+                    continue
+
+                try:
+                    await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    pass
+
+                if await self.is_logged_in():
+                    return True
+                continue
+
+            if parts and parts[0] != "s":
+                logger.warning("[FreeBitcoin] Direct login failed: %s", text[:200])
+
+            try:
+                header_cookie = response.headers.get("set-cookie")
+            except Exception:
+                header_cookie = None
+
+            if header_cookie:
+                cookie_jar = SimpleCookie()
+                cookie_jar.load(header_cookie)
+                expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+                cookies = []
+                for name, morsel in cookie_jar.items():
+                    cookies.append({
+                        "name": name,
+                        "value": morsel.value,
+                        "domain": ".freebitco.in",
+                        "path": "/",
+                        "expires": expiry,
+                        "secure": True,
+                    })
+                if cookies:
+                    try:
+                        await self.page.context.add_cookies(cookies)
+                        if await self.is_logged_in():
+                            return True
+                    except Exception as exc:
+                        logger.warning("[FreeBitcoin] Failed to set response cookies: %s", exc)
+
+            if parts and len(parts) < 5:
+                logger.warning("[FreeBitcoin] Direct login response missing fields: %s", text[:200])
+
+        return False
 
     async def _log_login_diagnostics(self, context: str) -> None:
         """Log login page diagnostics to identify captcha/input elements."""
