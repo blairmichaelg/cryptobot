@@ -309,9 +309,11 @@ The profitability dashboard displays:
 ### Data Sources
 
 The dashboard aggregates data from:
-- `earnings_analytics.json` - Claim records and operational costs
-- `withdrawal_analytics.db` - Withdrawal transaction history
+- `earnings_analytics.json` - Claim records and operational costs (auto-created, gitignored)
+- `withdrawal_analytics.db` - Withdrawal transaction history (auto-created, gitignored)
 - Real-time cryptocurrency prices via CoinGecko API
+
+**Note**: Both analytics files are gitignored and auto-created with clean schemas on first run. For production deployment, the bot starts with empty analytics and builds data from actual claims. Test faucets (names starting with `test_`) are automatically filtered from analytics. See [docs/EARNINGS_ANALYTICS.md](docs/EARNINGS_ANALYTICS.md) for details.
 
 ### Example Output
 
