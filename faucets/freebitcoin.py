@@ -904,6 +904,11 @@ class FreeBitcoinBot(FaucetBot):
                 logger.debug(f"[FreeBitcoin] Navigation completed to: {self.page.url}")
             except asyncio.TimeoutError:
                 logger.warning("[FreeBitcoin] Login redirect timeout, checking if logged in anyway...")
+
+            try:
+                await self.handle_cloudflare(max_wait_seconds=60)
+            except Exception:
+                pass
             
             # Small delay to let page settle
             await self.random_delay(2, 3)
