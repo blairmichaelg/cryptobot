@@ -376,20 +376,20 @@ class FreeBitcoinBot(FaucetBot):
                 ".alert",
                 "[class*='error']",
             ]
-            captcha_error = False
+            error_text_norm = ""
             for selector in error_selectors:
                 try:
                     error_elem = await self._find_selector_any_frame([selector], "error message", timeout=2000)
                     if error_elem:
                         error_text = await error_elem.text_content()
                         logger.error(f"[FreeBitcoin] Login error message: {error_text}")
-                        if error_text and "captcha" in error_text.lower():
-                            captcha_error = True
+                        if error_text:
+                            error_text_norm = error_text.casefold()
                         break
                 except Exception:
                     continue
 
-            if captcha_error:
+            if error_text_norm and any(token in error_text_norm for token in ["captcha", "expired", "try again"]):
                 try:
                     logger.info("[FreeBitcoin] Captcha error detected. Attempting re-solve and re-submit...")
                     await self.solver.solve_captcha(self.page)
