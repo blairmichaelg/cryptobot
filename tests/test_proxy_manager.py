@@ -3,7 +3,6 @@ import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 from core.proxy_manager import ProxyManager, Proxy
 from core.config import BotSettings, AccountProfile
-import aiohttp
 
 @pytest.fixture
 def settings():

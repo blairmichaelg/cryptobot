@@ -111,15 +111,18 @@ async def test_integration():
     
     proxy_file = Path(settings.residential_proxies_file)
     if proxy_file.exists():
-        with open(proxy_file, 'r') as f:
-            lines = f.readlines()
-        print(f"✅ Proxy file exists with {len(lines)} lines")
-        print(f"   Location: {proxy_file}")
-        
-        # Show first few lines
-        print("\n   First few lines:")
-        for line in lines[:5]:
-            print(f"   {line.rstrip()}")
+        try:
+            with open(proxy_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            print(f"✅ Proxy file exists with {len(lines)} lines")
+            print(f"   Location: {proxy_file}")
+            
+            # Show first few lines
+            print("\n   First few lines:")
+            for line in lines[:5]:
+                print(f"   {line.rstrip()}")
+        except Exception as e:
+            print(f"⚠️  Error reading proxy file: {e}")
     else:
         print(f"⚠️  Proxy file not found at: {proxy_file}")
     

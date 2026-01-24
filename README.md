@@ -419,7 +419,7 @@ your-username:your-password@proxy.2captcha.com:8080
 
 - The bot uses session-based rotation (appends `-session-XXXXX` to username)
 - Each account gets a sticky proxy assignment
-- Proxies respect cooldown (5 min) and burn (12 hour) windows
+- Proxies respect cooldown (5 min for failures, 1 hour for detection/403) windows
 - Health monitoring tracks latency and failures
 - Dead proxies are automatically rotated out
 

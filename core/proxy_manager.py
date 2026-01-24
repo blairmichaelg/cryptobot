@@ -710,7 +710,8 @@ class ProxyManager:
         lines_to_write.append("# Session-rotated proxies:")
         for i in range(quantity):
             # Construct new username using rotate_session_id helper
-            new_username = self.rotate_session_id(template_proxy.username)
+            # Use base_username to avoid nested session IDs
+            new_username = self.rotate_session_id(base_username)
             
             # Create proxy string
             # Format: http://user:pass@ip:port
