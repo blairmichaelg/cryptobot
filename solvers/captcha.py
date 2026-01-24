@@ -358,7 +358,7 @@ class CaptchaSolver:
         method = None
         
         # Turnstile
-        turnstile_elem = await page.query_selector(".cf-turnstile, iframe[src*='turnstile'], [id*='cf-turnstile']")
+        turnstile_elem = await page.query_selector(".cf-turnstile, iframe[src*='turnstile'], [id*='cf-turnstile'], [data-sitekey][class*='turnstile']")
         if turnstile_elem:
             method = "turnstile"
             sitekey = await turnstile_elem.get_attribute("data-sitekey")
@@ -367,6 +367,8 @@ class CaptchaSolver:
                 src = await turnstile_elem.get_attribute("src")
                 if src and "sitekey=" in src:
                     sitekey = src.split("sitekey=")[1].split("&")[0]
+                elif src and "k=" in src:
+                    sitekey = src.split("k=")[1].split("&")[0]
             
             # If still no sitekey, try searching in scripts
             if not sitekey:
@@ -402,7 +404,11 @@ class CaptchaSolver:
         # Normalize/validate sitekey
         if sitekey is not None and not isinstance(sitekey, str):
             try:
-                sitekey = str(sitekey)
+                # Handle object returns like { sitekey: "..." }
+                if isinstance(sitekey, dict) and sitekey.get("sitekey"):
+                    sitekey = sitekey.get("sitekey")
+                else:
+                    sitekey = str(sitekey)
             except Exception:
                 sitekey = None
         if sitekey:
@@ -866,6 +872,13 @@ class CaptchaSolver:
                 /key["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /render\\(.+?["']([^"']{20,})["']/i
             ];
+
+            // 0. Check DOM for data-sitekey attributes
+            const dataSiteKeyElem = document.querySelector('[data-sitekey]');
+            if (dataSiteKeyElem) {
+                const dk = dataSiteKeyElem.getAttribute('data-sitekey');
+                if (dk && dk.length > 20) return dk;
+            }
             
             // 1. Check common global variables
             const globals = [
