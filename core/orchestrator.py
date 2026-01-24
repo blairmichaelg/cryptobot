@@ -1255,6 +1255,10 @@ class JobScheduler:
         Delegates to ProxyManager if available for advanced rotation.
         """
         if self._should_bypass_proxy(faucet_type):
+            try:
+                profile.proxy = None
+            except Exception:
+                pass
             return None
         if self.proxy_manager:
             return self.proxy_manager.rotate_proxy(profile)

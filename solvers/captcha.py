@@ -2,6 +2,7 @@ import asyncio
 import logging
 import aiohttp
 import time
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -415,10 +416,12 @@ class CaptchaSolver:
             sitekey = sitekey.strip()
             # If we got a blob or JSON-like string, extract the first plausible token
             if any(ch in sitekey for ch in ["{", "}", ",", ":"]):
-                import re
                 match = re.search(r"[0-9A-Za-z_-]{20,}", sitekey)
                 if match:
                     sitekey = match.group(0)
+        if sitekey and not re.fullmatch(r"[0-9A-Za-z_-]{20,}", sitekey):
+            logger.debug("Invalid sitekey format detected: %s", sitekey[:20])
+            sitekey = None
         if not sitekey or len(sitekey) < 10:
             sitekey = None
 
@@ -433,6 +436,9 @@ class CaptchaSolver:
                     sitekey = None
             if sitekey:
                 sitekey = sitekey.strip()
+            if sitekey and not re.fullmatch(r"[0-9A-Za-z_-]{20,}", sitekey):
+                logger.debug("Invalid sitekey format detected: %s", sitekey[:20])
+                sitekey = None
             if not sitekey or len(sitekey) < 10:
                 sitekey = None
             

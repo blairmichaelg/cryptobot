@@ -448,15 +448,10 @@ class ProxyManager:
             self.proxy_cooldowns[proxy_key] = now + self.DETECTION_COOLDOWN
             logger.error(f"[COOLDOWN] Proxy session {proxy_key} detected/403. Cooling down for 1h.")
 
-            if proxy_key not in self.dead_proxies:
-                self.dead_proxies.append(proxy_key)
-
             if host_port:
                 self.proxy_host_failures[host_port] = self.proxy_host_failures.get(host_port, 0) + 1
                 if self.proxy_host_failures[host_port] >= self.HOST_DETECTION_THRESHOLD:
                     self.proxy_cooldowns[host_port] = now + self.DETECTION_COOLDOWN
-                    if host_port not in self.dead_proxies:
-                        self.dead_proxies.append(host_port)
                     logger.warning(
                         f"[COOLDOWN] Proxy host {host_port} flagged after {self.proxy_host_failures[host_port]} detections."
                     )
@@ -1103,8 +1098,22 @@ class ProxyManager:
         assignable = session_proxies if session_proxies else list(self.proxies)
 
         logger.info(f"Assigning {len(assignable)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
+
+        def _normalize(name: str) -> str:
+            return str(name).lower().replace("_", "").replace(" ", "")
+
+        bypass_raw = getattr(self.settings, "proxy_bypass_faucets", None) or []
+        if not bypass_raw:
+            bypass_raw = ["freebitcoin"]
+        bypass = {_normalize(name) for name in bypass_raw}
         
         for i, profile in enumerate(profiles):
+            faucet_key = _normalize(getattr(profile, "faucet", ""))
+            if faucet_key and any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass):
+                logger.info("   Profile '%s' bypasses proxies for faucet '%s'", profile.username, profile.faucet)
+                profile.proxy = None
+                profile.residential_proxy = False
+                continue
             # Round-robin assignment
             proxy = assignable[i % len(assignable)]
             
