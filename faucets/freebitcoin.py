@@ -298,6 +298,31 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             login_input_forms = None
 
+        try:
+            script_sources = await self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('script[src]')).map(el => el.src).slice(0, 50)
+                """
+            )
+        except Exception:
+            script_sources = None
+
+        try:
+            js_state = await self.page.evaluate(
+                """
+                () => ({
+                    has_jquery: typeof window.jQuery !== 'undefined',
+                    has_$: typeof window.$ !== 'undefined',
+                    has_login_form_submit: (() => {
+                        const el = document.querySelector('#login_form');
+                        return !!(el && el.tagName === 'FORM');
+                    })()
+                })
+                """
+            )
+        except Exception:
+            js_state = None
+
         logger.info("[FreeBitcoin] Login diagnostics (%s): inputs=%s", context, inputs)
         logger.info("[FreeBitcoin] Login diagnostics (%s): textareas=%s", context, textareas)
         logger.info("[FreeBitcoin] Login diagnostics (%s): iframes=%s", context, iframes)
@@ -308,6 +333,8 @@ class FreeBitcoinBot(FaucetBot):
         logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_state=%s", context, captcha_state)
         logger.info("[FreeBitcoin] Login diagnostics (%s): login_nodes=%s", context, login_nodes)
         logger.info("[FreeBitcoin] Login diagnostics (%s): login_input_forms=%s", context, login_input_forms)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): script_sources=%s", context, script_sources)
+        logger.info("[FreeBitcoin] Login diagnostics (%s): js_state=%s", context, js_state)
 
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
@@ -585,6 +612,43 @@ class FreeBitcoinBot(FaucetBot):
                     logger.info("[FreeBitcoin] Login response: %s %s", response.status, response.url)
                 except Exception:
                     logger.debug("[FreeBitcoin] Login response not detected within timeout")
+                    try:
+                        submit_action = await self.page.evaluate(
+                            """
+                            () => {
+                                const form = document.querySelector('#login_form');
+                                if (form) {
+                                    if (form.tagName === 'FORM') {
+                                        form.submit();
+                                        return 'form_submit';
+                                    }
+                                    const parentForm = form.closest('form');
+                                    if (parentForm) {
+                                        parentForm.submit();
+                                        return 'parent_form_submit';
+                                    }
+                                }
+                                const btn = document.querySelector('#login_button');
+                                if (btn) {
+                                    btn.click();
+                                    return 'button_click';
+                                }
+                                return null;
+                            }
+                            """
+                        )
+                        if submit_action:
+                            logger.info("[FreeBitcoin] Login submit fallback triggered: %s", submit_action)
+                            try:
+                                response = await self.page.wait_for_response(
+                                    lambda resp: "op=login" in resp.url or "login" in resp.url,
+                                    timeout=15000
+                                )
+                                logger.info("[FreeBitcoin] Login response (fallback): %s %s", response.status, response.url)
+                            except Exception:
+                                logger.debug("[FreeBitcoin] Login response still not detected after fallback")
+                    except Exception:
+                        logger.debug("[FreeBitcoin] Login submit fallback failed")
             
             # Wait for navigation or login success
             logger.debug("[FreeBitcoin] Waiting for login to complete...")
