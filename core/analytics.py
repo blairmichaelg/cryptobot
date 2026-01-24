@@ -230,6 +230,7 @@ class EarningsTracker:
         except Exception as e:
             logger.warning(f"Could not load analytics: {e}")
             self.claims = []
+            self.costs = []
     
     def _save(self):
         """Persist analytics data to disk."""
