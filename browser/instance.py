@@ -1,4 +1,4 @@
-from playwright.async_api import Browser, BrowserContext, Page
+from playwright.async_api import BrowserContext, Page
 from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
@@ -6,6 +6,7 @@ from .stealth_hub import StealthHub
 from core.config import CONFIG_DIR
 import logging
 import random
+import time
 import os
 import json
 from typing import Optional, List, Dict, Any
@@ -37,7 +38,7 @@ class BrowserManager:
         self.block_media = block_media
         self.timeout = timeout
         self.user_agents = user_agents or []
-        self.browser: Optional[Browser] = None
+        self.browser: Optional[Any] = None
         self.context = None
         self.playwright = None
         self.camoufox: Optional[AsyncCamoufox] = None
@@ -50,6 +51,7 @@ class BrowserManager:
             self._secure_storage = SecureCookieStorage()
         else:
             self._secure_storage = None
+        self.seed_cookie_jar = True
 
     def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
         """Atomic JSON write with corruption protection and backups."""
@@ -82,26 +84,12 @@ class BrowserManager:
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
         # For headless Linux servers, we need to specify realistic screen constraints
         # because auto-detection defaults to 1024x768 which has limited fingerprints
-        try:
-            from camoufox.utils import Screen
-        except Exception:
-            Screen = None
-        
         kwargs = {
             "headless": self.headless,
             "geoip": True,  # Auto-detect location
             "humanize": True,  # Add human-like timing
             "block_images": self.block_images,
         }
-        if Screen:
-            # Provide realistic screen constraints for headless servers
-            # Common desktop resolutions have better fingerprint coverage in browserforge
-            kwargs["screen"] = Screen(
-                min_width=1280,
-                max_width=1920,
-                min_height=720,
-                max_height=1080
-            )
 
         # We keep the camoufox instance wrapper
         self.camoufox = AsyncCamoufox(**kwargs)
@@ -156,8 +144,10 @@ class BrowserManager:
         else:
             # Load canvas and WebGL params from existing fingerprint
             fingerprint_data = fingerprint or {}
-            canvas_seed = fingerprint_data.get("canvas_seed")
-            gpu_index = fingerprint_data.get("gpu_index")
+            raw_canvas_seed = fingerprint_data.get("canvas_seed")
+            raw_gpu_index = fingerprint_data.get("gpu_index")
+            canvas_seed = int(raw_canvas_seed) if raw_canvas_seed is not None else None
+            gpu_index = int(raw_gpu_index) if raw_gpu_index is not None else None
 
         if profile_name and (locale_override or timezone_override):
             await self.save_profile_fingerprint(profile_name, locale, timezone_id, canvas_seed=canvas_seed, gpu_index=gpu_index)
@@ -229,7 +219,7 @@ class BrowserManager:
         # Apply Resource Blocker using instance settings
         blocker = ResourceBlocker(block_images=self.block_images, block_media=self.block_media)
         await context.route("**/*", blocker.handle_route)
-        context.resource_blocker = blocker
+        context.resource_blocker = blocker  # type: ignore[attr-defined]
         
         # Load cookies if profile name provided
         if profile_name:
@@ -294,6 +284,10 @@ class BrowserManager:
                 await context.add_cookies(cookies)
                 logger.info(f"🍪 Loaded {len(cookies)} cookies for {profile_name}")
                 return True
+
+            if self.seed_cookie_jar:
+                await self._seed_cookie_jar(context, profile_name)
+                return True
             
             logger.debug(f"No saved cookies for {profile_name}")
             return False
@@ -301,6 +295,71 @@ class BrowserManager:
         except Exception as e:
             logger.warning(f"Failed to load cookies for {profile_name}: {e}")
             return False
+
+    def _load_cookie_profile(self) -> dict:
+        profile_file = CONFIG_DIR / "cookie_profiles.json"
+        if os.path.exists(profile_file):
+            try:
+                with open(profile_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _save_cookie_profile(self, data: dict) -> None:
+        profile_file = CONFIG_DIR / "cookie_profiles.json"
+        self._safe_json_write(str(profile_file), data)
+
+    async def _seed_cookie_jar(self, context: BrowserContext, profile_name: str) -> None:
+        """Seed a minimal cookie jar to avoid a brand new profile signature."""
+        profiles = self._load_cookie_profile()
+        entry = profiles.get(profile_name, {})
+
+        if "created_at" not in entry:
+            back_days = random.randint(7, 30)
+            entry["created_at"] = time.time() - (back_days * 86400)
+
+        base_domains = [
+            "google.com",
+            "bing.com",
+            "wikipedia.org",
+            "reddit.com",
+            "news.ycombinator.com"
+        ]
+
+        cookie_count = entry.get("cookie_count")
+        if not cookie_count:
+            cookie_count = random.randint(8, 20)
+            entry["cookie_count"] = cookie_count
+
+        profiles[profile_name] = entry
+        self._save_cookie_profile(profiles)
+
+        now = time.time()
+        created_at = entry["created_at"]
+        age_days = max(1, int((now - created_at) / 86400))
+
+        cookies = []
+        for i in range(cookie_count):
+            domain = random.choice(base_domains)
+            max_age_days = random.randint(30, 90)
+            expires = int(created_at + (max_age_days * 86400))
+            if expires < now:
+                expires = int(now + (max_age_days * 86400))
+            cookies.append({
+                "name": f"pref_{i}",
+                "value": f"{random.randint(1000, 9999)}",
+                "domain": domain,
+                "path": "/",
+                "expires": expires,
+                "httpOnly": False,
+                "secure": True,
+                "sameSite": "Lax"
+            })
+
+        if cookies:
+            await context.add_cookies(cookies)
+            logger.info(f"🍪 Seeded {len(cookies)} cookies for {profile_name} (age ~{age_days}d)")
 
     async def save_proxy_binding(self, profile_name: str, proxy: str):
         """Save the proxy binding for a profile to ensuring sticky sessions."""
@@ -336,7 +395,7 @@ class BrowserManager:
             logger.error(f"Failed to load proxy binding for {profile_name}: {e}")
             return None
 
-    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str, canvas_seed: int = None, gpu_index: int = None):
+    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str, canvas_seed: Optional[int] = None, gpu_index: Optional[int] = None):
         """Save the fingerprint settings for a profile including canvas and WebGL parameters."""
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"

@@ -30,10 +30,12 @@ class WalletDaemon:
             self._session = aiohttp.ClientSession(auth=self.auth)
         return self._session
 
-    async def _rpc_call(self, coin: str, method: str, params: list = []) -> Any:
+    async def _rpc_call(self, coin: str, method: str, params: Optional[list] = None) -> Any:
         """
         Execute a JSON-RPC call to a specific coin wallet daemon.
         """
+        if params is None:
+            params = []
         url = self.urls.get(coin.upper())
         if not url:
             logger.error(f"No RPC URL configured for coin: {coin}")
@@ -84,10 +86,73 @@ class WalletDaemon:
         res = await self._rpc_call(coin, "getnetworkinfo")  # 'version' is often deprecated/not standard, getnetworkinfo is safer for bitcoind-likes
         return res is not None
 
+    async def get_mempool_fee_rate(self, coin: str) -> Optional[Dict[str, int]]:
+        """Fetch current network fee rates from mempool APIs.
+        
+        APIs used:
+        - BTC: mempool.space/api/v1/fees/recommended
+        - LTC: blockcypher.com/v1/ltc/main
+        - DOGE: sochain.com/api/v2/get_info/DOGE
+        
+        Returns:
+            {
+                "economy": int,  # sat/byte for low priority
+                "normal": int,   # sat/byte for medium priority  
+                "priority": int  # sat/byte for high priority
+            }
+        """
+        coin = coin.upper()
+        
+        try:
+            session = await self._get_session()
+            
+            if coin == "BTC":
+                async with session.get("https://mempool.space/api/v1/fees/recommended", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "economy": data.get("minimumFee", 1),
+                            "normal": data.get("halfHourFee", 5),
+                            "priority": data.get("fastestFee", 10)
+                        }
+            
+            elif coin == "LTC":
+                async with session.get("https://api.blockcypher.com/v1/ltc/main", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # BlockCypher returns fees in satoshis per kb, convert to sat/byte
+                        low_fee = data.get("low_fee_per_kb", 1000) // 1000
+                        med_fee = data.get("medium_fee_per_kb", 5000) // 1000
+                        high_fee = data.get("high_fee_per_kb", 10000) // 1000
+                        return {
+                            "economy": max(1, low_fee),
+                            "normal": max(3, med_fee),
+                            "priority": max(5, high_fee)
+                        }
+            
+            elif coin == "DOGE":
+                async with session.get("https://sochain.com/api/v2/get_info/DOGE", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # SoChain doesn't provide fee estimates, use conservative defaults
+                        # DOGE typically has very low fees (0.01 DOGE recommended)
+                        return {
+                            "economy": 1,    # 1 sat/byte (very cheap)
+                            "normal": 2,     # 2 sat/byte
+                            "priority": 5    # 5 sat/byte
+                        }
+            
+            logger.warning(f"No mempool API configured for {coin}, using fallback")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch mempool fees for {coin}: {e}")
+            return None
+
     async def get_network_fee_estimate(self, coin: str, priority: str = "economy") -> Optional[float]:
         """Estimate network fee for a transaction.
         
-        Uses Bitcoin Core's estimatesmartfee RPC to get fee rate recommendations.
+        First tries real-time mempool APIs, falls back to RPC estimatesmartfee.
         
         Args:
             coin: Cryptocurrency symbol (BTC, LTC, DOGE)
@@ -96,7 +161,12 @@ class WalletDaemon:
         Returns:
             Estimated fee in satoshis per byte, or None if unavailable
         """
-        # Target confirmation blocks by priority
+        # Try mempool API first (real-time data)
+        mempool_fees = await self.get_mempool_fee_rate(coin)
+        if mempool_fees:
+            return float(mempool_fees.get(priority, mempool_fees.get("normal", 5)))
+        
+        # Fallback to RPC estimation
         blocks = {"economy": 12, "normal": 6, "priority": 2}
         target_blocks = blocks.get(priority, 6)
         
@@ -135,7 +205,7 @@ class WalletDaemon:
     ) -> bool:
         """Determine if withdrawal should proceed based on multiple conditions.
         
-        Considers: balance threshold, network fees, time of day.
+        Uses real-time mempool data for optimal fee timing.
         
         Args:
             coin: Cryptocurrency symbol
@@ -150,17 +220,44 @@ class WalletDaemon:
             return False
         
         # Check if off-peak hours
-        if not self.is_off_peak_hour():
-            logger.info("Not off-peak hour, deferring withdrawal for better timing")
-            return False
+        is_off_peak = self.is_off_peak_hour()
+        if not is_off_peak:
+            logger.info("Not off-peak hour, checking if fees are exceptionally low...")
         
-        # Check fee estimate if available
-        fee_rate = await self.get_network_fee_estimate(coin, "economy")
-        if fee_rate and fee_rate > 50:  # High fee environment (>50 sat/byte)
-            logger.info(f"High network fees ({fee_rate} sat/byte), deferring withdrawal")
-            return False
+        # Get real-time mempool fee data
+        mempool_fees = await self.get_mempool_fee_rate(coin)
         
-        return True
+        if mempool_fees:
+            economy_fee = mempool_fees.get("economy", 999)
+            normal_fee = mempool_fees.get("normal", 999)
+            
+            # Excellent fee environment (< 5 sat/byte) - withdraw regardless of time
+            if economy_fee < 5:
+                logger.info(f"✅ Excellent fees ({economy_fee} sat/byte) - proceeding with withdrawal")
+                return True
+            
+            # Good fee environment (< 20 sat/byte) during off-peak
+            if is_off_peak and economy_fee < 20:
+                logger.info(f"✅ Good off-peak fees ({economy_fee} sat/byte) - proceeding")
+                return True
+            
+            # High fees (> 50 sat/byte) - defer even if off-peak
+            if economy_fee > 50:
+                logger.info(f"❌ High network fees ({economy_fee} sat/byte) - deferring withdrawal")
+                return False
+            
+            # Medium fees during off-peak - proceed if balance is high
+            if is_off_peak and balance_sat > min_threshold * 2:
+                logger.info(f"⚠️ Medium fees ({economy_fee} sat/byte) but high balance - proceeding")
+                return True
+        
+        # No mempool data - use conservative approach (off-peak only)
+        if is_off_peak:
+            logger.info("Off-peak hour with no fee data - proceeding conservatively")
+            return True
+        
+        logger.info("Conditions not optimal for withdrawal - deferring")
+        return False
 
     async def batch_withdraw(
         self,

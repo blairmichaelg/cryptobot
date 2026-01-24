@@ -209,6 +209,7 @@ class FireFaucetBot(FaucetBot):
         import time
         
         jobs = []
+        f_type = "fire_faucet"
         
         # Job 1: Faucet Claim - Highest Priority
         jobs.append(Job(
@@ -216,7 +217,7 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time(),
             name=f"{self.faucet_name} Claim",
             profile=None,
-            faucet_type=self.faucet_name.lower(),
+            faucet_type=f_type,
             job_type="claim_wrapper"
         ))
         
@@ -226,7 +227,7 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 600,  # Start 10 minutes after first claim
             name=f"{self.faucet_name} Daily Bonus",
             profile=None,
-            faucet_type=self.faucet_name.lower(),
+            faucet_type=f_type,
             job_type="daily_bonus_wrapper"
         ))
         
@@ -236,7 +237,7 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 300,
             name=f"{self.faucet_name} PTC",
             profile=None,
-            faucet_type=self.faucet_name.lower(),
+            faucet_type=f_type,
             job_type="ptc_wrapper"
         ))
         
@@ -246,7 +247,7 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 1200,  # Start 20 minutes after first claim
             name=f"{self.faucet_name} Shortlinks",
             profile=None,
-            faucet_type=self.faucet_name.lower(),
+            faucet_type=f_type,
             job_type="shortlinks_wrapper"
         ))
         
@@ -256,7 +257,7 @@ class FireFaucetBot(FaucetBot):
             next_run=time.time() + 3600,
             name=f"{self.faucet_name} Withdraw",
             profile=None,
-            faucet_type=self.faucet_name.lower(),
+            faucet_type=f_type,
             job_type="withdraw_wrapper"
         ))
 

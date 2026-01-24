@@ -74,6 +74,7 @@ class FaucetBot:
             provider=provider,
             daily_budget=getattr(settings, "captcha_daily_budget", 5.0)
         )
+        self.solver.set_headless(getattr(settings, "headless", True))
         fallback_provider = getattr(settings, "captcha_fallback_provider", None)
         fallback_key = getattr(settings, "captcha_fallback_api_key", None)
         if fallback_provider and fallback_key:
@@ -295,8 +296,9 @@ class FaucetBot:
         coin_map = {
             "LITE": "LTC",
             "TRON": "TRX",
-            "POLYGON": "MATIC",
-            "BINANCE": "BNB"
+            "BINANCE": "BNB",
+            "USD": "USDT",
+            "MATIC": "POLYGON",
         }
         coin = coin_map.get(coin, coin)
         
@@ -304,6 +306,8 @@ class FaucetBot:
         if self.settings.use_faucetpay:
             fp_attr = f"faucetpay_{coin.lower()}_address"
             fp_address = getattr(self.settings, fp_attr, None)
+            if not fp_address and coin == "POLYGON":
+                fp_address = getattr(self.settings, "faucetpay_polygon_address", None)
             if fp_address:
                 logger.debug(f"[{self.faucet_name}] Using FaucetPay address for {coin}")
                 return fp_address
@@ -315,12 +319,19 @@ class FaucetBot:
             logger.debug(f"[{self.faucet_name}] Using direct wallet address for {coin}")
             return direct_address
         
-        # 3. Fallback to wallet_addresses dict
+        # 3. Fallback to wallet_addresses dict (supports nested dicts)
         if hasattr(self.settings, 'wallet_addresses'):
-            dict_address = self.settings.wallet_addresses.get(coin)
-            if dict_address:
-                logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict for {coin}")
-                return dict_address
+            dict_entry = self.settings.wallet_addresses.get(coin)
+            if dict_entry:
+                # Support formats: "address", "wallet", "addr"
+                if isinstance(dict_entry, dict):
+                    for key in ("address", "wallet", "addr"):
+                        if dict_entry.get(key):
+                            logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict ({key}) for {coin}")
+                            return str(dict_entry.get(key))
+                else:
+                    logger.debug(f"[{self.faucet_name}] Using wallet_addresses dict for {coin}")
+                    return str(dict_entry)
         
         logger.warning(f"[{self.faucet_name}] No withdrawal address configured for {coin}")
         return None
@@ -492,15 +503,13 @@ class FaucetBot:
         if self.human_profile and delay_min is None and delay_max is None:
             # Get per-character delay from profile
             char_delay_s = HumanProfile.get_action_delay(self.human_profile, "type")
-            for char in text:
-                await locator.press(char)
-                await asyncio.sleep(char_delay_s)
+            delay_ms = max(20, min(300, int(char_delay_s * 1000)))
+            await locator.type(text, delay=delay_ms)
         else:
             # Fallback to legacy behavior profile system
             delay_min, delay_max = self._resolve_typing_range(delay_min, delay_max)
-            for char in text:
-                await locator.press(char) # press sends keydown/keyup events
-            await asyncio.sleep(self._behavior_rng.randint(delay_min, delay_max) / 1000)
+            delay_ms = self._behavior_rng.randint(delay_min, delay_max)
+            await locator.type(text, delay=delay_ms)
 
     async def idle_mouse(self, duration: Optional[float] = None):
         """
@@ -975,7 +984,7 @@ class FaucetBot:
         # Add PTC if available
         # Note: We now define view_ptc_ads in base, so we check if subclass overrides or configured
         if hasattr(self, "ptc_ads_selector") or self.faucet_name in ["CoinPayU", "AdBTC"]:
-             tasks.append({"func": self.view_ptc_ads, "name": "PTC Ads"})
+            tasks.append({"func": self.view_ptc_ads, "name": "PTC Ads"})
         
         return tasks
              
@@ -992,7 +1001,6 @@ class FaucetBot:
         Returns a list of Job objects for the scheduler.
         """
         from core.orchestrator import Job
-        import time
         
         jobs = []
         f_type = self.faucet_name.lower().replace(" ", "_")
@@ -1051,7 +1059,7 @@ class FaucetBot:
                 return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
         except (ValueError, AttributeError) as e:
             logger.debug(f"[{self.faucet_name}] Balance parsing failed: {e}. Proceeding with withdrawal.")
-            pass  # Continue if parsing fails
+            # Continue if parsing fails
         
         # 3. Execute withdrawal
         result = await self.withdraw()
@@ -1065,7 +1073,7 @@ class FaucetBot:
                 try:
                     balance_after = float(balance_after_str.replace(',', ''))
                 except (ValueError, AttributeError):
-                    pass
+                    balance_after = 0.0
                 
                 # Calculate withdrawn amount
                 amount_withdrawn = float(result.amount.replace(',', '')) if result.amount != "0" else (balance_before - balance_after)
@@ -1138,7 +1146,6 @@ class FaucetBot:
                 # Try to get page content for error classification
                 try:
                     page_content = await page.content()
-                    response = page.url
                     # Try to infer status from page state
                 except Exception:
                     pass
@@ -1203,16 +1210,92 @@ class FaucetBot:
         """Helper to record analytics for a result."""
         try:
             tracker = get_tracker()
-            amount = float(result.amount) if result.amount else 0.0
+            raw_amount = result.amount or ""
+            amount_str = DataExtractor.extract_balance(raw_amount)
+            if (not amount_str or amount_str == "0") and result.status:
+                amount_str = DataExtractor.extract_balance(result.status)
+
+            amount_val = 0.0
+            try:
+                amount_val = float(amount_str) if amount_str else 0.0
+            except (ValueError, TypeError):
+                amount_val = 0.0
+
+            currency = getattr(self, 'coin', None) or self._get_cryptocurrency_for_faucet()
+            if not currency or currency == "UNKNOWN":
+                detected = self._detect_currency_from_text(f"{raw_amount} {result.status or ''} {result.balance or ''}")
+                if detected:
+                    currency = detected
+
+            amount = self._normalize_claim_amount(amount_val, raw_amount, currency)
+
+            raw_balance = result.balance or ""
+            balance_str = DataExtractor.extract_balance(raw_balance)
+            try:
+                balance_after = float(balance_str) if balance_str else 0.0
+            except (ValueError, TypeError):
+                balance_after = 0.0
             tracker.record_claim(
                 faucet=self.faucet_name,
                 success=result.success,
                 amount=amount,
-                currency=getattr(self, 'coin', self._get_cryptocurrency_for_faucet()),
-                balance_after=float(result.balance) if result.balance else 0.0
+                currency=currency,
+                balance_after=balance_after
             )
         except Exception as analytics_err:
             logger.warning(f"Analytics tracking failed: {analytics_err}")
+
+    def _normalize_claim_amount(self, amount: float, raw_amount: str, currency: str) -> float:
+        """Normalize claim amount into smallest units for analytics.
+
+        Heuristic: if the raw amount looks like a fractional coin value, convert
+        using currency decimals. Otherwise, keep as-is (assumed smallest unit).
+        """
+        try:
+            if amount <= 0:
+                return amount
+
+            raw_text = str(raw_amount or "")
+            looks_fractional = any(token in raw_text for token in [".", "e", "E"])
+
+            from core.analytics import CryptoPriceFeed
+            decimals = CryptoPriceFeed.CURRENCY_DECIMALS.get(currency.upper())
+
+            if decimals is not None and (looks_fractional or amount < 1):
+                return amount * (10 ** decimals)
+        except Exception:
+            pass
+
+        return amount
+
+    @staticmethod
+    def _detect_currency_from_text(text: str) -> Optional[str]:
+        """Detect currency code from claim/balance text."""
+        if not text:
+            return None
+        upper = text.upper()
+        for symbol in ["BTC", "LTC", "DOGE", "BCH", "TRX", "ETH", "BNB", "SOL", "TON", "DASH", "USDT", "MATIC", "POLYGON"]:
+            if symbol in upper:
+                return "POLYGON" if symbol == "MATIC" else symbol
+        name_map = {
+            "BITCOIN": "BTC",
+            "LITECOIN": "LTC",
+            "DOGECOIN": "DOGE",
+            "BITCOIN CASH": "BCH",
+            "TRON": "TRX",
+            "ETHEREUM": "ETH",
+            "BINANCE": "BNB",
+            "SOLANA": "SOL",
+            "TETHER": "USDT",
+            "DASH": "DASH",
+            "POLYGON": "POLYGON",
+        }
+        for name, symbol in name_map.items():
+            if name in upper:
+                return symbol
+        if "SAT" in upper or "SATOSHI" in upper:
+            return "BTC"
+        return None
 
     async def run(self) -> ClaimResult:
         """
@@ -1262,14 +1345,14 @@ class FaucetBot:
                     await self.random_delay()
                     
                 except Exception as e:
-                     error_msg = f"Task '{name}' Error: {e}"
-                     logger.error(f"[{self.faucet_name}] {error_msg}")
-                     
-                     # If the primary claim fails with an exception, update final_result
-                     if name == "Faucet Claim":
-                         final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
-                     
-                     # We continue to the next task even if this one failed!
+                    error_msg = f"Task '{name}' Error: {e}"
+                    logger.error(f"[{self.faucet_name}] {error_msg}")
+
+                    # If the primary claim fails with an exception, update final_result
+                    if name == "Faucet Claim":
+                        final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
+
+                    # We continue to the next task even if this one failed!
             
             return final_result
 

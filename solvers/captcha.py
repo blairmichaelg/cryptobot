@@ -66,6 +66,7 @@ class CaptchaSolver:
             logger.warning("You must solve CAPTCHAs yourself in the browser window.")
             
         self.proxy_string = None  # Store proxy for sticky sessions
+        self.headless = False
 
     def set_faucet_name(self, faucet_name: Optional[str]) -> None:
         """Associate this solver instance with a faucet for cost attribution."""
@@ -74,6 +75,10 @@ class CaptchaSolver:
     def set_proxy(self, proxy_string: str):
         """Set the proxy to be used for all 2Captcha requests."""
         self.proxy_string = proxy_string
+
+    def set_headless(self, headless: bool):
+        """Set whether the browser is running headless (manual solving unavailable)."""
+        self.headless = bool(headless)
 
     def set_fallback_provider(self, provider: str, api_key: str):
         """Set a fallback captcha provider in case primary fails."""
@@ -100,6 +105,43 @@ class CaptchaSolver:
             logger.warning(f"💰 Daily captcha budget exhausted (${self._daily_spend:.4f}/${self.daily_budget:.2f})")
             return False
         return True
+    
+    def can_afford_captcha(self, captcha_type: str) -> bool:
+        """Check if we can afford this captcha solve within daily budget.
+        
+        Returns False if:
+        - Daily budget exhausted
+        - This solve would exceed budget
+        - Provider balance too low
+        
+        Args:
+            captcha_type: Type of captcha (turnstile, hcaptcha, userrecaptcha, image)
+            
+        Returns:
+            bool: True if we can afford this solve
+        """
+        self._check_and_reset_daily_budget()
+        
+        cost = self._cost_per_solve.get(captcha_type, 0.003)
+        remaining_budget = self.daily_budget - self._daily_spend
+        
+        # Check if this solve would exceed budget
+        if cost > remaining_budget:
+            logger.warning(
+                f"💰 Cannot afford {captcha_type} solve (${cost:.4f}). "
+                f"Remaining budget: ${remaining_budget:.4f}"
+            )
+            return False
+        
+        # Check if we're very close to budget limit (save for critical claims)
+        if remaining_budget < 0.50:  # Less than $0.50 remaining
+            logger.warning(
+                f"⚠️ Low budget warning: ${remaining_budget:.4f} remaining. "
+                f"Consider manual solve for critical claims."
+            )
+            return remaining_budget >= cost
+        
+        return True
 
     def _record_solve(self, method: str, success: bool):
         """Record a solve attempt for budget tracking."""
@@ -123,6 +165,18 @@ class CaptchaSolver:
             "remaining": self.daily_budget - self._daily_spend,
             "solves_today": self._solve_count_today,
             "date": self._budget_reset_date
+        }
+    
+    def get_provider_stats(self) -> dict:
+        """Get statistics for all providers.
+        
+        Returns:
+            dict: Provider statistics including solves, failures, costs
+        """
+        return {
+            "providers": self.provider_stats.copy(),
+            "primary": self.provider,
+            "fallback": self.fallback_provider
         }
 
     def _parse_proxy(self, proxy_url: str) -> dict:
@@ -163,6 +217,90 @@ class CaptchaSolver:
         if self.session:
             await self.session.close()
 
+    async def solve_with_fallback(self, page, captcha_type: str, sitekey: str, url: str, proxy_context: dict = None) -> Optional[str]:
+        """Try primary provider, fallback to secondary if needed.
+        
+        Logic:
+        - Try self.provider (2captcha or capsolver)
+        - If NO_SLOT or ZERO_BALANCE, try fallback
+        - If both fail, raise exception
+        - Track which provider succeeded for cost attribution
+        
+        Args:
+            page: Playwright page instance
+            captcha_type: Type of captcha (turnstile, hcaptcha, userrecaptcha)
+            sitekey: Site key for the captcha
+            url: Page URL
+            proxy_context: Optional proxy configuration
+            
+        Returns:
+            Captcha solution token or None if failed
+        """
+        providers_tried = []
+        
+        # Try primary provider
+        try:
+            logger.info(f"🔑 Trying primary provider: {self.provider}")
+            providers_tried.append(self.provider)
+            
+            if self.provider == "capsolver":
+                code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=self.api_key)
+            else:
+                code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=self.api_key)
+            
+            if code:
+                logger.info(f"✅ {self.provider.title()} succeeded")
+                # Track success
+                if self.provider in self.provider_stats:
+                    self.provider_stats[self.provider]["solves"] += 1
+                    self.provider_stats[self.provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+                return code
+            else:
+                logger.warning(f"❌ {self.provider.title()} failed to return a solution")
+                if self.provider in self.provider_stats:
+                    self.provider_stats[self.provider]["failures"] += 1
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"❌ {self.provider.title()} error: {e}")
+            if self.provider in self.provider_stats:
+                self.provider_stats[self.provider]["failures"] += 1
+            
+            # Check if error is NO_SLOT or ZERO_BALANCE
+            if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
+                # Not a fallback-worthy error, propagate it
+                raise
+        
+        # Try fallback provider if configured
+        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider:
+            try:
+                logger.info(f"🔁 Trying fallback provider: {self.fallback_provider}")
+                providers_tried.append(self.fallback_provider)
+                
+                if self.fallback_provider == "capsolver":
+                    code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=self.fallback_api_key)
+                else:
+                    code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=self.fallback_api_key)
+                
+                if code:
+                    logger.info(f"✅ {self.fallback_provider.title()} fallback succeeded")
+                    # Track success
+                    if self.fallback_provider in self.provider_stats:
+                        self.provider_stats[self.fallback_provider]["solves"] += 1
+                        self.provider_stats[self.fallback_provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+                    return code
+                else:
+                    logger.error(f"❌ {self.fallback_provider.title()} fallback also failed")
+                    if self.fallback_provider in self.provider_stats:
+                        self.provider_stats[self.fallback_provider]["failures"] += 1
+            except Exception as e:
+                logger.error(f"❌ {self.fallback_provider.title()} fallback error: {e}")
+                if self.fallback_provider in self.provider_stats:
+                    self.provider_stats[self.fallback_provider]["failures"] += 1
+        
+        # Both providers failed
+        logger.error(f"❌ All captcha providers failed. Tried: {', '.join(providers_tried)}")
+        return None
+
     async def solve_captcha(self, page, timeout: int = 300, proxy_context: dict = None) -> bool:
         """Detects and solves CAPTCHA.
 
@@ -178,6 +316,9 @@ class CaptchaSolver:
         Returns:
             bool: True if the captcha was solved successfully.
         """
+        if not self.api_key and self.headless:
+            logger.error("CAPTCHA detected but no API key in headless mode. Cannot solve automatically.")
+            return False
         # 1. Detection & Extraction
         sitekey = None
         method = None
@@ -246,12 +387,12 @@ class CaptchaSolver:
         else:
             logger.info("CAPTCHA Detected: Image (Coordinates based)")
 
-        # 2. Auto-Solve Path
+        # 2. Auto-Solve Path with Budget Check
         auto_solve_allowed = False
         if self.api_key and method:
-            auto_solve_allowed = self._can_afford_solve(method)
+            auto_solve_allowed = self.can_afford_captcha(method)
             if not auto_solve_allowed:
-                logger.warning("💰 Captcha budget exceeded. Falling back to manual solve.")
+                logger.warning("💰 Captcha budget exceeded or insufficient. Attempting manual solve...")
 
         if self.api_key and auto_solve_allowed:
             try:
@@ -259,44 +400,28 @@ class CaptchaSolver:
                     return await self._solve_image_captcha(page)
 
                 if sitekey:
-                    if self.provider == "capsolver":
-                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context, api_key=self.api_key)
-                    else:
-                        code = await self._solve_2captcha(sitekey, page.url, method, proxy_context, api_key=self.api_key)
-
+                    # Use the new solve_with_fallback method for provider fallback
+                    code = await self.solve_with_fallback(page, method, sitekey, page.url, proxy_context)
                     
                     if code:
-                        logger.info(f"✅ {self.provider.title()} Solved! Injecting token...")
+                        logger.info(f"✅ Captcha Solved! Injecting token...")
                         await self._inject_token(page, method, code)
                         self._record_solve(method, True)
                         return True
                     else:
-                        logger.error(f"❌ {self.provider.title()} failed to return a solution.")
+                        logger.error(f"❌ All captcha providers failed")
             except Exception as e:
-                logger.error(f"{self.provider.title()} Error: {e}")
-
-        # 2.5. Fallback provider path (if configured)
-        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider and method and sitekey:
-            if self._can_afford_solve(method):
-                try:
-                    logger.info(f"🔁 Trying fallback provider: {self.fallback_provider}")
-                    if self.fallback_provider == "capsolver":
-                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context, api_key=self.fallback_api_key)
-                    else:
-                        code = await self._solve_2captcha(sitekey, page.url, method, proxy_context, api_key=self.fallback_api_key)
-
-                    if code:
-                        logger.info(f"✅ {self.fallback_provider.title()} Solved! Injecting token...")
-                        await self._inject_token(page, method, code)
-                        self._record_solve(method, True)
-                        return True
-                    else:
-                        logger.error(f"❌ {self.fallback_provider.title()} failed to return a solution.")
-                except Exception as e:
-                    logger.error(f"{self.fallback_provider.title()} Error: {e}")
+                logger.error(f"Captcha solving error: {e}")
 
         # 3. Manual Fallback Path
-        return await self._wait_for_human(page, timeout)
+        # Check if this is a high-value claim (based on faucet_name)
+        high_value = False
+        if self.faucet_name:
+            # High-value faucets that are worth manual effort
+            high_value_faucets = ["firefaucet", "freebitcoin", "cointiply"]
+            high_value = any(hv in self.faucet_name.lower() for hv in high_value_faucets)
+        
+        return await self._wait_for_human(page, timeout, high_value_claim=high_value)
 
     async def _solve_image_captcha(self, page) -> bool:
         """
@@ -625,13 +750,14 @@ class CaptchaSolver:
             }});
         }}""", token)
 
-    async def _wait_for_human(self, page, timeout):
+    async def _wait_for_human(self, page, timeout, high_value_claim: bool = False):
         """
         Pause execution and wait for manual captcha resolution.
 
         Args:
             page: The Playwright Page instance.
             timeout: Maximum time to wait in seconds.
+            high_value_claim: If True, this is a high-value claim worth manual effort.
 
         Returns:
             True if the captcha was solved (token detected), False if timed out.
@@ -644,8 +770,12 @@ class CaptchaSolver:
             logger.error("❌ Headless mode detected. Skipping manual captcha solve.")
             return False
 
-        logger.info("⚠️ PAUSED FOR MANUAL CAPTCHA SOLVE ⚠️")
-        logger.info(f"Please solve the captcha in the browser within {timeout} seconds.")
+        if high_value_claim:
+            logger.warning("⚠️ BUDGET EXHAUSTED - HIGH VALUE CLAIM DETECTED ⚠️")
+            logger.warning(f"Please solve CAPTCHA manually for profitable claim (timeout: {timeout}s)")
+        else:
+            logger.info("⚠️ PAUSED FOR MANUAL CAPTCHA SOLVE ⚠️")
+            logger.info(f"Please solve the captcha in the browser within {timeout} seconds.")
         
         start_time = asyncio.get_event_loop().time()
         

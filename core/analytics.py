@@ -9,7 +9,7 @@ import os
 import time
 import logging
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from collections import defaultdict
@@ -166,15 +166,11 @@ class CryptoPriceFeed:
         return coin_amount * price
 
 
-# Global price feed instance
-_price_feed = None
-
 def get_price_feed() -> CryptoPriceFeed:
     """Get or create the global price feed."""
-    global _price_feed
-    if _price_feed is None:
-        _price_feed = CryptoPriceFeed()
-    return _price_feed
+    if not hasattr(get_price_feed, "_instance"):
+        get_price_feed._instance = CryptoPriceFeed()
+    return get_price_feed._instance
 
 
 @dataclass
@@ -279,7 +275,7 @@ class EarningsTracker:
         
         # Auto-flush if interval exceeded (5 minutes)
         if time.time() - self.last_flush_time > self.AUTO_FLUSH_INTERVAL:
-            logger.info(f"💾 Auto-flushing analytics (interval exceeded)")
+            logger.info("💾 Auto-flushing analytics (interval exceeded)")
             self._save()
         else:
             # Regular save (on every claim for data protection)
@@ -620,7 +616,7 @@ class EarningsTracker:
         
         lines = [
             "=" * 50,
-            f"EARNINGS SUMMARY (Last 24 Hours)",
+            "EARNINGS SUMMARY (Last 24 Hours)",
             "=" * 50,
             f"Session Duration: {session['session_duration_hours']:.1f} hours",
             f"Total Claims: {session['total_claims']}",
@@ -709,6 +705,47 @@ class EarningsTracker:
                 alerts.append(f"📉 EARNINGS DROP: {faucet} earnings are 70% below average.")
                 
         return alerts
+    
+    def get_captcha_costs_since(self, since: datetime) -> float:
+        """
+        Get total captcha costs since a specific datetime.
+        
+        Args:
+            since: DateTime to start counting from
+            
+        Returns:
+            Total cost in USD
+        """
+        cutoff = since.timestamp()
+        total = sum(
+            cost['amount_usd'] for cost in self.costs
+            if cost.get('timestamp', 0) >= cutoff and cost.get('type', '').startswith('captcha')
+        )
+        return total
+    
+    def get_stats_since(self, since: datetime) -> Dict[str, Any]:
+        """
+        Get claim statistics since a specific datetime.
+        
+        Args:
+            since: DateTime to start counting from
+            
+        Returns:
+            Dict with total_claims, successes, failures
+        """
+        cutoff = since.timestamp()
+        recent_claims = [c for c in self.claims if c.get('timestamp', 0) >= cutoff]
+        
+        total = len(recent_claims)
+        successes = sum(1 for c in recent_claims if c.get('success'))
+        failures = total - successes
+        
+        return {
+            "total_claims": total,
+            "successes": successes,
+            "failures": failures,
+            "success_rate": (successes / total * 100) if total > 0 else 0
+        }
 
     def generate_automated_report(self, save_to_file: bool = True) -> str:
         """
@@ -720,8 +757,6 @@ class EarningsTracker:
         Returns:
             Report content as string
         """
-        from datetime import datetime
-        
         now = datetime.now()
         session = self.get_session_stats()
         faucet_stats = self.get_faucet_stats(24)
@@ -743,7 +778,6 @@ class EarningsTracker:
             "─" * 50,
         ]
         
-        total_value = 0
         for currency, amount in session["earnings_by_currency"].items():
             lines.append(f"  {currency}: {amount:.8f}")
         
@@ -791,7 +825,6 @@ class EarningsTracker:
         # Save to file
         if save_to_file:
             try:
-                import os
                 reports_dir = os.path.join(os.path.dirname(__file__), "..", "reports")
                 os.makedirs(reports_dir, exist_ok=True)
                 
@@ -802,9 +835,6 @@ class EarningsTracker:
             except Exception as e:
                 logger.warning(f"Failed to save report: {e}")
         
-        return report
-
-
         return report
 
 
@@ -849,13 +879,9 @@ class ProfitabilityOptimizer:
         return [f for f, s in stats.items() if s['success_rate'] < threshold_sr and s['total'] >= 5]
 
 
-# Global tracker instance
-_tracker = None
-
 def get_tracker() -> EarningsTracker:
     """Get or create the global earnings tracker."""
-    global _tracker
-    if _tracker is None:
-        _tracker = EarningsTracker()
-    return _tracker
+    if not hasattr(get_tracker, "_instance"):
+        get_tracker._instance = EarningsTracker()
+    return get_tracker._instance
 

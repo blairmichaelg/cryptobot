@@ -42,11 +42,13 @@ class TestAutoSuspend:
         
         with patch("core.analytics.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_faucet_stats.return_value = mock_stats
-            mock_tracker.return_value.get_profitability.return_value = {
-                "earnings_usd": 0.01,
-                "costs_usd": 0.03,
-                "net_profit_usd": -0.02,
-                "roi": -0.67
+            mock_tracker.return_value.get_faucet_profitability.return_value = {
+                "test_faucet": {
+                    "earnings_usd": 0.01,
+                    "costs_usd": 0.03,
+                    "net_profit_usd": -0.02,
+                    "roi": -0.67
+                }
             }
             
             should_suspend, reason = scheduler._check_auto_suspend("test_faucet")
@@ -71,11 +73,13 @@ class TestAutoSuspend:
         
         with patch("core.analytics.get_tracker") as mock_tracker:
             mock_tracker.return_value.get_faucet_stats.return_value = mock_stats
-            mock_tracker.return_value.get_profitability.return_value = {
-                "earnings_usd": 0.001,
-                "costs_usd": 0.03,
-                "net_profit_usd": -0.029,
-                "roi": -0.97
+            mock_tracker.return_value.get_faucet_profitability.return_value = {
+                "test_faucet": {
+                    "earnings_usd": 0.001,
+                    "costs_usd": 0.03,
+                    "net_profit_usd": -0.029,
+                    "roi": -0.97
+                }
             }
             
             should_suspend, reason = scheduler._check_auto_suspend("test_faucet")

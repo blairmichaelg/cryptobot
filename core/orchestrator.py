@@ -6,15 +6,16 @@ import json
 import os
 import inspect
 import shutil
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
-from playwright.async_api import Page, BrowserContext
+from core.health_monitor import HealthMonitor
 
 if TYPE_CHECKING:
     from faucets.base import ClaimResult
+    from core.config import OperationMode
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +95,21 @@ class JobScheduler:
         self.queue: List[Job] = []
         self.running_jobs: Dict[str, asyncio.Task] = {}  # Key: profile.username + job.name
         
+        # Auto-withdrawal management
+        self.auto_withdrawal = None  # Will be initialized if wallet daemon is available
+        self.withdrawal_check_scheduled = False
+        
+        # Exponential backoff tracking per faucet
+        self.faucet_backoff: Dict[str, Dict[str, Any]] = {}  # faucet_type -> {consecutive_failures, next_allowed_time}
+        
+        # Health monitoring
+        self.health_monitor = HealthMonitor()
+        self.last_health_check_time = 0.0
+        
         # Startup Checks
         if self.proxy_manager:
-             if len(self.proxy_manager.proxies) < 3:
-                 logger.warning(f"⚠️ LOW PROXY COUNT: Only {len(self.proxy_manager.proxies)} proxies detected. Recommended: 3+ for stealth.")
+            if len(self.proxy_manager.proxies) < 3:
+                logger.warning(f"⚠️ LOW PROXY COUNT: Only {len(self.proxy_manager.proxies)} proxies detected. Recommended: 3+ for stealth.")
         
         self.profile_concurrency: Dict[str, int] = {}  # Key: profile.username
         self._stop_event = asyncio.Event()
@@ -129,11 +141,13 @@ class JobScheduler:
         self.last_heartbeat_time = 0
         self.last_health_check_time = 0
         self.consecutive_job_failures = 0
+        self.performance_alert_score = 0
         
-        # Profitability-based priority management
-        self.disabled_faucets: Dict[str, float] = {}  # faucet -> timestamp when disabled
-        self.faucet_priority_multipliers: Dict[str, float] = {}  # faucet -> priority multiplier
-        self.last_priority_update_time = 0
+        # Operation mode tracking for graceful degradation
+        from core.config import OperationMode
+        self.current_mode: OperationMode = OperationMode.NORMAL
+        self.last_mode_check_time = 0
+        self.MODE_CHECK_INTERVAL = 600  # Check every 10 minutes
         
         # Try to restore session on init
         self._restore_session()
@@ -153,8 +167,8 @@ class JobScheduler:
                 for rj in raw_jobs:
                     try:
                         job = Job.from_dict(rj)
-                        if job.next_run < time.time() - 3600: 
-                             job.next_run = time.time()
+                        if job.next_run < time.time() - 3600:
+                            job.next_run = time.time()
                         self.add_job(job)
                         restored_count += 1
                     except Exception as je:
@@ -231,7 +245,7 @@ class JobScheduler:
             logger.error(f"Failed to safely write {filepath}: {e}")
             # Try to restore from backup
             if os.path.exists(filepath + ".backup.1"):
-                logger.info(f"Attempting recovery from backup")
+                logger.info("Attempting recovery from backup")
                 try:
                     shutil.copy2(filepath + ".backup.1", filepath)
                 except Exception as restore_err:
@@ -249,6 +263,10 @@ class JobScheduler:
             self._safe_json_write(self.session_file, data)
         except Exception as e:
             logger.warning(f"Could not persist session: {e}")
+
+    def persist_session(self):
+        """Public wrapper for persisting session state."""
+        self._persist_session()
 
     def _write_heartbeat(self):
         """Write heartbeat file for external monitoring."""
@@ -269,6 +287,57 @@ class JobScheduler:
     def record_domain_access(self, faucet_type: str):
         """Record that we just accessed this faucet domain."""
         self.domain_last_access[faucet_type] = time.time()
+    
+    def calculate_retry_delay(self, faucet_type: str, error_type: ErrorType) -> float:
+        """Calculate retry delay with exponential backoff + jitter.
+        
+        Formula: min(base * (2 ** failures) + random(0, base * 0.3), max_delay)
+        
+        Base delays by ErrorType:
+        - TRANSIENT: 60s base
+        - RATE_LIMIT: 600s base
+        - PROXY_ISSUE: 300s base  
+        - CAPTCHA_FAILED: 900s base
+        - FAUCET_DOWN: 3600s base
+        - UNKNOWN: 300s base
+        
+        Returns:
+            Delay in seconds with jitter applied
+        """
+        # Base delays by error type
+        base_delays = {
+            ErrorType.TRANSIENT: 60,
+            ErrorType.RATE_LIMIT: 600,
+            ErrorType.PROXY_ISSUE: 300,
+            ErrorType.CAPTCHA_FAILED: 900,
+            ErrorType.FAUCET_DOWN: 3600,
+            ErrorType.UNKNOWN: 300,
+            ErrorType.PERMANENT: float('inf')  # Don't retry permanent failures
+        }
+        
+        base_delay = base_delays.get(error_type, 300)
+        
+        if base_delay == float('inf'):
+            return base_delay
+        
+        # Get failure count for this faucet
+        backoff_state = self.faucet_backoff.get(faucet_type, {})
+        consecutive_failures = backoff_state.get('consecutive_failures', 0)
+        
+        # Exponential backoff: base * (2 ** failures)
+        exponential_delay = base_delay * (2 ** min(consecutive_failures, 5))  # Cap at 5 doublings
+        
+        # Apply jitter (±30% of base delay) to prevent thundering herd
+        jitter = random.uniform(0, base_delay * 0.3)
+        
+        # Total delay with max cap
+        max_delay = 7200  # 2 hours max
+        total_delay = min(exponential_delay + jitter, max_delay)
+        
+        logger.debug(f"Calculated retry delay for {faucet_type} ({error_type.value}): "
+                    f"{total_delay:.0f}s (failures: {consecutive_failures}, base: {base_delay}s)")
+        
+        return total_delay
 
     async def _get_proxy_locale_timezone(self, proxy: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         """Resolve locale/timezone hints based on proxy geolocation."""
@@ -285,6 +354,65 @@ class JobScheduler:
             logger.debug(f"Proxy geolocation lookup failed for {proxy}: {e}")
             return None, None
 
+    def estimate_claim_cost(self, faucet_type: str) -> float:
+        """Estimate total cost to claim this faucet.
+        
+        Based on historical data:
+        - Average captchas per claim (1-3)
+        - Captcha types (turnstile=0.003, hcaptcha=0.003, image=0.001)
+        - Success/retry rate
+        
+        Args:
+            faucet_type: The faucet type to estimate
+            
+        Returns:
+            Estimated USD cost for this claim
+        """
+        try:
+            from core.analytics import get_tracker
+            tracker = get_tracker()
+            
+            # Get historical captcha usage for this faucet
+            faucet_stats = tracker.get_faucet_stats(hours=168)  # Last week
+            faucet_data = faucet_stats.get(faucet_type.lower(), {})
+            
+            # Default captcha cost estimates per faucet type (based on known patterns)
+            faucet_captcha_estimates = {
+                "firefaucet": {"count": 1, "type": "turnstile", "cost": 0.003},
+                "freebitcoin": {"count": 2, "type": "hcaptcha", "cost": 0.006},
+                "cointiply": {"count": 1, "type": "hcaptcha", "cost": 0.003},
+                "coinpayu": {"count": 1, "type": "image", "cost": 0.001},
+                "dutchycorp": {"count": 1, "type": "turnstile", "cost": 0.003},
+                "faucetcrypto": {"count": 1, "type": "turnstile", "cost": 0.003},
+                "autofaucet": {"count": 1, "type": "turnstile", "cost": 0.003},
+            }
+            
+            # Check for pick.io faucets (all use same pattern)
+            if "pick" in faucet_type.lower():
+                faucet_captcha_estimates[faucet_type.lower()] = {"count": 1, "type": "turnstile", "cost": 0.003}
+            
+            # Use historical data if available, otherwise use defaults
+            if faucet_data and "total_claims" in faucet_data and faucet_data["total_claims"] > 5:
+                # Estimate based on success rate (more retries = more captchas)
+                success_rate = faucet_data.get("success_rate", 50) / 100.0
+                retry_multiplier = 1.0 / max(success_rate, 0.3)  # At least 30% success assumed
+                
+                # Get base cost estimate
+                base_estimate = faucet_captcha_estimates.get(faucet_type.lower(), {"count": 1, "cost": 0.003})
+                estimated_cost = base_estimate["cost"] * retry_multiplier
+            else:
+                # Use default estimate
+                estimate = faucet_captcha_estimates.get(faucet_type.lower(), {"count": 1, "cost": 0.003})
+                estimated_cost = estimate["cost"]
+            
+            logger.debug(f"Estimated claim cost for {faucet_type}: ${estimated_cost:.4f}")
+            return estimated_cost
+            
+        except Exception as e:
+            logger.debug(f"Could not estimate claim cost for {faucet_type}: {e}")
+            # Default to moderate estimate
+            return 0.003
+    
     def is_off_peak_time(self) -> bool:
         """
         Check if current time is optimal for withdrawals (lower network fees).
@@ -328,16 +456,19 @@ class JobScheduler:
             tracker = get_tracker()
             stats = tracker.get_faucet_stats(24)
             hourly = tracker.get_hourly_rate(hours=24)
-            profitability = tracker.get_faucet_profitability(hours=24)
+            stats_key = self._match_faucet_key(stats, faucet_type)
+            hourly_key = self._match_faucet_key(hourly, faucet_type)
 
-            if faucet_type in stats:
-                success_rate = stats[faucet_type].get('success_rate', 50) / 100
-                earnings_per_hour = hourly.get(faucet_type, 0)
+            if stats_key:
+                success_rate = stats[stats_key].get('success_rate', 50) / 100
+                earnings_per_hour = hourly.get(hourly_key, 0) if hourly_key else 0
+                profitability = tracker.get_faucet_profitability(stats_key, days=1)
 
                 # Normalize earnings (assume 100 satoshi/hour is baseline)
                 earnings_factor = min(1 + (earnings_per_hour / 100), 2.0)
 
-                roi = profitability.get(faucet_type, {}).get("roi", 0.0)
+                roi_pct = profitability.get("roi_percentage", 0.0)
+                roi = roi_pct / 100.0
                 roi_factor = max(0.3, min(1.0 + roi, 2.0))
 
                 # Combine factors: success rate, earnings, ROI
@@ -363,11 +494,12 @@ class JobScheduler:
         try:
             # Get faucet stats
             stats = get_tracker().get_faucet_stats(24)
-            
-            if faucet_type not in stats:
+            stats_key = self._match_faucet_key(stats, faucet_type)
+
+            if not stats_key:
                 return False, ""
-            
-            faucet_stats = stats[faucet_type]
+
+            faucet_stats = stats[stats_key]
             
             # Check minimum samples
             if faucet_stats['total'] < self.settings.faucet_auto_suspend_min_samples:
@@ -382,9 +514,9 @@ class JobScheduler:
             success_count = faucet_stats.get("success", 0)
             earnings = faucet_stats.get("earnings", 0.0)
             if success_count > 0 and earnings > 0:
-                profitability = get_tracker().get_faucet_profitability(hours=24)
-                faucet_profit = profitability.get(faucet_type, {})
-                roi = faucet_profit.get("roi")
+                faucet_profit = get_tracker().get_faucet_profitability(stats_key, days=1)
+                roi_pct = faucet_profit.get("roi_percentage")
+                roi = (roi_pct / 100.0) if roi_pct is not None else None
 
                 if roi is not None and roi < self.settings.faucet_roi_threshold:
                     return True, f"Negative ROI: {roi:.2f} (threshold: {self.settings.faucet_roi_threshold})"
@@ -395,113 +527,20 @@ class JobScheduler:
             logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
             return False, ""
 
-    def update_job_priorities(self):
-        """
-        Recalculate job priorities based on profitability.
-        
-        - High-ROI faucets (score > 200%) get priority boost (lower priority number)
-        - Low-ROI faucets (score < 50%) get priority penalty (higher priority number)
-        - Faucets with negative ROI for 3+ days are auto-disabled
-        """
-        from core.analytics import get_tracker
-        
-        try:
-            tracker = get_tracker()
-            profitability_report = tracker.get_profitability_report(days=7, min_claims=3)
-            
-            if not profitability_report:
-                logger.debug("No profitability data available for priority update")
-                return
-            
-            now = time.time()
-            priority_changes = []
-            
-            for metrics in profitability_report:
-                faucet = metrics["faucet"]
-                score = metrics["profitability_score"]
-                roi_pct = metrics["roi_percentage"]
-                net_profit = metrics["net_profit_usd"]
-                
-                # Calculate priority multiplier based on profitability score
-                # Score > 100: High priority (multiplier 0.5-0.8)
-                # Score 50-100: Normal priority (multiplier 0.9-1.0)
-                # Score 0-50: Low priority (multiplier 1.1-1.5)
-                # Score < 0: Very low priority (multiplier 1.5-2.0)
-                
-                if score > 200:
-                    multiplier = 0.5  # Highest priority
-                elif score > 100:
-                    multiplier = 0.6 + (200 - score) / 500  # 0.6-0.8
-                elif score > 50:
-                    multiplier = 0.9 + (100 - score) / 500  # 0.9-1.0
-                elif score > 0:
-                    multiplier = 1.0 + (50 - score) / 100  # 1.0-1.5
-                else:
-                    multiplier = 1.5 + min(abs(score) / 100, 0.5)  # 1.5-2.0
-                
-                # Store old multiplier for comparison
-                old_multiplier = self.faucet_priority_multipliers.get(faucet, 1.0)
-                self.faucet_priority_multipliers[faucet] = multiplier
-                
-                # Log significant changes (>20% difference)
-                if abs(multiplier - old_multiplier) > 0.2:
-                    direction = "↑" if multiplier < old_multiplier else "↓"  # Lower multiplier = higher priority
-                    priority_changes.append(
-                        f"{direction} {faucet}: {old_multiplier:.2f} → {multiplier:.2f} "
-                        f"(score: {score:.1f}, ROI: {roi_pct:.1f}%)"
-                    )
-                
-                # Auto-disable check: negative ROI for 3+ days
-                if net_profit < 0 and metrics["claim_count"] >= 10:  # At least 10 claims to be sure
-                    # Check if negative for multiple days
-                    if faucet not in self.disabled_faucets:
-                        # First time seeing negative - check 3-day trend
-                        three_day_metrics = tracker.get_faucet_profitability(faucet, days=3)
-                        if three_day_metrics["net_profit_usd"] < 0:
-                            # Still negative in last 3 days - disable it
-                            self.disabled_faucets[faucet] = now
-                            logger.warning(
-                                f"⛔ AUTO-DISABLED: {faucet} due to consistent losses "
-                                f"(7d ROI: {roi_pct:.1f}%, net: ${net_profit:.4f})"
-                            )
-                            priority_changes.append(f"⛔ DISABLED {faucet} (negative ROI)")
-                
-                # Re-enable check: if previously disabled and now profitable
-                elif faucet in self.disabled_faucets and score > 50:
-                    del self.disabled_faucets[faucet]
-                    logger.info(
-                        f"✅ AUTO-ENABLED: {faucet} restored due to improved profitability "
-                        f"(score: {score:.1f}, ROI: {roi_pct:.1f}%)"
-                    )
-                    priority_changes.append(f"✅ ENABLED {faucet} (score {score:.1f})")
-            
-            # Apply new priorities to queued jobs
-            for job in self.queue:
-                if job.faucet_type in self.faucet_priority_multipliers:
-                    multiplier = self.faucet_priority_multipliers[job.faucet_type]
-                    # Adjust priority (lower is better, so multiply base priority)
-                    base_priority = 1 if "withdraw" in job.job_type.lower() else 0
-                    job.priority = int(base_priority * multiplier * 10)  # Scale to integers
-            
-            # Resort queue after priority changes
-            if priority_changes:
-                self.queue.sort()
-                logger.info(f"📊 PRIORITY UPDATE: {len(priority_changes)} changes")
-                for change in priority_changes[:10]:  # Log first 10 changes
-                    logger.info(f"  {change}")
-            
-            # Log overall profitability summary
-            high_roi = [m for m in profitability_report if m["profitability_score"] > 100]
-            low_roi = [m for m in profitability_report if m["profitability_score"] < 50]
-            
-            logger.info(
-                f"💹 Profitability Summary: {len(high_roi)} high-ROI, "
-                f"{len(low_roi)} low-ROI, {len(self.disabled_faucets)} disabled"
-            )
-            
-        except Exception as e:
-            logger.error(f"Failed to update job priorities: {e}", exc_info=True)
-    
+    @staticmethod
+    def _normalize_faucet_key(name: str) -> str:
+        return str(name or "").lower().replace("_", "").replace(" ", "")
+
+    def _match_faucet_key(self, data: Dict[str, Any], faucet_type: str) -> Optional[str]:
+        """Find a stats key matching the faucet_type using normalized comparison."""
+        if faucet_type in data:
+            return faucet_type
+        target = self._normalize_faucet_key(faucet_type)
+        for key in data.keys():
+            if self._normalize_faucet_key(key) == target:
+                return key
+        return None
+
     async def schedule_withdrawal_jobs(self):
         """
         Automatically schedule withdrawal jobs for all faucets with withdraw() support.
@@ -611,6 +650,277 @@ class JobScheduler:
             logger.info(f"Scheduled withdrawal job for {profile.faucet} ({profile.username}) at {datetime.fromtimestamp(next_withdrawal_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
         
         logger.info(f"Withdrawal job scheduling complete: {scheduled_count} jobs scheduled")
+        return scheduled_count
+    
+    async def schedule_auto_withdrawal_check(self):
+        """
+        Schedule automated withdrawal check job using real-time fee monitoring.
+        
+        This job runs every 4 hours during off-peak windows and checks all
+        faucet balances, executing withdrawals when conditions are optimal.
+        """
+        logger.info("📅 Scheduling automated withdrawal check job...")
+        
+        # Initialize auto-withdrawal if we have wallet daemon configured
+        try:
+            from core.wallet_manager import WalletDaemon
+            from core.auto_withdrawal import get_auto_withdrawal_instance
+            from core.analytics import get_tracker
+            
+            # Check if wallet RPC is configured
+            if not self.settings.wallet_rpc_urls:
+                logger.info("⏭️  No wallet RPC configured - skipping auto-withdrawal")
+                return
+            
+            # Create wallet daemon instance
+            wallet = WalletDaemon(
+                rpc_urls=self.settings.wallet_rpc_urls,
+                rpc_user=self.settings.electrum_rpc_user or "",
+                rpc_pass=self.settings.electrum_rpc_pass or ""
+            )
+            
+            # Get analytics tracker
+            tracker = get_tracker()
+            
+            # Initialize auto-withdrawal manager
+            self.auto_withdrawal = get_auto_withdrawal_instance(wallet, self.settings, tracker)
+            
+            logger.info("✅ Auto-withdrawal manager initialized")
+            
+            # Schedule first check in 4 hours (or sooner if off-peak)
+            next_check_time = time.time() + (4 * 3600)
+            
+            # Adjust to next off-peak window if enabled
+            if self.settings.prefer_off_peak_withdrawals:
+                target_time = datetime.fromtimestamp(next_check_time, tz=timezone.utc)
+                
+                # If not in off-peak hours, adjust to next off-peak window
+                if target_time.hour not in self.settings.off_peak_hours:
+                    hours_to_add = 0
+                    while (target_time.hour + hours_to_add) % 24 not in self.settings.off_peak_hours:
+                        hours_to_add += 1
+                    target_time += timedelta(hours=hours_to_add)
+                    next_check_time = target_time.timestamp()
+            
+            # Create a dummy profile for the withdrawal check job
+            withdrawal_profile = AccountProfile(
+                faucet="system",
+                username="auto_withdrawal",
+                password="",
+                enabled=True
+            )
+            
+            # Create withdrawal check job
+            withdrawal_job = Job(
+                priority=8,  # Medium-low priority
+                next_run=next_check_time,
+                name="Automated Withdrawal Check",
+                profile=withdrawal_profile,
+                faucet_type="system",
+                job_type="auto_withdrawal_check"
+            )
+            
+            self.add_job(withdrawal_job)
+            self.withdrawal_check_scheduled = True
+            
+            logger.info(f"✅ Automated withdrawal check scheduled for {datetime.fromtimestamp(next_check_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to schedule auto-withdrawal check: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+    async def execute_auto_withdrawal_check(self, _job: Job) -> 'ClaimResult':
+        """
+        Execute automated withdrawal check and schedule next run.
+        
+        Args:
+            job: The auto_withdrawal_check job
+            
+        Returns:
+            ClaimResult with next check time
+        """
+        from faucets.base import ClaimResult
+        
+        logger.info("💰 Executing automated withdrawal check...")
+        
+        try:
+            if not self.auto_withdrawal:
+                logger.warning("Auto-withdrawal manager not initialized")
+                return ClaimResult(
+                    success=False,
+                    status="Not initialized",
+                    next_claim_minutes=240  # Try again in 4 hours
+                )
+            
+            # Execute withdrawal check
+            summary = await self.auto_withdrawal.check_and_execute_withdrawals()
+            
+            # Log summary
+            logger.info("📊 Withdrawal check complete:")
+            logger.info("  - Balances checked: %s", summary['balances_checked'])
+            logger.info("  - Withdrawals executed: %s", summary['withdrawals_executed'])
+            logger.info("  - Withdrawals deferred: %s", summary['withdrawals_deferred'])
+            
+            if summary['transactions']:
+                logger.info("  - Transactions:")
+                for tx in summary['transactions']:
+                    logger.info(f"    • {tx['currency']}: {tx['amount']} → {tx['tx_id'][:16]}...")
+            
+            # Schedule next check in 4 hours
+            next_minutes = 240
+            
+            return ClaimResult(
+                success=True,
+                status=f"Checked {summary['balances_checked']} currencies, executed {summary['withdrawals_executed']} withdrawals",
+                next_claim_minutes=next_minutes
+            )
+            
+        except Exception as e:
+            logger.error(f"Auto-withdrawal check failed: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            
+            return ClaimResult(
+                success=False,
+                status=f"Error: {str(e)}",
+                next_claim_minutes=240  # Try again in 4 hours
+            )
+    
+    def detect_operation_mode(self) -> "OperationMode":
+        """
+        Auto-detect current operation mode based on system health.
+        
+        Returns:
+            Appropriate OperationMode based on current conditions
+        """
+        from core.config import OperationMode
+        
+        # Check for manual maintenance mode first
+        maintenance_flag = CONFIG_DIR / ".maintenance"
+        if maintenance_flag.exists():
+            return OperationMode.MAINTENANCE
+        
+        # Check proxy health
+        healthy_proxies = 0
+        if self.proxy_manager:
+            healthy_proxies = len([p for p in self.proxy_manager.proxies if p.healthy])
+            if healthy_proxies < self.settings.low_proxy_threshold:
+                return OperationMode.LOW_PROXY
+        
+        # Check captcha budget (estimate from recent usage)
+        try:
+            from core.analytics import get_tracker
+            tracker = get_tracker()
+            
+            # Get today's captcha costs
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_costs = tracker.get_captcha_costs_since(today_start)
+            
+            remaining_budget = self.settings.captcha_daily_budget - today_costs
+            if remaining_budget < 1.0:
+                return OperationMode.LOW_BUDGET
+        except Exception as e:
+            logger.debug(f"Could not check captcha budget: {e}")
+        
+        # Check overall failure rate (last hour)
+        try:
+            from core.analytics import get_tracker
+            tracker = get_tracker()
+            
+            hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+            recent_stats = tracker.get_stats_since(hour_ago)
+            
+            if recent_stats["total_claims"] > 10:
+                failure_rate = (recent_stats["failures"] / recent_stats["total_claims"]) * 100
+                if failure_rate > 60:  # >60% failure rate
+                    return OperationMode.SLOW_MODE
+        except Exception as e:
+            logger.debug(f"Could not check failure rate: {e}")
+        
+        return OperationMode.NORMAL
+    
+    def apply_mode_restrictions(self, mode: "OperationMode") -> float:
+        """
+        Adjust bot behavior based on current operation mode.
+        
+        Args:
+            mode: Current operation mode to apply
+            
+        Returns:
+            Delay multiplier to apply to all sleeps
+        """
+        from core.config import OperationMode
+        
+        delay_multiplier = 1.0
+        
+        if mode == OperationMode.LOW_PROXY:
+            # Reduce concurrency to preserve proxies
+            old_concurrent = self.settings.max_concurrent_bots
+            self.settings.max_concurrent_bots = min(2, old_concurrent)
+            logger.warning(
+                f"⚠️ LOW_PROXY mode: Reduced concurrency to {self.settings.max_concurrent_bots} "
+                f"(healthy proxies: {len([p for p in self.proxy_manager.proxies if p.healthy]) if self.proxy_manager else 0})"
+            )
+        
+        elif mode == OperationMode.LOW_BUDGET:
+            # Skip captcha-heavy faucets, prioritize image-only captchas
+            logger.warning("⚠️ LOW_BUDGET mode: Prioritizing low-cost faucets, skipping hCaptcha/reCaptcha v3")
+            # Filter queue to remove high-cost faucet types
+            high_cost_faucets = ["freebitcoin"]  # Known expensive faucets
+            removed = self.purge_jobs(lambda j: j.faucet_type in high_cost_faucets)
+            if removed > 0:
+                logger.info(f"  Removed {removed} high-cost jobs from queue")
+        
+        elif mode == OperationMode.SLOW_MODE:
+            # Increase all delays by 3x to reduce failure rate
+            delay_multiplier = 3.0
+            logger.warning(
+                f"⚠️ SLOW_MODE: Increasing delays {delay_multiplier}x due to high failure rate"
+            )
+        
+        elif mode == OperationMode.MAINTENANCE:
+            # Don't add new jobs, finish existing queue
+            logger.warning(
+                f"🔧 MAINTENANCE mode: Finishing {len(self.queue)} existing jobs, no new jobs added"
+            )
+        
+        elif mode == OperationMode.NORMAL:
+            # Restore normal settings if coming from degraded mode
+            if self.current_mode != OperationMode.NORMAL:
+                # Reset any temporary restrictions
+                self.settings.max_concurrent_bots = 3  # Default value
+                logger.info("✅ NORMAL mode: All restrictions lifted, resuming normal operation")
+        
+        return delay_multiplier
+    
+    def check_and_update_mode(self):
+        """
+        Periodically check operation mode and apply restrictions.
+        Should be called from main scheduler loop.
+        
+        Returns:
+            Current delay multiplier
+        """
+        now = time.time()
+        if now - self.last_mode_check_time < self.MODE_CHECK_INTERVAL:
+            return 1.0
+        
+        self.last_mode_check_time = now
+        
+        # Detect new mode
+        new_mode = self.detect_operation_mode()
+        
+        # Log mode changes
+        if new_mode != self.current_mode:
+            logger.info(
+                f"🔄 Operation mode change: {self.current_mode.value} → {new_mode.value}"
+            )
+            self.current_mode = new_mode
+            delay_multiplier = self.apply_mode_restrictions(new_mode)
+            return delay_multiplier
+        
+        return 1.0
 
     async def execute_consolidated_withdrawal(self, faucet_name: str, profile: AccountProfile) -> "ClaimResult":
         """
@@ -740,24 +1050,22 @@ class JobScheduler:
         Prevents duplicate pending jobs for the same profile + faucet + job_type.
         """
         username = job.profile.username
-        job_key = f"{username}:{job.job_type}:{job.faucet_type}"
-        
         # 1. Check if an identical job is already in the queue
         for pending_job in self.queue:
-             if (pending_job.profile.username == username and 
-                 pending_job.job_type == job.job_type and 
-                 pending_job.faucet_type == job.faucet_type and
-                 pending_job.name == job.name):
-                 logger.debug(f"⏭️ Skipping duplicate job add: {job.name} for {username}")
-                 return
+            if (pending_job.profile.username == username and 
+                pending_job.job_type == job.job_type and 
+                pending_job.faucet_type == job.faucet_type and
+                pending_job.name == job.name):
+                logger.debug(f"⏭️ Skipping duplicate job add: {job.name} for {username}")
+                return
         
         # 2. Check if an identical job is currently running
         for running_key in self.running_jobs:
-             # running_key is username + job.name, but we want more granular check
-             # If job.name matches, it's likely the same job_type/faucet_type
-             if running_key.startswith(f"{username}:") and job.name in running_key:
-                  logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
-                  return
+            # running_key is username + job.name, but we want more granular check
+            # If job.name matches, it's likely the same job_type/faucet_type
+            if running_key.startswith(f"{username}:") and job.name in running_key:
+                logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
+                return
 
         # Apply dynamic priority based on recent performance
         try:
@@ -792,7 +1100,7 @@ class JobScheduler:
         ]
 
         if not healthy_pool:
-             return profile.proxy
+            return profile.proxy
 
         # Determine strategy
         strategy = getattr(profile, 'proxy_rotation_strategy', 'round_robin')
@@ -899,6 +1207,10 @@ class JobScheduler:
         else:  # UNKNOWN
             return 600, "Unknown error - requeue +10min"
 
+    def get_recovery_delay(self, error_type: ErrorType, retry_count: int, current_proxy: Optional[str]) -> tuple[float, str]:
+        """Public wrapper for recovery delay calculation."""
+        return self._get_recovery_delay(error_type, retry_count, current_proxy)
+
     async def _run_job_wrapper(self, job: Job):
         """Wraps job execution with context management and error handling."""
         context = None
@@ -945,23 +1257,31 @@ class JobScheduler:
             bot.set_behavior_profile(profile_name=username, profile_hint=getattr(job.profile, "behavior_profile", None))
             # Ensure bot knows about proxy
             if current_proxy:
-                 bot.set_proxy(current_proxy)
+                bot.set_proxy(current_proxy)
 
             # Execute the job function
             logger.info(f"🚀 Executing {job.name} ({job.job_type}) for {username}... (Proxy: {current_proxy or 'None'})")
             start_time = time.time()
             
-            method = getattr(bot, job.job_type)
-            result = await method(page)
+            # Handle special job types
+            if job.job_type == "auto_withdrawal_check":
+                # Auto-withdrawal check doesn't need a page/bot
+                result = await self.execute_auto_withdrawal_check(job)
+            else:
+                # Regular faucet bot method
+                method = getattr(bot, job.job_type)
+                result = await method(page)
             
             # Post-execution status check
             status_info = await self.browser_manager.check_page_status(page)
             if status_info["blocked"]:
-                 logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
-                 self.record_proxy_failure(current_proxy, detected=True)
+                logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
+                if current_proxy:
+                    self.record_proxy_failure(current_proxy, detected=True)
             elif status_info["network_error"]:
-                 logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
-                 self.record_proxy_failure(current_proxy, detected=False)
+                logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
+                if current_proxy:
+                    self.record_proxy_failure(current_proxy, detected=False)
 
             duration = time.time() - start_time
             logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
@@ -986,7 +1306,15 @@ class JobScheduler:
                     # Clear error type tracking on success
                     if job.faucet_type in self.faucet_error_types:
                         self.faucet_error_types[job.faucet_type] = []
+                    # Reset backoff state on success
+                    if job.faucet_type in self.faucet_backoff:
+                        self.faucet_backoff[job.faucet_type] = {'consecutive_failures': 0, 'next_allowed_time': 0}
+                    # Record success for health monitoring
+                    self.health_monitor.record_faucet_attempt(job.faucet_type, success=True)
                 else:
+                    # Record failure for health monitoring
+                    self.health_monitor.record_faucet_attempt(job.faucet_type, success=False)
+                    
                     # Classify the error type
                     error_type = ErrorType.UNKNOWN
                     if hasattr(result, 'error_type') and isinstance(result.error_type, ErrorType):
@@ -1049,17 +1377,29 @@ class JobScheduler:
                             # Don't requeue permanent failures
                             return
                         
-                        # Get recovery delay and action
-                        delay, action = self._get_recovery_delay(error_type, job.retry_count, current_proxy)
-                        logger.info(f"📋 Recovery action: {action}")
+                        # Update backoff state - increment consecutive failures
+                        if job.faucet_type not in self.faucet_backoff:
+                            self.faucet_backoff[job.faucet_type] = {'consecutive_failures': 0, 'next_allowed_time': 0}
+                        self.faucet_backoff[job.faucet_type]['consecutive_failures'] += 1
+                        
+                        # Calculate intelligent retry delay with exponential backoff + jitter
+                        retry_delay = self.calculate_retry_delay(job.faucet_type, error_type)
+                        
+                        if retry_delay == float('inf'):
+                            logger.error(f"❌ Permanent error - not rescheduling {job.name}")
+                            return
+                        
+                        # Update next allowed time for this faucet
+                        next_allowed = time.time() + retry_delay
+                        self.faucet_backoff[job.faucet_type]['next_allowed_time'] = next_allowed
+                        
+                        logger.info(f"📅 Rescheduling {job.name} in {retry_delay:.0f}s with backoff "
+                                   f"(failures: {self.faucet_backoff[job.faucet_type]['consecutive_failures']})")
                         
                         # Handle FAUCET_DOWN - skip entire faucet
                         if error_type == ErrorType.FAUCET_DOWN:
-                            logger.warning(f"⚠️ Faucet appears down: {job.faucet_type}. Skipping for 4 hours.")
-                            self.faucet_cooldowns[job.faucet_type] = time.time() + delay
-                            job.next_run = time.time() + delay
-                            self.add_job(job)
-                            return
+                            logger.warning(f"⚠️ Faucet appears down: {job.faucet_type}. Skipping for {retry_delay/3600:.1f}h.")
+                            self.faucet_cooldowns[job.faucet_type] = next_allowed
                         
                         # Check if circuit breaker should trip
                         if self._should_trip_circuit_breaker(job.faucet_type, error_type):
@@ -1068,14 +1408,19 @@ class JobScheduler:
                                 logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times (error: {error_type.value})")
                                 self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
                         else:
-                            logger.debug(f"⚡ Transient error - not counting toward circuit breaker")
+                            logger.debug("⚡ Transient error - not counting toward circuit breaker")
                         
-                wait_time = result.next_claim_minutes * 60
-                # Add jitter for non-withdrawal jobs
-                if "withdraw" not in job.job_type.lower():
-                    wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
-                job.next_run = time.time() + wait_time
+                        # Set next run time with backoff delay
+                        job.next_run = next_allowed
+                
+                # For successful claims, use normal timing with small jitter
                 if result.success:
+                    wait_time = result.next_claim_minutes * 60
+                    # Add jitter for non-withdrawal jobs
+                    if "withdraw" not in job.job_type.lower():
+                        wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
+                    job.next_run = time.time() + wait_time
+                    job.retry_count = 0
                     job.retry_count = 0
                 self.add_job(job)
             
@@ -1128,7 +1473,7 @@ class JobScheduler:
                 if context:
                     # Save cookies before closing if it was a successful or partially successful run
                     if "withdraw" not in job.job_type: # Skip cookie save for withdrawal-only roles if needed
-                         await self.browser_manager.save_cookies(context, username)
+                        await self.browser_manager.save_cookies(context, username)
                     await context.close()
             except Exception as cleanup_error:
                 logger.warning(f"Context cleanup failed for {job.name}: {cleanup_error}")
@@ -1174,11 +1519,19 @@ class JobScheduler:
                 delay_multiplier = self.settings.degraded_slow_delay_multiplier
                 effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
                 degraded_mode = f"{degraded_mode}+slow" if degraded_mode else "slow"
+
+            if self.performance_alert_score >= self.settings.performance_alert_slow_threshold:
+                delay_multiplier = max(delay_multiplier, self.settings.degraded_slow_delay_multiplier)
+                effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
+                degraded_mode = f"{degraded_mode}+perf" if degraded_mode else "perf"
             
             # Schedule withdrawal jobs once at startup
             if not withdrawal_jobs_scheduled:
                 try:
                     await self.schedule_withdrawal_jobs()
+                    # Also schedule automated withdrawal check
+                    if not self.withdrawal_check_scheduled:
+                        await self.schedule_auto_withdrawal_check()
                     withdrawal_jobs_scheduled = True
                 except Exception as e:
                     logger.warning(f"Failed to schedule withdrawal jobs: {e}")
@@ -1189,12 +1542,6 @@ class JobScheduler:
                 self._write_heartbeat()
                 self.last_heartbeat_time = now
             
-            # Update job priorities every hour based on profitability
-            if now - self.last_priority_update_time >= 3600:  # 1 hour
-                logger.info("🔄 Updating job priorities based on profitability...")
-                self.update_job_priorities()
-                self.last_priority_update_time = now
-            
             if now - self.last_persist_time >= SESSION_PERSIST_INTERVAL:
                 self._persist_session()
                 self.last_persist_time = now
@@ -1203,6 +1550,7 @@ class JobScheduler:
                 # This ensures we don't spam logs but stay updated on drops
                 from core.analytics import get_tracker
                 alerts = get_tracker().check_performance_alerts(hours=2)
+                self.performance_alert_score = len(alerts)
                 for alert in alerts:
                     logger.warning(f"🔔 ALERT: {alert}")
                 
@@ -1215,10 +1563,25 @@ class JobScheduler:
                 )
             
             if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
-                logger.info("Performing browser health check...")
-                if not await self.browser_manager.check_health():
-                    logger.warning("Browser health check failed. Restarting...")
-                    await self.browser_manager.restart()
+                logger.info("🏥 Performing comprehensive health check...")
+                
+                # Run full health check (browser, proxy, faucet, system)
+                try:
+                    health_results = await self.health_monitor.run_full_health_check()
+                    
+                    # Auto-restart browser if needed
+                    if self.health_monitor.should_restart_browser():
+                        logger.critical("🔄 Browser health critical - triggering automatic restart")
+                        await self.browser_manager.restart()
+                        # Reset failure count after restart
+                        self.health_monitor.browser_context_failures = 0
+                    
+                    # Log summary
+                    logger.info(f"Health check complete - Overall: {'✅ HEALTHY' if health_results['overall_healthy'] else '⚠️ DEGRADED'}")
+                    
+                except Exception as e:
+                    logger.error(f"Health check failed: {e}")
+                
                 self.last_health_check_time = now
             
             # 1. Check for ready jobs
@@ -1253,32 +1616,73 @@ class JobScheduler:
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
                 
-                # Check if faucet is auto-disabled due to negative ROI
-                if job.faucet_type in self.disabled_faucets:
-                    disabled_time = self.disabled_faucets[job.faucet_type]
-                    # Keep disabled for at least 24 hours before re-evaluation
-                    if now - disabled_time < 86400:
-                        logger.debug(f"⛔ Skipping disabled faucet: {job.faucet_type}")
-                        job.next_run = now + 3600  # Check again in 1 hour
-                        continue
-                    # After 24 hours, remove from disabled list for re-evaluation
-                    else:
-                        logger.info(f"🔄 Re-evaluating previously disabled faucet: {job.faucet_type}")
-                        del self.disabled_faucets[job.faucet_type]
-                
                 # Check Circuit Breaker
                 if job.faucet_type in self.faucet_cooldowns:
-                     cooldown_end = self.faucet_cooldowns[job.faucet_type]
-                     if now < cooldown_end:
-                         logger.debug(f"🔌 Circuit Breaker Active: Skipping {job.faucet_type} until {time.ctime(cooldown_end)}")
-                         job.next_run = now + 600 # Check back in 10 mins
-                         continue
-                     else:
-                         # Cooldown expired, reset
-                         del self.faucet_cooldowns[job.faucet_type]
-                         self.faucet_failures[job.faucet_type] = 0
-                         logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
+                    cooldown_end = self.faucet_cooldowns[job.faucet_type]
+                    if now < cooldown_end:
+                        logger.debug(f"🔌 Circuit Breaker Active: Skipping {job.faucet_type} until {time.ctime(cooldown_end)}")
+                        job.next_run = now + 600 # Check back in 10 mins
+                        continue
+                    else:
+                        # Cooldown expired, reset
+                        del self.faucet_cooldowns[job.faucet_type]
+                        self.faucet_failures[job.faucet_type] = 0
+                        logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
 
+                # Budget-Aware Job Selection (Skip jobs we can't afford)
+                if "withdraw" not in job.job_type.lower():  # Only check for claim jobs
+                    try:
+                        # Get captcha solver budget status
+                        from solvers.captcha import CaptchaSolver
+                        temp_solver = CaptchaSolver(
+                            api_key=self.settings.twocaptcha_api_key or self.settings.capsolver_api_key,
+                            provider=self.settings.captcha_provider,
+                            daily_budget=self.settings.captcha_daily_budget
+                        )
+                        budget_stats = temp_solver.get_budget_stats()
+                        estimated_cost = self.estimate_claim_cost(job.faucet_type)
+                        
+                        if budget_stats["remaining"] < estimated_cost:
+                            logger.warning(
+                                f"💰 Budget insufficient for {job.name}: "
+                                f"Need ${estimated_cost:.4f}, have ${budget_stats['remaining']:.4f}. "
+                                f"Deferring claim."
+                            )
+                            # Defer to next budget reset (tomorrow)
+                            import time as time_module
+                            tomorrow = time_module.strftime("%Y-%m-%d", time_module.localtime(now + 86400))
+                            tomorrow_midnight = time_module.mktime(time_module.strptime(tomorrow, "%Y-%m-%d"))
+                            job.next_run = tomorrow_midnight + 300  # 5 min after midnight
+                            continue
+                        
+                        # Check if this is a high-value claim but budget is very low
+                        if budget_stats["remaining"] < 0.50 and estimated_cost > 0.002:
+                            # Calculate profitability to determine if manual solve is worth it
+                            try:
+                                from core.analytics import get_tracker
+                                tracker = get_tracker()
+                                faucet_stats = tracker.get_faucet_stats(hours=168)
+                                avg_earnings = faucet_stats.get(job.faucet_type.lower(), {}).get("avg_earnings_usd", 0)
+                                
+                                if avg_earnings > estimated_cost * 2:  # At least 2x ROI
+                                    logger.warning(
+                                        f"⚠️ Budget low but {job.name} is profitable (${avg_earnings:.4f} avg). "
+                                        f"Consider manual CAPTCHA solve if available."
+                                    )
+                                    # Continue with job, it might prompt for manual solve
+                                else:
+                                    logger.info(
+                                        f"⏭️ Skipping low-value claim {job.name} "
+                                        f"(avg ${avg_earnings:.4f}, cost ${estimated_cost:.4f})"
+                                    )
+                                    job.next_run = now + 3600  # Try again in 1 hour
+                                    continue
+                            except Exception as e:
+                                logger.debug(f"Profitability check failed: {e}")
+                    except Exception as e:
+                        logger.debug(f"Budget check failed for {job.name}: {e}")
+                        # If budget check fails, allow job to proceed (fail-safe)
+                
                 # Auto-Suspend based on ROI and success rate
                 if self.settings.faucet_auto_suspend_enabled:
                     should_suspend, reason = self._check_auto_suspend(job.faucet_type)

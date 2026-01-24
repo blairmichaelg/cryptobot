@@ -1,16 +1,6 @@
 import random
-import json
 import logging
-from typing import Dict, Any, List
-
-# Import fake-useragent for dynamic UA generation
-try:
-    from fake_useragent import UserAgent
-    HAS_FAKE_UA = True
-except ImportError:
-    HAS_FAKE_UA = False
-    logger = logging.getLogger(__name__)
-    logger.warning("fake-useragent not installed. Using static list. Install with: pip install fake-useragent")
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +170,7 @@ class StealthHub:
         return random.choice(resolutions)
 
     @staticmethod
-    def get_human_ua(pool: List[str] = None) -> str:
+    def get_human_ua(pool: Optional[List[str]] = None) -> str:
         """Returns a modern, common User Agent from a provided pool or fallback."""
         if pool:
             return random.choice(pool)

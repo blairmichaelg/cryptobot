@@ -1,3 +1,4 @@
+# pylint: disable=attribute-defined-outside-init, protected-access
 """
 Test error classification and recovery system.
 """
@@ -119,60 +120,60 @@ class TestRecoveryStrategies:
     
     def test_recovery_transient_immediate_retry(self):
         """Test recovery for transient errors - immediate retry."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.TRANSIENT, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.TRANSIENT, 0, "proxy")
         assert delay == 0
         assert "immediately" in action.lower()
     
     def test_recovery_transient_requeue_after_retry(self):
         """Test recovery for transient errors - requeue after retry."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.TRANSIENT, 1, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.TRANSIENT, 1, "proxy")
         assert delay == 300  # 5 minutes
         assert "5min" in action.lower()
     
     def test_recovery_rate_limit_exponential_backoff(self):
         """Test recovery for rate limit - exponential backoff."""
         # First retry: 10 minutes
-        delay1, action1 = self.scheduler._get_recovery_delay(ErrorType.RATE_LIMIT, 0, "proxy")
+        delay1, action1 = self.scheduler.get_recovery_delay(ErrorType.RATE_LIMIT, 0, "proxy")
         assert delay1 == 600
         assert "10min" in action1.lower()
         
         # Second retry: 30 minutes
-        delay2, action2 = self.scheduler._get_recovery_delay(ErrorType.RATE_LIMIT, 1, "proxy")
+        delay2, action2 = self.scheduler.get_recovery_delay(ErrorType.RATE_LIMIT, 1, "proxy")
         assert delay2 == 1800
         assert "30min" in action2.lower()
         
         # Third retry: 2 hours
-        delay3, action3 = self.scheduler._get_recovery_delay(ErrorType.RATE_LIMIT, 2, "proxy")
+        delay3, action3 = self.scheduler.get_recovery_delay(ErrorType.RATE_LIMIT, 2, "proxy")
         assert delay3 == 7200
         assert "120min" in action3.lower()
     
     def test_recovery_proxy_issue_rotate(self):
         """Test recovery for proxy issues - rotate proxy."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.PROXY_ISSUE, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.PROXY_ISSUE, 0, "proxy")
         assert delay == 1800  # 30 minutes
         assert "rotate" in action.lower() or "30min" in action.lower()
     
     def test_recovery_permanent_no_requeue(self):
         """Test recovery for permanent errors - no requeue."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.PERMANENT, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.PERMANENT, 0, "proxy")
         assert delay == float('inf')
         assert "permanent" in action.lower() or "disabled" in action.lower()
     
     def test_recovery_faucet_down_4_hours(self):
         """Test recovery for faucet down - 4 hours."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.FAUCET_DOWN, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.FAUCET_DOWN, 0, "proxy")
         assert delay == 14400  # 4 hours
         assert "4" in action.lower() and "hour" in action.lower()
     
     def test_recovery_captcha_failed_15_min(self):
         """Test recovery for captcha failures - 15 minutes."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.CAPTCHA_FAILED, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.CAPTCHA_FAILED, 0, "proxy")
         assert delay == 900  # 15 minutes
         assert "15min" in action.lower()
     
     def test_recovery_unknown_default_delay(self):
         """Test recovery for unknown errors - default delay."""
-        delay, action = self.scheduler._get_recovery_delay(ErrorType.UNKNOWN, 0, "proxy")
+        delay, action = self.scheduler.get_recovery_delay(ErrorType.UNKNOWN, 0, "proxy")
         assert delay == 600  # 10 minutes
         assert "10min" in action.lower()
 

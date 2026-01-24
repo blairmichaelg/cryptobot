@@ -1,0 +1,18 @@
+[MASTER]
+ignore=__pycache__
+
+[MESSAGES CONTROL]
+disable=
+    bad-indentation,
+    broad-exception-caught,
+    broad-except,
+    f-string-without-interpolation,
+    global-statement,
+    logging-fstring-interpolation,
+    redefined-outer-name,
+    reimported,
+    unreachable,
+    unspecified-encoding,
+    unused-argument,
+    unused-import,
+    unused-variable

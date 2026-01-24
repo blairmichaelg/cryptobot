@@ -63,7 +63,6 @@ class SecureCookieStorage:
                     logger.info(f"Successfully loaded {COOKIE_KEY_ENV} after explicit load_dotenv() from {env_path}")
             except Exception as e:
                 logger.debug(f"Auxiliary dotenv load failed: {e}")
-                pass
         
         if not primary_key:
             # Fix #34: Try loading from persistent file fallback
@@ -233,6 +232,126 @@ class SecureCookieStorage:
         except Exception as e:
             logger.error(f"Failed to delete cookies for {profile_name}: {e}")
             return False
+    
+    async def inject_aged_cookies(self, context: Any, profile_name: str) -> bool:
+        """
+        Add realistic aged cookies to appear as established browser.
+        
+        Injects 20-50 realistic cookies from common sites with backdated timestamps
+        to make the browser appear as a long-established user, not a fresh install.
+        
+        Args:
+            context: Browser context to inject cookies into
+            profile_name: Profile identifier for logging
+            
+        Returns:
+            True if cookies injected successfully
+        """
+        import random
+        from datetime import datetime, timedelta
+        
+        try:
+            # Common domains and cookie types
+            aged_cookies = []
+            
+            # Generate 20-50 cookies
+            cookie_count = random.randint(20, 50)
+            
+            # Common cookie templates
+            templates = [
+                # Google Analytics
+                {"name": "_ga", "domain": ".google.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                {"name": "_gid", "domain": ".google.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                {"name": "_ga", "domain": ".youtube.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                
+                # Advertising cookies
+                {"name": "IDE", "domain": ".doubleclick.net", "value": self._generate_random_id(32)},
+                {"name": "test_cookie", "domain": ".doubleclick.net", "value": "CheckForPermission"},
+                {"name": "NID", "domain": ".google.com", "value": self._generate_random_id(64)},
+                
+                # Social media
+                {"name": "_fbp", "domain": ".facebook.com", "value": f"fb.1.{int(datetime.now().timestamp() * 1000)}.{random.randint(100000000, 999999999)}"},
+                {"name": "fr", "domain": ".facebook.com", "value": self._generate_random_id(48)},
+                {"name": "personalization_id", "domain": ".twitter.com", "value": f"\"{self._generate_random_id(22)}=="},
+                
+                # E-commerce
+                {"name": "session-id", "domain": ".amazon.com", "value": self._generate_random_id(24)},
+                {"name": "ubid-main", "domain": ".amazon.com", "value": self._generate_random_id(20)},
+                
+                # Preferences
+                {"name": "PREF", "domain": ".google.com", "value": f"tz=UTC&f4=4000000&f5=20000&f6=40000000"},
+                {"name": "CONSENT", "domain": ".google.com", "value": f"YES+cb.20{random.randint(200101, 251231)}-11-p0.en+FX+{random.randint(100, 999)}"},
+                
+                # Generic tracking
+                {"name": "_gcl_au", "domain": ".google.com", "value": f"1.1.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                {"name": "_gat_gtag", "domain": ".google.com", "value": "1"},
+            ]
+            
+            # Additional realistic domains
+            extra_domains = [
+                ".wikipedia.org", ".github.com", ".stackoverflow.com",
+                ".reddit.com", ".medium.com", ".cloudflare.com"
+            ]
+            
+            # Randomly select from templates and add extras
+            selected_templates = random.sample(templates, min(len(templates), cookie_count - 10))
+            
+            # Add some random cookies for extra domains
+            for domain in random.sample(extra_domains, min(len(extra_domains), 10)):
+                selected_templates.append({
+                    "name": random.choice(["session_id", "user_id", "pref", "lang", "theme"]),
+                    "domain": domain,
+                    "value": self._generate_random_id(random.randint(16, 32))
+                })
+            
+            # Generate aged cookies with realistic timestamps
+            now = datetime.now()
+            for template in selected_templates[:cookie_count]:
+                # Backdate created time: 7-30 days ago
+                days_old = random.randint(7, 30)
+                created_time = now - timedelta(days=days_old)
+                
+                # Some cookies are session, some persistent
+                is_session = random.random() < 0.3  # 30% session cookies
+                
+                cookie = {
+                    "name": template["name"],
+                    "value": template["value"],
+                    "domain": template["domain"],
+                    "path": "/",
+                    "secure": True,
+                    "httpOnly": random.choice([True, False]),
+                    "sameSite": random.choice(["Lax", "None", "Strict"]),
+                }
+                
+                if not is_session:
+                    # Persistent cookie: expires in 30-365 days
+                    expires_days = random.randint(30, 365)
+                    expires = created_time + timedelta(days=expires_days)
+                    cookie["expires"] = expires.timestamp()
+                
+                aged_cookies.append(cookie)
+            
+            # Inject cookies into context
+            await context.add_cookies(aged_cookies)
+            
+            logger.info(
+                f"🍪 Injected {len(aged_cookies)} aged cookies for {profile_name} "
+                f"({sum(1 for c in aged_cookies if 'expires' not in c)} session, "
+                f"{sum(1 for c in aged_cookies if 'expires' in c)} persistent)"
+            )
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to inject aged cookies for {profile_name}: {e}")
+            return False
+    
+    def _generate_random_id(self, length: int) -> str:
+        """Generate random alphanumeric ID for cookie values."""
+        import string
+        import random
+        chars = string.ascii_letters + string.digits
+        return ''.join(random.choice(chars) for _ in range(length))
     
     @staticmethod
     def generate_key() -> str:

@@ -19,30 +19,17 @@ import asyncio
 import argparse
 import logging
 import sys
-import random
-import time
-from typing import List, Dict
-from dataclasses import dataclass
 
 from core.config import BotSettings, AccountProfile
 from core.logging_setup import setup_logging
 from core.wallet_manager import WalletDaemon
 from browser.instance import BrowserManager
-from faucets.base import ClaimResult
-from faucets.firefaucet import FireFaucetBot
-from faucets.cointiply import CointiplyBot
-from faucets.freebitcoin import FreeBitcoinBot
-from faucets.dutchy import DutchyBot
-from faucets.coinpayu import CoinPayUBot
-from faucets.adbtc import AdBTCBot
-from faucets.faucetcrypto import FaucetCryptoBot
-
-from core.orchestrator import JobScheduler, Job
+from core.orchestrator import JobScheduler
 
 logger = logging.getLogger(__name__)
 
 # Factory registry for faucet bot instantiation
-from core.registry import FAUCET_REGISTRY, get_faucet_class
+from core.registry import get_faucet_class
 
 async def main():
     """
@@ -71,8 +58,8 @@ async def main():
     if args.wallet_check:
         wallet = WalletDaemon(settings.wallet_rpc_urls, settings.electrum_rpc_user, settings.electrum_rpc_pass)
         for coin in settings.wallet_rpc_urls.keys():
-             bal = await wallet.get_balance(coin)
-             if bal:
+            bal = await wallet.get_balance(coin)
+            if bal:
                 logger.info(f"💰 {coin} Balance: {bal}")
 
     # Initialize Managers
@@ -156,6 +143,14 @@ async def main():
             if not profiles:
                 logger.warning(f"No profiles found matching '{args.single}'")
                 return
+
+        # If we have real profiles, purge legacy test jobs restored from session_state.json
+        if profiles and any(p.faucet.lower() != "test" for p in profiles):
+            if scheduler.has_only_test_jobs():
+                removed = scheduler.purge_jobs(lambda j: j.faucet_type.lower() == "test")
+                if removed:
+                    logger.info(f"Purged {removed} legacy test jobs from restored session.")
+                    scheduler.persist_session()
 
         # Canary filter (optional)
         if settings.canary_only and settings.canary_profile:

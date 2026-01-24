@@ -1,9 +1,11 @@
 import json
+# pylint: disable=no-member
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from enum import Enum
 
 # Base Paths
 BASE_DIR = Path(__file__).parent.parent
@@ -11,6 +13,16 @@ CONFIG_DIR = BASE_DIR / "config"
 LOGS_DIR = BASE_DIR / "logs"
 
 logger = logging.getLogger(__name__)
+
+
+class OperationMode(Enum):
+    """Operation modes for graceful degradation."""
+    NORMAL = "normal"  # All systems operational
+    LOW_PROXY = "low_proxy"  # <10 healthy proxies
+    LOW_BUDGET = "low_budget"  # <$1 captcha budget remaining
+    SLOW_MODE = "slow"  # High failure rate detected
+    MAINTENANCE = "maintenance"  # Manual mode, finish existing only
+
 
 class AccountProfile(BaseModel):
     faucet: str
@@ -43,6 +55,9 @@ class BotSettings(BaseSettings):
     
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
+    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare
+    webshare_api_key: Optional[str] = None
+    webshare_page_size: int = 50
     
     # Optimization
     block_images: bool = True
@@ -122,6 +137,13 @@ class BotSettings(BaseSettings):
     scheduler_tick_rate: float = 1.0
     exploration_frequency_minutes: int = 30
 
+    # Degraded operation modes
+    low_proxy_threshold: int = 10
+    low_proxy_max_concurrent_bots: int = 1
+    degraded_failure_threshold: int = 3
+    degraded_slow_delay_multiplier: float = 2.0
+    performance_alert_slow_threshold: int = 2
+
     # Canary rollout (optional)
     canary_profile: Optional[str] = Field(default=None, alias="CANARY_PROFILE")
     canary_only: bool = Field(default=False, alias="CANARY_ONLY")
@@ -136,7 +158,7 @@ class BotSettings(BaseSettings):
     # Browser / stealth - Diverse UA pool for fingerprint rotation
     user_agents: List[str] = Field(default_factory=list)
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: Any) -> None:  # pylint: disable=arguments-differ
         """Initialize dynamic user agents if empty."""
         if not self.user_agents:
             try:
@@ -172,36 +194,63 @@ class BotSettings(BaseSettings):
             logger.warning(f"Failed to load faucet_config.json: {exc}")
             return
 
-        if not self.accounts:
-            accounts_data = data.get("accounts", {})
-            if isinstance(accounts_data, dict):
-                for faucet, info in accounts_data.items():
-                    if not isinstance(info, dict):
-                        continue
-                    if not info.get("enabled", True):
-                        continue
-                    username = info.get("username")
-                    password = info.get("password")
-                    if not username or not password:
-                        continue
-                    proxy = info.get("proxy")
-                    try:
-                        self.accounts.append(
-                            AccountProfile(
-                                faucet=faucet,
-                                username=username,
-                                password=password,
-                                proxy=proxy,
-                                enabled=info.get("enabled", True)
-                            )
+        # Merge accounts from config (do not overwrite existing entries)
+        accounts_data = data.get("accounts", {})
+        if isinstance(accounts_data, dict):
+            existing_keys = {
+                (acc.faucet.lower().replace("_", "").replace(" ", ""), acc.username)
+                for acc in self.accounts
+            }
+            for faucet, info in accounts_data.items():
+                if not isinstance(info, dict):
+                    continue
+                if not info.get("enabled", True):
+                    continue
+                username = info.get("username")
+                password = info.get("password")
+                if not username or not password:
+                    continue
+                proxy = info.get("proxy")
+                key = (str(faucet).lower().replace("_", "").replace(" ", ""), username)
+                if key in existing_keys:
+                    continue
+                try:
+                    self.accounts.append(
+                        AccountProfile(
+                            faucet=faucet,
+                            username=username,
+                            password=password,
+                            proxy=proxy,
+                            enabled=info.get("enabled", True),
+                            proxy_pool=info.get("proxy_pool", []),
+                            proxy_rotation_strategy=info.get("proxy_rotation_strategy", "round_robin"),
+                            residential_proxy=info.get("residential_proxy", False),
+                            behavior_profile=info.get("behavior_profile")
                         )
-                    except Exception as exc:
-                        logger.debug(f"Skipping invalid account entry for {faucet}: {exc}")
+                    )
+                except Exception as exc:
+                    logger.debug(f"Skipping invalid account entry for {faucet}: {exc}")
 
         if not self.wallet_addresses:
             wallet_addresses = data.get("wallet_addresses")
             if isinstance(wallet_addresses, dict):
                 self.wallet_addresses = wallet_addresses
+
+        # Optional: load browser settings from config
+        browser_settings = data.get("browser_settings")
+        if isinstance(browser_settings, dict):
+            if "headless" in browser_settings:
+                self.headless = bool(browser_settings.get("headless"))
+            if "timeout" in browser_settings:
+                self.timeout = int(browser_settings.get("timeout", self.timeout))
+            if "block_images" in browser_settings:
+                self.block_images = bool(browser_settings.get("block_images"))
+            if "block_media" in browser_settings:
+                self.block_media = bool(browser_settings.get("block_media"))
+            # If a user agent list is provided, use it
+            if "user_agents" in browser_settings and isinstance(browser_settings.get("user_agents"), list):
+                if browser_settings.get("user_agents"):
+                    self.user_agents = browser_settings.get("user_agents")
 
     # Registration Defaults
     # Registration Defaults - Moved to ensure single definition
@@ -270,11 +319,12 @@ class BotSettings(BaseSettings):
         Helper to get the first matching account.
         Prioritizes the 'accounts' list, falls back to legacy fields.
         """
-        name = faucet_name.lower().replace("_", "")
+        name = faucet_name.lower().replace("_", "").replace(" ", "")
         
         # Check Profiles First
         for acc in self.accounts:
-            if acc.enabled and acc.faucet.lower() in name:
+            acc_name = acc.faucet.lower().replace("_", "").replace(" ", "")
+            if acc.enabled and (acc_name == name or acc_name in name or name in acc_name):
                 return {"username": acc.username, "password": acc.password, "proxy": acc.proxy}
 
         # Fallback to Legacy Fields

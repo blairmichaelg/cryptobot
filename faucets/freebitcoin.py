@@ -12,7 +12,23 @@ class FreeBitcoinBot(FaucetBot):
         self.base_url = "https://freebitco.in"
 
     async def is_logged_in(self) -> bool:
-        return await self.page.locator("#balance").is_visible()
+        balance_selectors = [
+            "#balance",
+            ".balance",
+            "[data-balance]",
+            ".user-balance",
+            "span.balance",
+            "#balance_small",
+            "#balance_small span",
+            ".balance-amount",
+        ]
+        for selector in balance_selectors:
+            try:
+                if await self.page.locator(selector).is_visible(timeout=3000):
+                    return True
+            except Exception:
+                continue
+        return False
 
     async def _find_selector(self, selectors: list, element_name: str = "element", timeout: int = 5000):
         """
@@ -260,7 +276,7 @@ class FreeBitcoinBot(FaucetBot):
         Returns:
             ClaimResult with success status and next claim time
         """
-        logger.info(f"[DEBUG] FreeBitcoin claim() method started")
+        logger.info("[DEBUG] FreeBitcoin claim() method started")
         
         max_retries = 3
         for attempt in range(max_retries):
@@ -271,7 +287,7 @@ class FreeBitcoinBot(FaucetBot):
                 await self.random_delay(2, 4)
 
                 # Extract Balance with fallback selectors
-                logger.info(f"[DEBUG] Getting balance...")
+                logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
                     "#balance", 
                     fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
@@ -279,7 +295,7 @@ class FreeBitcoinBot(FaucetBot):
                 logger.info(f"[DEBUG] Balance: {balance}")
 
                 # Check if timer is running (already claimed) with fallback selectors
-                logger.info(f"[DEBUG] Checking timer...")
+                logger.info("[DEBUG] Checking timer...")
                 wait_min = await self.get_timer(
                     "#time_remaining",
                     fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]

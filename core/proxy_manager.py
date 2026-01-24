@@ -57,6 +57,7 @@ class ProxyManager:
     def __init__(self, settings: BotSettings):
         self.settings = settings
         self.api_key = settings.twocaptcha_api_key
+        self.proxy_provider = (settings.proxy_provider or "2captcha").lower()
         self.proxies: List[Proxy] = []
         self.all_proxies: List[Proxy] = [] # Fix: Master list to preserve proxies during cooldown
         self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
@@ -434,7 +435,7 @@ class ProxyManager:
                 final_proxies.append(p)
         
         if slow_proxies_keys:
-             logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {slow_proxies_keys[:3]}...")
+            logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {slow_proxies_keys[:3]}...")
 
         # Update the active list
         self.proxies = final_proxies
@@ -446,7 +447,7 @@ class ProxyManager:
         
         # If we removed everything, try to salvage at least one if possible, or just let the fetcher handle it
         if not self.proxies and self.all_proxies:
-             logger.warning("⚠️ All proxies are currently in cooldown or slow!")
+            logger.warning("⚠️ All proxies are currently in cooldown or slow!")
              
         return removed
 
@@ -517,7 +518,6 @@ class ProxyManager:
         - http://user:pass@host:port (Standard)
         - user:pass@host:port (Short)
         """
-        import os
         file_path = self.settings.residential_proxies_file
         
         if not os.path.exists(file_path):
@@ -719,7 +719,7 @@ class ProxyManager:
                                             if proxy:
                                                 logger.info(f"[2CAPTCHA] ✅ Fetched proxy config: {proxy.ip}:{proxy.port}")
                                                 return proxy
-                            except (json.JSONDecodeError, ValueError) as e:
+                            except (json.JSONDecodeError, ValueError):
                                 logger.debug(f"[2CAPTCHA] Non-JSON response from {url}: {await resp.text()}")
                                 continue
                         else:
@@ -742,6 +742,9 @@ class ProxyManager:
         
         If no base proxy exists, attempts to fetch configuration from 2Captcha API first.
         """
+        if self.proxy_provider != "2captcha":
+            return await self.fetch_proxies_from_provider(quantity)
+
         if not self.api_key:
             logger.error("2Captcha API key missing.")
             return 0
@@ -765,8 +768,8 @@ class ProxyManager:
         template_proxy = self.proxies[0]
         
         if not template_proxy.username or not template_proxy.password:
-             logger.error("Cannot generate proxies: Base proxy is missing authentication details.")
-             return 0
+            logger.error("Cannot generate proxies: Base proxy is missing authentication details.")
+            return 0
 
         logger.info(f"Generating {quantity} unique proxies using template from {template_proxy.ip}:{template_proxy.port}...")
         
@@ -784,7 +787,7 @@ class ProxyManager:
         new_proxies.append(template_proxy)
         
         lines_to_write.append("# Session-rotated proxies:")
-        for i in range(quantity):
+        for _ in range(quantity):
             # Construct new username using rotate_session_id helper
             # Use base_username to avoid nested session IDs
             new_username = self.rotate_session_id(base_username)
@@ -817,6 +820,70 @@ class ProxyManager:
                 return 0
         
         return 0
+
+    async def fetch_proxies_from_provider(self, quantity: int = 20) -> int:
+        """
+        Fetch proxies from non-2Captcha providers.
+        Currently supports Webshare proxy list API.
+        """
+        if self.proxy_provider != "webshare":
+            logger.warning("Proxy provider '%s' not supported for auto-provisioning.", self.proxy_provider)
+            return 0
+
+        if not self.settings.webshare_api_key:
+            logger.warning("Webshare API key missing; cannot auto-provision proxies.")
+            return 0
+
+        page_size = max(1, min(quantity, self.settings.webshare_page_size, 100))
+        url = f"https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size={page_size}"
+        headers = {"Authorization": f"Token {self.settings.webshare_api_key}"}
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status != 200:
+                        logger.warning("Webshare proxy list returned status %s", resp.status)
+                        return 0
+
+                    data = await resp.json()
+        except Exception as e:
+            logger.warning("Failed to fetch Webshare proxies: %s", e)
+            return 0
+
+        results = data.get("results", []) if isinstance(data, dict) else []
+        if not results:
+            logger.warning("Webshare proxy list returned no proxies.")
+            return 0
+
+        new_proxies: List[Proxy] = []
+        lines_to_write = ["# Auto-generated from Webshare API"]
+        for entry in results:
+            host = entry.get("proxy_address")
+            port = entry.get("port")
+            username = entry.get("username") or ""
+            password = entry.get("password") or ""
+            if not host or not port:
+                continue
+            proxy = Proxy(ip=host, port=int(port), username=username, password=password)
+            new_proxies.append(proxy)
+            lines_to_write.append(proxy.to_string())
+
+        if not new_proxies:
+            logger.warning("Webshare proxy list did not yield valid proxies.")
+            return 0
+
+        file_path = self.settings.residential_proxies_file
+        try:
+            abs_path = os.path.abspath(file_path)
+            with open(abs_path, "w") as f:
+                f.write("\n".join(lines_to_write))
+            self.all_proxies = list(new_proxies)
+            self.proxies = list(new_proxies)
+            logger.info("✅ Loaded %s proxies from Webshare into %s", len(new_proxies), abs_path)
+            return len(new_proxies)
+        except Exception as e:
+            logger.error("Failed to save Webshare proxies: %s", e)
+            return 0
 
     async def fetch_proxies(self, count: int = 100) -> bool:
         """
@@ -868,13 +935,13 @@ class ProxyManager:
         # Normalize current key to match _proxy_key format (user:pass@ip:port)
         current_key = current_proxy_str or ""
         if "://" in current_key:
-             current_key = current_key.split("://", 1)[1]
+            current_key = current_key.split("://", 1)[1]
                 
         # If current is dead or we just want to rotate
         if not current_key or current_key in self.dead_proxies or profile.proxy_rotation_strategy == "random":
             if not self.proxies:
-                 # Check if we can fetch more
-                 return None
+                # Check if we can fetch more
+                return None
                 
             # Filter out dead ones
             healthy = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]

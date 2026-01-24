@@ -1,0 +1,66 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy or rollback"
+        required: true
+        default: "deploy"
+        type: choice
+        options:
+          - deploy
+          - rollback
+      resource_group:
+        description: "Azure resource group"
+        required: true
+        default: "APPSERVRG"
+      vm_name:
+        description: "Azure VM name"
+        required: true
+        default: "DevNode01"
+      rollback_commit:
+        description: "Optional commit SHA to rollback to"
+        required: false
+        default: ""
+      canary_profile:
+        description: "Optional canary profile for deploy"
+        required: false
+        default: ""
+      canary_reset:
+        description: "Reset canary flags during deploy"
+        required: false
+        default: "false"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ env.AZURE_CREDENTIALS }}
+
+      - name: Deploy
+        if: ${{ inputs.action == 'deploy' }}
+        run: |
+          chmod +x deploy/azure_deploy.sh
+          ./deploy/azure_deploy.sh \
+            --resource-group "${{ inputs.resource_group }}" \
+            --vm-name "${{ inputs.vm_name }}" \
+            ${{ inputs.canary_profile && format('--canary-profile {0}', inputs.canary_profile) || '' }} \
+            ${{ inputs.canary_reset == 'true' && '--canary-reset' || '' }}
+
+      - name: Rollback
+        if: ${{ inputs.action == 'rollback' }}
+        run: |
+          chmod +x deploy/azure_rollback.sh
+          ./deploy/azure_rollback.sh \
+            --resource-group "${{ inputs.resource_group }}" \
+            --vm-name "${{ inputs.vm_name }}" \
+            ${{ inputs.rollback_commit && format('--commit {0}', inputs.rollback_commit) || '' }}
