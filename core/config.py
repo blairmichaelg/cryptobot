@@ -231,29 +231,29 @@ class BotSettings(BaseSettings):
         elif "dutchy" in name and self.dutchy_username:
             return {"username": self.dutchy_username, "password": self.dutchy_password}
         
-        # Pick.io Family Fallbacks
+        # Pick.io Family Fallbacks (use 'email' key for Pick.io sites)
         elif "litepick" in name and self.litepick_username:
-            return {"username": self.litepick_username, "password": self.litepick_password}
+            return {"email": self.litepick_username, "password": self.litepick_password}
         elif "tronpick" in name and self.tronpick_username:
-            return {"username": self.tronpick_username, "password": self.tronpick_password}
+            return {"email": self.tronpick_username, "password": self.tronpick_password}
         elif "dogepick" in name and self.dogepick_username:
-            return {"username": self.dogepick_username, "password": self.dogepick_password}
+            return {"email": self.dogepick_username, "password": self.dogepick_password}
         elif "bchpick" in name and self.bchpick_username:
-            return {"username": self.bchpick_username, "password": self.bchpick_password}
+            return {"email": self.bchpick_username, "password": self.bchpick_password}
         elif "solpick" in name and self.solpick_username:
-            return {"username": self.solpick_username, "password": self.solpick_password}
+            return {"email": self.solpick_username, "password": self.solpick_password}
         elif "tonpick" in name and self.tonpick_username:
-            return {"username": self.tonpick_username, "password": self.tonpick_password}
+            return {"email": self.tonpick_username, "password": self.tonpick_password}
         elif "polygonpick" in name and self.polygonpick_username:
-            return {"username": self.polygonpick_username, "password": self.polygonpick_password}
+            return {"email": self.polygonpick_username, "password": self.polygonpick_password}
         elif "binpick" in name and self.binpick_username:
-            return {"username": self.binpick_username, "password": self.binpick_password}
+            return {"email": self.binpick_username, "password": self.binpick_password}
         elif "dashpick" in name and self.dashpick_username:
-            return {"username": self.dashpick_username, "password": self.dashpick_password}
+            return {"email": self.dashpick_username, "password": self.dashpick_password}
         elif "ethpick" in name and self.ethpick_username:
-            return {"username": self.ethpick_username, "password": self.ethpick_password}
+            return {"email": self.ethpick_username, "password": self.ethpick_password}
         elif "usdpick" in name and self.usdpick_username:
-            return {"username": self.usdpick_username, "password": self.usdpick_password}
+            return {"email": self.usdpick_username, "password": self.usdpick_password}
         
         return None
 

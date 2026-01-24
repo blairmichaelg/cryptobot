@@ -52,7 +52,12 @@ class FreeBitcoinBot(FaucetBot):
 
         try:
             logger.info(f"[FreeBitcoin] Navigating to login page: {self.base_url}/login")
-            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=60000)
+            # Use shorter timeout and more lenient wait strategy for slow proxies
+            try:
+                await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
+                await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=45000)
             await self.random_delay(2, 4)
             
             # Handle Cloudflare if present

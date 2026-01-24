@@ -5,6 +5,7 @@ import random
 import json
 import os
 import inspect
+import shutil
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
 from datetime import datetime, timezone, timedelta
@@ -146,8 +147,55 @@ class JobScheduler:
         except Exception as e:
             logger.warning(f"Could not restore session: {e}")
 
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
+        """Atomic JSON write with corruption protection and backups.
+        
+        Args:
+            filepath: Target file path
+            data: Dictionary to serialize
+            max_backups: Number of backup copies to maintain
+        """
+        try:
+            # Create parent directory if needed
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            # Backup existing file if it exists
+            if os.path.exists(filepath):
+                backup_base = filepath + ".backup"
+                # Rotate backups
+                for i in range(max_backups - 1, 0, -1):
+                    old = f"{backup_base}.{i}"
+                    new = f"{backup_base}.{i+1}"
+                    if os.path.exists(old):
+                        shutil.move(old, new)
+                # Create backup 1
+                shutil.copy2(filepath, f"{backup_base}.1")
+            
+            # Write to temp file first (atomic)
+            temp_file = filepath + ".tmp"
+            with open(temp_file, "w") as f:
+                json.dump(data, f, indent=2)
+            
+            # Validate JSON is readable
+            with open(temp_file, "r") as f:
+                json.load(f)
+            
+            # Atomic replace
+            shutil.move(temp_file, filepath)
+            logger.debug(f"Safely persisted {filepath}")
+            
+        except Exception as e:
+            logger.error(f"Failed to safely write {filepath}: {e}")
+            # Try to restore from backup
+            if os.path.exists(filepath + ".backup.1"):
+                logger.info(f"Attempting recovery from backup")
+                try:
+                    shutil.copy2(filepath + ".backup.1", filepath)
+                except Exception as restore_err:
+                    logger.error(f"Backup restoration failed: {restore_err}")
+
     def _persist_session(self):
-        """Save session state to disk."""
+        """Save session state to disk with corruption protection."""
         try:
             queue_data = [j.to_dict() for j in self.queue]
             data = {
@@ -155,8 +203,7 @@ class JobScheduler:
                 "queue": queue_data,
                 "timestamp": time.time()
             }
-            with open(self.session_file, "w") as f:
-                json.dump(data, f)
+            self._safe_json_write(self.session_file, data)
         except Exception as e:
             logger.warning(f"Could not persist session: {e}")
 

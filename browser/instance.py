@@ -110,14 +110,20 @@ class BrowserManager:
                 logger.debug(f"🔒 Using persistent fingerprint for {profile_name}: {locale}, {timezone_id}")
         
         # Generate new fingerprint if not found
+        canvas_seed = None
+        gpu_index = None
         if not locale or not timezone_id:
             locale = random.choice(["en-US", "en-GB", "en-CA", "en-AU"])
             timezone_id = random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"])
             
-            # Save for future use
+            # Save for future use (canvas_seed and gpu_index will be auto-generated)
             if profile_name:
                 await self.save_profile_fingerprint(profile_name, locale, timezone_id)
                 logger.info(f"📌 Generated and saved fingerprint for {profile_name}: {locale}, {timezone_id}")
+        else:
+            # Load canvas and WebGL params from existing fingerprint
+            canvas_seed = fingerprint.get("canvas_seed")
+            gpu_index = fingerprint.get("gpu_index")
 
         context_args = {
             "user_agent": user_agent or StealthHub.get_human_ua(self.user_agents),
@@ -167,8 +173,21 @@ class BrowserManager:
         # Set global timeout for this context
         context.set_default_timeout(self.timeout)
         
-        # Comprehensive Anti-Fingerprinting Suite using StealthHub
-        await context.add_init_script(StealthHub.get_stealth_script())
+        # Comprehensive Anti-Fingerprinting Suite using StealthHub with per-profile fingerprints
+        # Generate deterministic parameters if not loaded from existing fingerprint
+        if canvas_seed is None and profile_name:
+            canvas_seed = hash(profile_name) % 1000000
+        if gpu_index is None and profile_name:
+            gpu_index = hash(profile_name + "_gpu") % 13
+        
+        # Use defaults for anonymous profiles
+        if canvas_seed is None:
+            canvas_seed = 12345
+        if gpu_index is None:
+            gpu_index = 0
+        
+        await context.add_init_script(StealthHub.get_stealth_script(canvas_seed=canvas_seed, gpu_index=gpu_index))
+        logger.debug(f"🎨 Injected fingerprint: canvas_seed={canvas_seed}, gpu_index={gpu_index}")
 
         # Apply Resource Blocker using instance settings
         blocker = ResourceBlocker(block_images=self.block_images, block_media=self.block_media)
@@ -281,8 +300,8 @@ class BrowserManager:
             logger.error(f"Failed to load proxy binding for {profile_name}: {e}")
             return None
 
-    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str):
-        """Save the fingerprint settings for a profile."""
+    async def save_profile_fingerprint(self, profile_name: str, locale: str, timezone_id: str, canvas_seed: int = None, gpu_index: int = None):
+        """Save the fingerprint settings for a profile including canvas and WebGL parameters."""
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
             data = {}
@@ -293,13 +312,26 @@ class BrowserManager:
                     except json.JSONDecodeError:
                         pass
             
+            # Generate deterministic fingerprint parameters based on profile name
+            if canvas_seed is None:
+                # Use hash of profile name to generate consistent seed
+                canvas_seed = hash(profile_name) % 1000000
+            
+            if gpu_index is None:
+                # Use hash to select GPU from 13 available configs (0-12)
+                gpu_index = hash(profile_name + "_gpu") % 13
+            
             data[profile_name] = {
                 "locale": locale,
-                "timezone_id": timezone_id
+                "timezone_id": timezone_id,
+                "canvas_seed": canvas_seed,
+                "gpu_index": gpu_index
             }
             
             with open(fingerprint_file, "w") as f:
                 json.dump(data, f, indent=2)
+            
+            logger.debug(f"💾 Saved fingerprint for {profile_name}: canvas_seed={canvas_seed}, gpu_index={gpu_index}")
         except Exception as e:
             logger.error(f"Failed to save fingerprint for {profile_name}: {e}")
 

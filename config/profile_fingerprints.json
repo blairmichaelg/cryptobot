@@ -6,5 +6,35 @@
   "test_profile": {
     "locale": "en-AU",
     "timezone_id": "America/Los_Angeles"
+  },
+  "test_user_123": {
+    "locale": "en-GB",
+    "timezone_id": "Asia/Tokyo",
+    "canvas_seed": 756809,
+    "gpu_index": 6
+  },
+  "user_alice": {
+    "locale": "en-GB",
+    "timezone_id": "America/New_York",
+    "canvas_seed": 658408,
+    "gpu_index": 9
+  },
+  "user_bob": {
+    "locale": "en-AU",
+    "timezone_id": "Asia/Tokyo",
+    "canvas_seed": 667811,
+    "gpu_index": 0
+  },
+  "user_charlie": {
+    "locale": "en-GB",
+    "timezone_id": "America/Chicago",
+    "canvas_seed": 306946,
+    "gpu_index": 11
+  },
+  "persistence_test_user": {
+    "locale": "en-AU",
+    "timezone_id": "Asia/Tokyo",
+    "canvas_seed": 269312,
+    "gpu_index": 8
   }
 }

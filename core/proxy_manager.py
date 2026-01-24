@@ -6,7 +6,7 @@ import string
 import os
 import time
 import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 from core.config import AccountProfile, BotSettings
 
@@ -128,7 +128,59 @@ class ProxyManager:
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse proxy health file: {e}. Starting fresh.")
         except Exception as e:
-            logger.warning(f"Failed to load proxy health data: {e}")
+            logger.warning(f"Failed to save proxy health data: {e}")
+
+    async def get_proxy_geolocation(self, proxy: Proxy) -> Optional[Tuple[str, str]]:
+        """Get geolocation (timezone, locale) for a proxy IP.
+        
+        Uses ip-api.com free tier (45 req/min limit).
+        
+        Args:
+            proxy: Proxy object to geolocate
+            
+        Returns:
+            Tuple of (timezone_id, locale) or None if lookup fails
+            Example: ("America/New_York", "en-US")
+        """
+        try:
+            # Use ip-api.com free tier
+            api_url = f"http://ip-api.com/json/{proxy.ip}?fields=timezone,countryCode"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        timezone_id = data.get("timezone")
+                        country_code = data.get("countryCode", "US")
+                        
+                        # Map country code to locale
+                        locale_map = {
+                            "US": "en-US",
+                            "GB": "en-GB",
+                            "CA": "en-CA",
+                            "AU": "en-AU",
+                            "DE": "de-DE",
+                            "FR": "fr-FR",
+                            "ES": "es-ES",
+                            "IT": "it-IT",
+                            "JP": "ja-JP",
+                            "CN": "zh-CN",
+                            "IN": "en-IN",
+                            "BR": "pt-BR",
+                            "RU": "ru-RU",
+                            "NL": "nl-NL"
+                        }
+                        
+                        locale = locale_map.get(country_code, "en-US")
+                        
+                        if timezone_id:
+                            logger.debug(f"Proxy {proxy.ip} geolocated to {timezone_id}, {locale}")
+                            return (timezone_id, locale)
+                        
+        except Exception as e:
+            logger.warning(f"Failed to geolocate proxy {proxy.ip}: {e}")
+        
+        return None
 
     def _save_health_data(self):
         """

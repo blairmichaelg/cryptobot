@@ -45,7 +45,8 @@ class PickFaucetBase(FaucetBot):
         """
         for attempt in range(max_retries):
             try:
-                response = await self.page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                # Use networkidle and shorter timeout (15s) for faster failure detection
+                response = await self.page.goto(url, timeout=15000, wait_until="networkidle")
                 if response and response.ok:
                     return True
                 # Even if response isn't perfect, page may have loaded
@@ -61,7 +62,7 @@ class PickFaucetBase(FaucetBot):
                     "Timeout",
                     "ECONNREFUSED"
                 ]):
-                    wait_time = (2 ** attempt) * 5  # 5s, 10s, 20s
+                    wait_time = (2 ** attempt) * 3  # Faster retry: 3s, 6s, 12s
                     logger.warning(
                         f"[{self.faucet_name}] Connection failed on attempt {attempt+1}/{max_retries}: "
                         f"{error_str[:100]}. Retrying in {wait_time}s..."

@@ -22,69 +22,20 @@ class StealthHub:
     """
     
     @staticmethod
-    def get_stealth_script() -> str:
+    def get_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0) -> str:
         """
         Returns a comprehensive JavaScript snippet to be injected into the browser context.
+        
+        Args:
+            canvas_seed: Deterministic seed for canvas noise (ensures same profile = same fingerprint)
+            gpu_index: Index into GPU configurations array (0-12, selected per profile)
+        
+        Returns:
+            Combined stealth script with per-profile fingerprint consistency
         """
-        # Note: This is a highly condensed version of common evasion techniques.
-        # In a real production scenario, this would be even more sophisticated.
-        return """
-        (() => {
-            // 1. Navigator Spoofing
-            const maskNavigator = (navigator) => {
-                const platforms = ['Win32', 'MacIntel', 'Linux x86_64'];
-                const memories = [4, 8, 16, 32];
-                const cores = [4, 8, 12, 16];
-                
-                const props = {
-                    webdriver: false,
-                    languages: ['en-US', 'en'],
-                    platform: platforms[Math.floor(Math.random() * platforms.length)],
-                    deviceMemory: memories[Math.floor(Math.random() * memories.length)],
-                    hardwareConcurrency: cores[Math.floor(Math.random() * cores.length)],
-                    maxTouchPoints: 0
-                };
-                
-                for (const [key, value] of Object.entries(props)) {
-                    Object.defineProperty(navigator, key, { get: () => value });
-                }
-            };
-            maskNavigator(window.navigator);
-
-            // 2. Canvas Fingerprint Protection (Add slight noise)
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function(type) {
-                // If the site is trying to fingerprint, we can add subtle noise here
-                // For now, we just return the original but could manipulate pixels
-                return originalToDataURL.apply(this, arguments);
-            };
-
-            // 3. WebGL Evasion
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                // Return common discrete GPU values instead of 'SwiftShader' or 'Headless'
-                if (parameter === 37445) return 'Google Inc. (NVIDIA)';
-                if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)';
-                return getParameter.apply(this, arguments);
-            };
-
-            // 4. Audio Evasion
-            const originalGetChannelData = AudioBuffer.prototype.getChannelData;
-            AudioBuffer.prototype.getChannelData = function() {
-                const results = originalGetChannelData.apply(this, arguments);
-                // Subtle noise injection to kill deterministic audio fingerprinting
-                for (let i = 0; i < 10; i++) {
-                    results[i] += (Math.random() - 0.5) * 1e-7;
-                }
-                return results;
-            };
-
-            // 5. Hide Playwright/Puppeteer Indicators
-            delete window.cdc_adoQtmxX7f7o86DBjCWfW_Array;
-            delete window.cdc_adoQtmxX7f7o86DBjCWfW_Promise;
-            delete window.cdc_adoQtmxX7f7o86DBjCWfW_Symbol;
-        })();
-        """
+        # Import here to get the latest version with fingerprint parameters
+        from .stealth_scripts import get_full_stealth_script
+        return get_full_stealth_script(canvas_seed=canvas_seed, gpu_index=gpu_index)
 
     @staticmethod
     def get_random_dimensions():

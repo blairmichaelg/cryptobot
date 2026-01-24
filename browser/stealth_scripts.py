@@ -40,25 +40,50 @@ WEBRTC_PROTECTION = """
 })();
 """
 
-# Canvas Fingerprint Evasion - Adds noise to canvas rendering
+# Canvas Fingerprint Evasion - Adds seeded noise to canvas rendering
+# Uses deterministic noise based on canvas seed for per-profile consistency
 CANVAS_EVASION = """
 (function() {
+    // Seeded random number generator for consistent noise per profile
+    let canvasSeed = window.__FINGERPRINT_SEED__ || 12345;
+    
+    function seededRandom() {
+        const x = Math.sin(canvasSeed++) * 10000;
+        return x - Math.floor(x);
+    }
+    
     // Store original methods
     const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
     const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
     
-    // Subtle noise injection for toDataURL
+    // Apply consistent noise based on seed
+    function addConsistentNoise(imageData) {
+        const data = imageData.data;
+        const noiseStrength = 2; // ±2 pixel values for subtle but detectable noise
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // Reset seed position for consistency on same canvas data
+            const pixelSeed = canvasSeed + i;
+            let x = Math.sin(pixelSeed) * 10000;
+            const noise = (x - Math.floor(x) - 0.5) * noiseStrength;
+            
+            // Apply noise to RGB channels (skip alpha)
+            data[i] = Math.max(0, Math.min(255, data[i] + noise));     // R
+            data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise)); // G
+            data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise)); // B
+            // data[i+3] is alpha, leave unchanged
+        }
+    }
+    
+    // Override toDataURL with seeded noise
     HTMLCanvasElement.prototype.toDataURL = function(type) {
         const ctx = this.getContext('2d');
         if (ctx && this.width > 0 && this.height > 0) {
             try {
-                // Add imperceptible noise
+                // Add consistent noise to a small sample area
                 const imageData = ctx.getImageData(0, 0, Math.min(this.width, 10), Math.min(this.height, 10));
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    // Very subtle color shifts (unnoticeable to human eye)
-                    data[i] = Math.max(0, Math.min(255, data[i] + (Math.random() - 0.5) * 2));
-                }
+                addConsistentNoise(imageData);
                 ctx.putImageData(imageData, 0, 0);
             } catch(e) {
                 // Canvas may be tainted, ignore
@@ -67,29 +92,66 @@ CANVAS_EVASION = """
         return originalToDataURL.apply(this, arguments);
     };
     
-    // Add noise to getImageData as well
+    // Override toBlob with seeded noise
+    HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+        const ctx = this.getContext('2d');
+        if (ctx && this.width > 0 && this.height > 0) {
+            try {
+                const imageData = ctx.getImageData(0, 0, Math.min(this.width, 10), Math.min(this.height, 10));
+                addConsistentNoise(imageData);
+                ctx.putImageData(imageData, 0, 0);
+            } catch(e) {
+                // Canvas may be tainted, ignore
+            }
+        }
+        return originalToBlob.apply(this, arguments);
+    };
+    
+    // Override getImageData with seeded noise
     CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
         const imageData = originalGetImageData.apply(this, arguments);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = Math.max(0, Math.min(255, data[i] + (Math.random() - 0.5) * 2));
-        }
+        addConsistentNoise(imageData);
         return imageData;
     };
 })();
 """
 
-# WebGL Fingerprint Evasion - Randomizes WebGL renderer/vendor info
+# WebGL Fingerprint Evasion - Uses realistic GPU/vendor combinations with per-profile consistency
 WEBGL_EVASION = """
 (function() {
-    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    // Realistic GPU configurations from 2024-2026
+    const GPU_CONFIGS = [
+        // NVIDIA GPUs
+        { vendor: 'NVIDIA Corporation', renderer: 'NVIDIA GeForce RTX 4060/PCIe/SSE2' },
+        { vendor: 'NVIDIA Corporation', renderer: 'NVIDIA GeForce RTX 4070/PCIe/SSE2' },
+        { vendor: 'NVIDIA Corporation', renderer: 'NVIDIA GeForce RTX 3080/PCIe/SSE2' },
+        { vendor: 'NVIDIA Corporation', renderer: 'NVIDIA GeForce GTX 1660/PCIe/SSE2' },
+        { vendor: 'NVIDIA Corporation', renderer: 'NVIDIA GeForce RTX 3060/PCIe/SSE2' },
+        
+        // Intel GPUs
+        { vendor: 'Intel Inc.', renderer: 'Intel(R) Iris(R) Xe Graphics' },
+        { vendor: 'Intel Inc.', renderer: 'Intel(R) UHD Graphics 630' },
+        { vendor: 'Intel Inc.', renderer: 'Intel(R) UHD Graphics 770' },
+        { vendor: 'Intel Inc.', renderer: 'Intel(R) Iris(R) Plus Graphics' },
+        
+        // AMD GPUs
+        { vendor: 'AMD', renderer: 'AMD Radeon RX 6700 XT' },
+        { vendor: 'AMD', renderer: 'AMD Radeon RX 7600' },
+        { vendor: 'AMD', renderer: 'AMD Radeon RX 6600' },
+        { vendor: 'AMD', renderer: 'AMD Radeon RX 5700 XT' }
+    ];
     
-    // Randomized but realistic-looking values
+    // Select GPU based on profile seed for consistency
+    const gpuIndex = (window.__GPU_INDEX__ !== undefined) ? window.__GPU_INDEX__ : 0;
+    const selectedGPU = GPU_CONFIGS[gpuIndex % GPU_CONFIGS.length];
+    
     const spoofedData = {
-        37445: 'Intel Inc.',  // UNMASKED_VENDOR_WEBGL
-        37446: 'Intel(R) UHD Graphics 620',  // UNMASKED_RENDERER_WEBGL
+        37445: selectedGPU.vendor,   // UNMASKED_VENDOR_WEBGL
+        37446: selectedGPU.renderer,  // UNMASKED_RENDERER_WEBGL
     };
     
+    // Override WebGL1 context
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(parameter) {
         if (spoofedData[parameter]) {
             return spoofedData[parameter];
@@ -97,7 +159,7 @@ WEBGL_EVASION = """
         return getParameter.apply(this, arguments);
     };
     
-    // Apply to WebGL2 as well
+    // Override WebGL2 context
     if (window.WebGL2RenderingContext) {
         const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
         WebGL2RenderingContext.prototype.getParameter = function(parameter) {
@@ -223,18 +285,30 @@ FONT_PROTECTION = """
 """
 
 
-def get_full_stealth_script() -> str:
+def get_full_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0) -> str:
     """
     Return combined stealth script for browser initialization.
     
     This script should be injected via context.add_init_script()
     to run before any page scripts execute.
     
+    Args:
+        canvas_seed: Deterministic seed for canvas noise (ensures same profile = same fingerprint)
+        gpu_index: Index into GPU configurations array (0-12, selected per profile)
+    
     Returns:
         Combined JavaScript string containing all evasion techniques.
     """
+    # Inject fingerprint parameters before scripts run
+    fingerprint_init = f"""
+    // === FINGERPRINT INITIALIZATION ===
+    window.__FINGERPRINT_SEED__ = {canvas_seed};
+    window.__GPU_INDEX__ = {gpu_index};
+    """
+    
     return "\n\n".join([
         "// === STEALTH SCRIPTS START ===",
+        fingerprint_init,
         WEBRTC_PROTECTION,
         CANVAS_EVASION,
         WEBGL_EVASION,
