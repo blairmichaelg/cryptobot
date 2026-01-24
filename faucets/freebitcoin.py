@@ -238,6 +238,76 @@ class FreeBitcoinBot(FaucetBot):
 
         return False
 
+    async def _submit_login_via_ajax(self, username: str, password: str, tfa_code: str = "") -> bool:
+        """Inject jQuery and submit login via AJAX in-page."""
+        try:
+            await self.page.add_script_tag(url="https://code.jquery.com/jquery-3.6.0.min.js")
+            await self.page.wait_for_function("() => typeof window.$ !== 'undefined'", timeout=10000)
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] jQuery injection failed: %s", exc)
+            return False
+
+        payload = {
+            "op": "login_new",
+            "btc_address": username,
+            "password": password,
+            "tfa_code": tfa_code or "",
+        }
+
+        try:
+            result = await self.page.evaluate(
+                """
+                (data) => new Promise((resolve) => {
+                    try {
+                        window.$.post('/', data)
+                            .done((resp) => resolve(resp))
+                            .fail((xhr, status, err) => resolve(`error:${status || err || 'unknown'}`));
+                    } catch (e) {
+                        resolve(`error:${e && e.message ? e.message : 'exception'}`);
+                    }
+                })
+                """,
+                payload
+            )
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] AJAX login failed: %s", exc)
+            return False
+
+        if not result or (isinstance(result, str) and result.startswith("error:")):
+            logger.warning("[FreeBitcoin] AJAX login failed: %s", str(result)[:200])
+            return False
+
+        parts = str(result).split(":")
+        if not parts or parts[0] != "s":
+            logger.warning("[FreeBitcoin] AJAX login response unexpected: %s", str(result)[:200])
+            return False
+
+        if len(parts) < 5:
+            logger.warning("[FreeBitcoin] AJAX login response missing fields: %s", str(result)[:200])
+            return False
+
+        expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
+        cookies = [
+            {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+            {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
+        ]
+
+        try:
+            await self.page.context.add_cookies(cookies)
+        except Exception as exc:
+            logger.warning("[FreeBitcoin] Failed to set AJAX login cookies: %s", exc)
+            return False
+
+        try:
+            await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+
+        return await self.is_logged_in()
+
     async def _has_session_cookie(self) -> bool:
         try:
             cookies = await self.page.context.cookies(self.base_url)
@@ -671,7 +741,11 @@ class FreeBitcoinBot(FaucetBot):
                 has_jquery = True
 
             if not has_jquery:
-                logger.warning("[FreeBitcoin] jQuery not detected; attempting direct login request")
+                logger.warning("[FreeBitcoin] jQuery not detected; attempting AJAX login fallback")
+                if await self._submit_login_via_ajax(username, password):
+                    logger.info("✅ [FreeBitcoin] Login successful via AJAX fallback")
+                    return True
+                logger.warning("[FreeBitcoin] AJAX fallback failed; attempting direct login request")
                 if await self._submit_login_via_request(username, password):
                     logger.info("✅ [FreeBitcoin] Login successful via direct request")
                     return True
