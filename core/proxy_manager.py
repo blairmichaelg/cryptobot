@@ -49,6 +49,7 @@ class ProxyManager:
     LATENCY_HISTORY_MAX = 5  # Keep last 5 latency measurements per proxy
     DEAD_PROXY_THRESHOLD_MS = 5000  # Consider proxy dead if avg latency > 5s
     DEAD_PROXY_FAILURE_COUNT = 3  # Remove after 3 consecutive failures
+    HOST_DETECTION_THRESHOLD = 3  # Host-level cooldown after repeated detections
     
     # Persistence constants
     HEALTH_FILE_VERSION = 1
@@ -70,6 +71,8 @@ class ProxyManager:
         self.proxy_failures: Dict[str, int] = {}
         # Dead proxies that have been removed
         self.dead_proxies: List[str] = []
+        # Host-level detection tracking (host:port -> count)
+        self.proxy_host_failures: Dict[str, int] = {}
         # Cooldown tracking: proxy_key -> timestamp when it can be reused
         self.proxy_cooldowns: Dict[str, float] = {}
         # Reputation scoring
@@ -180,6 +183,7 @@ class ProxyManager:
             self.proxy_cooldowns = data.get("proxy_cooldowns", {})
             self.proxy_reputation = data.get("proxy_reputation", {})
             self.proxy_soft_signals = data.get("proxy_soft_signals", {})
+            self.proxy_host_failures = data.get("proxy_host_failures", {})
             
             # Clean up expired cooldowns
             now = time.time()
@@ -312,7 +316,8 @@ class ProxyManager:
                 "dead_proxies": self.dead_proxies,
                 "proxy_cooldowns": self.proxy_cooldowns,
                 "proxy_reputation": self.proxy_reputation,
-                "proxy_soft_signals": self.proxy_soft_signals
+                "proxy_soft_signals": self.proxy_soft_signals,
+                "proxy_host_failures": self.proxy_host_failures
             }
 
             self._safe_json_write(self.health_file, data)
@@ -447,10 +452,14 @@ class ProxyManager:
                 self.dead_proxies.append(proxy_key)
 
             if host_port:
-                self.proxy_cooldowns[host_port] = now + self.DETECTION_COOLDOWN
-                if host_port not in self.dead_proxies:
-                    self.dead_proxies.append(host_port)
-                logger.warning(f"[COOLDOWN] Proxy host {host_port} flagged after detection.")
+                self.proxy_host_failures[host_port] = self.proxy_host_failures.get(host_port, 0) + 1
+                if self.proxy_host_failures[host_port] >= self.HOST_DETECTION_THRESHOLD:
+                    self.proxy_cooldowns[host_port] = now + self.DETECTION_COOLDOWN
+                    if host_port not in self.dead_proxies:
+                        self.dead_proxies.append(host_port)
+                    logger.warning(
+                        f"[COOLDOWN] Proxy host {host_port} flagged after {self.proxy_host_failures[host_port]} detections."
+                    )
             
             # If we see MANY sessions from the same IP failing, we could ban the IP,
             # but for now, let's just rotate sessions.

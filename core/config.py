@@ -59,6 +59,7 @@ class BotSettings(BaseSettings):
     proxy_provider: str = "2captcha"  # Options: 2captcha, webshare
     webshare_api_key: Optional[str] = None
     webshare_page_size: int = 50
+    # Proxy routing overrides
     proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
     
     # Optimization
@@ -167,9 +168,6 @@ class BotSettings(BaseSettings):
     degraded_failure_threshold: int = 3
     degraded_slow_delay_multiplier: float = 2.0
     performance_alert_slow_threshold: int = 2
-
-    # Proxy routing overrides
-    proxy_bypass_faucets: List[str] = Field(default_factory=list)
 
     # Canary rollout (optional)
     canary_profile: Optional[str] = Field(default=None, alias="CANARY_PROFILE")

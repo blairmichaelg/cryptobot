@@ -198,7 +198,7 @@ class FreeBitcoinBot(FaucetBot):
                                 pass
                             if status in (401, 403, 429):
                                 await self.random_delay(1.0, 2.0)
-                                continue
+                                return False
                     except Exception:
                         pass
                 await self.random_delay(2, 4)
@@ -304,17 +304,24 @@ class FreeBitcoinBot(FaucetBot):
             ]
             
             submit_btn = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
-            if not submit_btn:
-                logger.error("[FreeBitcoin] Could not find submit button")
+            if submit_btn:
+                logger.debug("[FreeBitcoin] Clicking submit button...")
+                await self.human_like_click(submit_btn)
+            else:
+                logger.warning("[FreeBitcoin] Submit button not found. Falling back to Enter key submission.")
                 try:
-                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_submit.png")
-                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_submit.png")
+                    await password_field.press("Enter")
                 except Exception:
-                    pass
-                return False
-            
-            logger.debug("[FreeBitcoin] Clicking submit button...")
-            await self.human_like_click(submit_btn)
+                    try:
+                        await self.page.keyboard.press("Enter")
+                    except Exception:
+                        logger.error("[FreeBitcoin] Enter key fallback failed")
+                        try:
+                            await self.page.screenshot(path="logs/freebitcoin_login_failed_no_submit.png")
+                            logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_submit.png")
+                        except Exception:
+                            pass
+                        return False
             
             # Wait for navigation or login success
             logger.debug("[FreeBitcoin] Waiting for login to complete...")

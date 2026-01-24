@@ -1226,8 +1226,25 @@ class JobScheduler:
 
         faucet_key = _normalize(faucet_type)
         bypass_raw = getattr(self.settings, "proxy_bypass_faucets", None) or []
+        if isinstance(bypass_raw, str):
+            raw = bypass_raw.strip()
+            if not raw or raw.lower() in {"[]", "none", "null"}:
+                bypass_raw = []
+            else:
+                try:
+                    import json
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        bypass_raw = parsed
+                    else:
+                        bypass_raw = [raw]
+                except Exception:
+                    # Fallback: comma/semicolon/space-delimited list
+                    bypass_raw = [item for item in (token.strip() for token in raw.replace(";", ",").split(",")) if item]
+
         if not bypass_raw:
             bypass_raw = ["freebitcoin"]
+
         bypass = {_normalize(name) for name in bypass_raw}
         return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
 

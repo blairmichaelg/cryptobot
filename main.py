@@ -147,6 +147,11 @@ async def main():
             if not profiles:
                 logger.warning(f"No profiles found matching '{args.single}'")
                 return
+            # Purge any restored jobs that don't match the single target
+            removed = scheduler.purge_jobs(lambda j: target not in j.faucet_type.lower().replace("_", ""))
+            if removed:
+                logger.info(f"Purged {removed} non-target jobs from restored session for --single {args.single}.")
+                scheduler.persist_session()
 
         # If we have real profiles, purge legacy test jobs restored from session_state.json
         if profiles and any(p.faucet.lower() != "test" for p in profiles):
