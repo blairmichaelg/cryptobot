@@ -526,7 +526,7 @@ class FreeBitcoinBot(FaucetBot):
                     logger.warning("Roll button not found (possibly hidden or blocked)")
                     return ClaimResult(
                         success=False,
-                            error_text = await error_elem.text_content()
+                        status="Roll Button Not Found",
                         next_claim_minutes=15,
                         balance=balance
                     )
