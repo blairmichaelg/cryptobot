@@ -163,7 +163,7 @@ class BrowserManager:
         self.browser = await self.camoufox.__aenter__()
         return self
 
-    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True) -> BrowserContext:
+    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True, block_images_override: Optional[bool] = None, block_media_override: Optional[bool] = None) -> BrowserContext:
         """
         Creates a new isolated browser context with specific proxy and user agent.
         Includes enhanced anti-detection measures and sticky session support.
@@ -375,8 +375,10 @@ class BrowserManager:
         )
         logger.debug("🎨 Injected fingerprint: canvas_seed=%s, gpu_index=%s", canvas_seed, gpu_index)
 
-        # Apply Resource Blocker using instance settings
-        blocker = ResourceBlocker(block_images=self.block_images, block_media=self.block_media)
+        # Apply Resource Blocker using instance settings or overrides
+        block_images = self.block_images if block_images_override is None else block_images_override
+        block_media = self.block_media if block_media_override is None else block_media_override
+        blocker = ResourceBlocker(block_images=block_images, block_media=block_media)
         await context.route("**/*", blocker.handle_route)
         context.resource_blocker = blocker  # type: ignore[attr-defined]
         

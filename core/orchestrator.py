@@ -1104,7 +1104,8 @@ class JobScheduler:
                 profile_name=profile.username,
                 locale_override=locale_hint,
                 timezone_override=timezone_hint,
-                allow_sticky_proxy=not self._should_bypass_proxy(faucet_name)
+                allow_sticky_proxy=not self._should_bypass_proxy(faucet_name),
+                block_images_override=False if self._should_disable_image_block(faucet_name) else None
             )
             page = await self.browser_manager.new_page(context=context)
             
@@ -1240,6 +1241,36 @@ class JobScheduler:
                         bypass_raw = [raw]
                 except Exception:
                     # Fallback: comma/semicolon/space-delimited list
+                    bypass_raw = [item for item in (token.strip() for token in raw.replace(";", ",").split(",")) if item]
+
+        if not bypass_raw:
+            bypass_raw = ["freebitcoin"]
+
+        bypass = {_normalize(name) for name in bypass_raw}
+        return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
+
+    def _should_disable_image_block(self, faucet_type: Optional[str]) -> bool:
+        if not faucet_type:
+            return False
+
+        def _normalize(name: str) -> str:
+            return str(name).lower().replace("_", "").replace(" ", "")
+
+        faucet_key = _normalize(faucet_type)
+        bypass_raw = getattr(self.settings, "image_bypass_faucets", None) or []
+        if isinstance(bypass_raw, str):
+            raw = bypass_raw.strip()
+            if not raw or raw.lower() in {"[]", "none", "null"}:
+                bypass_raw = []
+            else:
+                try:
+                    import json
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        bypass_raw = parsed
+                    else:
+                        bypass_raw = [raw]
+                except Exception:
                     bypass_raw = [item for item in (token.strip() for token in raw.replace(";", ",").split(",")) if item]
 
         if not bypass_raw:
@@ -1407,7 +1438,8 @@ class JobScheduler:
                 profile_name=username,
                 locale_override=locale_hint,
                 timezone_override=timezone_hint,
-                allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type)
+                allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type),
+                block_images_override=False if self._should_disable_image_block(job.faucet_type) else None
             )
             page = await self.browser_manager.new_page(context=context)
             

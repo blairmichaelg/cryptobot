@@ -61,6 +61,8 @@ class BotSettings(BaseSettings):
     webshare_page_size: int = 50
     # Proxy routing overrides
     proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
+    # Image blocking overrides (allow images for selected faucets)
+    image_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
     
     # Optimization
     block_images: bool = True
