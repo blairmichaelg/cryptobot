@@ -1,5 +1,9 @@
 name: deploy
 
+concurrency:
+  group: deploy-master
+  cancel-in-progress: true
+
 on:
   push:
     branches: [master]

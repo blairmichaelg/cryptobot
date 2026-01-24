@@ -213,16 +213,51 @@ class EarningsTracker:
             self._save()
              
         self._load()
+
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
+        """Atomic JSON write with corruption protection and backups."""
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+            if os.path.exists(filepath):
+                backup_base = filepath + ".backup"
+                for i in range(max_backups - 1, 0, -1):
+                    old = f"{backup_base}.{i}"
+                    new = f"{backup_base}.{i+1}"
+                    if os.path.exists(old):
+                        os.replace(old, new)
+                os.replace(filepath, f"{backup_base}.1")
+
+            temp_file = filepath + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            with open(temp_file, "r", encoding="utf-8") as f:
+                json.load(f)
+            os.replace(temp_file, filepath)
+        except Exception as e:
+            logger.warning(f"Could not safely write analytics: {e}")
+
+    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
+        """Read JSON with fallback to backups if corrupted."""
+        paths = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                continue
+        return None
     
     def _load(self):
         """Load existing analytics data from disk."""
         try:
-            if os.path.exists(self.storage_file):
-                with open(self.storage_file, "r") as f:
-                    data = json.load(f)
-                    self.claims = data.get("claims", [])
-                    self.costs = data.get("costs", [])
-                    logger.info(f"📊 Loaded {len(self.claims)} claims and {len(self.costs)} costs.")
+            data = self._safe_json_read(self.storage_file)
+            if data:
+                self.claims = data.get("claims", [])
+                self.costs = data.get("costs", [])
+                logger.info(f"📊 Loaded {len(self.claims)} claims and {len(self.costs)} costs.")
         except Exception as e:
             logger.warning(f"Could not load analytics: {e}")
             self.claims = []
@@ -236,8 +271,7 @@ class EarningsTracker:
                 "costs": self.costs[-1000:],
                 "last_updated": time.time()
             }
-            with open(self.storage_file, "w") as f:
-                json.dump(data, f)
+            self._safe_json_write(self.storage_file, data)
             self.last_flush_time = time.time()
             logger.debug(f"📊 Analytics flushed: {len(self.claims)} claims, {len(self.costs)} costs")
         except Exception as e:
@@ -292,6 +326,14 @@ class EarningsTracker:
         self.costs.append(asdict(record))
         logger.debug(f"💸 Cost: {cost_type} ${amount_usd:.4f} for {faucet or 'global'}")
         self._save()
+
+    def record_runtime_cost(self, faucet: str, duration_seconds: float, time_cost_per_hour: float, proxy_cost_per_hour: float, proxy_used: bool = False):
+        """Record time/proxy costs associated with a faucet runtime."""
+        hours = max(duration_seconds, 0.0) / 3600.0
+        if time_cost_per_hour > 0:
+            self.record_cost("time", hours * time_cost_per_hour, faucet=faucet)
+        if proxy_used and proxy_cost_per_hour > 0:
+            self.record_cost("proxy", hours * proxy_cost_per_hour, faucet=faucet)
 
     def get_profitability(self, hours: int = 24) -> Dict[str, Any]:
         """Calculate net profit in USD using real-time price feed."""
@@ -438,6 +480,9 @@ class EarningsTracker:
         
         # Calculate total costs
         total_cost_usd = sum(cost.get("amount_usd", 0.0) for cost in faucet_costs)
+        cost_breakdown = defaultdict(float)
+        for cost in faucet_costs:
+            cost_breakdown[cost.get("type", "unknown")] += cost.get("amount_usd", 0.0)
         
         # Calculate metrics
         net_profit_usd = total_earned_usd - total_cost_usd
@@ -477,6 +522,7 @@ class EarningsTracker:
         return {
             "total_earned_usd": total_earned_usd,
             "total_cost_usd": total_cost_usd,
+            "cost_breakdown_usd": dict(cost_breakdown),
             "net_profit_usd": net_profit_usd,
             "roi_percentage": roi_percentage,
             "avg_earnings_per_claim": avg_earnings_per_claim,
@@ -487,6 +533,81 @@ class EarningsTracker:
             "profitability_score": profitability_score,
             "time_weighted_earnings_usd": weighted_earned_usd
         }
+
+    def get_hourly_roi(self, faucet: Optional[str] = None, days: int = 7) -> Dict[str, Dict[int, float]]:
+        """
+        Calculate ROI percentage by hour-of-day for each faucet.
+
+        Returns:
+            Dict mapping faucet -> {hour: roi_percentage}
+        """
+        import asyncio
+        cutoff = time.time() - (days * 24 * 3600)
+        claims = [c for c in self.claims if c.get("timestamp", 0) >= cutoff]
+        costs = [c for c in self.costs if c.get("timestamp", 0) >= cutoff]
+
+        if faucet:
+            claims = [c for c in claims if c.get("faucet") == faucet]
+            costs = [c for c in costs if c.get("faucet") == faucet]
+
+        earnings_by_faucet_hour: Dict[str, Dict[int, Dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+        costs_by_faucet_hour: Dict[str, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
+
+        # Aggregate earnings by faucet and hour
+        for c in claims:
+            if not c.get("success"):
+                continue
+            ts = c.get("timestamp", 0)
+            hour = datetime.utcfromtimestamp(ts).hour
+            f = c.get("faucet")
+            currency = c.get("currency")
+            if currency:
+                earnings_by_faucet_hour[f][hour][currency] += c.get("amount", 0.0)
+
+        # Aggregate costs by faucet and hour
+        for cost in costs:
+            ts = cost.get("timestamp", 0)
+            hour = datetime.utcfromtimestamp(ts).hour
+            f = cost.get("faucet") or "global"
+            costs_by_faucet_hour[f][hour] += cost.get("amount_usd", 0.0)
+
+        # Convert earnings to USD by faucet/hour
+        price_feed = get_price_feed()
+
+        async def _convert_earnings_to_usd():
+            converted = defaultdict(lambda: defaultdict(float))
+            for f, hours in earnings_by_faucet_hour.items():
+                for hour, amount in hours.items():
+                    for currency, raw_amount in amount.items():
+                        price = await price_feed.get_price(currency)
+                        if not price:
+                            continue
+                        decimals = price_feed.CURRENCY_DECIMALS.get(currency.upper(), 8)
+                        converted[f][hour] += (raw_amount / (10 ** decimals)) * price
+            return converted
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                earnings_usd = executor.submit(asyncio.run, _convert_earnings_to_usd()).result()
+        else:
+            earnings_usd = asyncio.run(_convert_earnings_to_usd())
+
+        hourly_roi: Dict[str, Dict[int, float]] = defaultdict(dict)
+        for f, hours in earnings_usd.items():
+            for hour, earned in hours.items():
+                cost = costs_by_faucet_hour.get(f, {}).get(hour, 0.0)
+                if cost <= 0:
+                    continue
+                net = earned - cost
+                hourly_roi[f][hour] = (net / cost) * 100
+
+        return dict(hourly_roi)
     
     def get_profitability_report(self, days: int = 7, min_claims: int = 3) -> List[Dict[str, Any]]:
         """

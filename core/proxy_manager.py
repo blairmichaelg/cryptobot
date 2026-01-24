@@ -72,6 +72,9 @@ class ProxyManager:
         self.dead_proxies: List[str] = []
         # Cooldown tracking: proxy_key -> timestamp when it can be reused
         self.proxy_cooldowns: Dict[str, float] = {}
+        # Reputation scoring
+        self.proxy_reputation: Dict[str, float] = {}
+        self.proxy_soft_signals: Dict[str, Dict[str, int]] = {}
         # Cooldown durations (seconds)
         self.DETECTION_COOLDOWN = 3600  # 1 hour for 403/Detection
         self.FAILURE_COOLDOWN = 300      # 5 minutes for connection errors
@@ -83,6 +86,42 @@ class ProxyManager:
         # Auto-load on init
         self.load_proxies_from_file()
         self._load_health_data()
+
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
+        """Atomic JSON write with corruption protection and backups."""
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+            if os.path.exists(filepath):
+                backup_base = filepath + ".backup"
+                for i in range(max_backups - 1, 0, -1):
+                    old = f"{backup_base}.{i}"
+                    new = f"{backup_base}.{i+1}"
+                    if os.path.exists(old):
+                        os.replace(old, new)
+                os.replace(filepath, f"{backup_base}.1")
+
+            temp_file = filepath + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            with open(temp_file, "r", encoding="utf-8") as f:
+                json.load(f)
+            os.replace(temp_file, filepath)
+        except Exception as e:
+            logger.warning(f"Failed to safely write {filepath}: {e}")
+
+    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
+        """Read JSON with fallback to backups if corrupted."""
+        paths = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                continue
+        return None
 
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy (full string with session)."""
@@ -97,9 +136,10 @@ class ProxyManager:
             if not os.path.exists(self.health_file):
                 logger.debug(f"No proxy health file found at {self.health_file}")
                 return
-            
-            with open(self.health_file, "r") as f:
-                data = json.load(f)
+
+            data = self._safe_json_read(self.health_file)
+            if not data:
+                return
             
             # Version check
             version = data.get("version", 0)
@@ -119,6 +159,8 @@ class ProxyManager:
             self.proxy_failures = data.get("proxy_failures", {})
             self.dead_proxies = data.get("dead_proxies", [])
             self.proxy_cooldowns = data.get("proxy_cooldowns", {})
+            self.proxy_reputation = data.get("proxy_reputation", {})
+            self.proxy_soft_signals = data.get("proxy_soft_signals", {})
             
             # Clean up expired cooldowns
             now = time.time()
@@ -218,16 +260,57 @@ class ProxyManager:
                 "proxy_latency": self.proxy_latency,
                 "proxy_failures": self.proxy_failures,
                 "dead_proxies": self.dead_proxies,
-                "proxy_cooldowns": self.proxy_cooldowns
+                "proxy_cooldowns": self.proxy_cooldowns,
+                "proxy_reputation": self.proxy_reputation,
+                "proxy_soft_signals": self.proxy_soft_signals
             }
-            
-            with open(self.health_file, "w") as f:
-                json.dump(data, f, indent=2)
+
+            self._safe_json_write(self.health_file, data)
             
             logger.debug(f"Saved proxy health data to {self.health_file}")
             
         except Exception as e:
             logger.warning(f"Failed to save proxy health data: {e}")
+
+    def record_soft_signal(self, proxy_str: str, signal_type: str = "unknown"):
+        """Record a soft signal that degrades proxy reputation."""
+        proxy_key = proxy_str
+        if "://" in proxy_key:
+            proxy_key = proxy_key.split("://", 1)[1]
+
+        if proxy_key not in self.proxy_soft_signals:
+            self.proxy_soft_signals[proxy_key] = {}
+        self.proxy_soft_signals[proxy_key][signal_type] = self.proxy_soft_signals[proxy_key].get(signal_type, 0) + 1
+
+        # Apply immediate reputation penalty
+        current = self.proxy_reputation.get(proxy_key, 100.0)
+        penalty = 5.0 if signal_type in {"blocked", "captcha_spike"} else 2.5
+        self.proxy_reputation[proxy_key] = max(0.0, current - penalty)
+        self._save_health_data()
+
+    def get_proxy_reputation(self, proxy_str: str) -> float:
+        """Compute or return cached reputation score for a proxy."""
+        proxy_key = proxy_str
+        if "://" in proxy_key:
+            proxy_key = proxy_key.split("://", 1)[1]
+
+        base = self.proxy_reputation.get(proxy_key, 100.0)
+        # Latency penalty
+        latencies = self.proxy_latency.get(proxy_key, [])
+        if latencies:
+            avg = sum(latencies) / len(latencies)
+            base -= min(avg / 100.0, 20.0)  # cap latency penalty
+        # Failure penalty
+        failures = self.proxy_failures.get(proxy_key, 0)
+        base -= min(failures * 5.0, 30.0)
+        # Soft signal penalty
+        signals = self.proxy_soft_signals.get(proxy_key, {})
+        signal_penalty = sum(signals.values()) * 1.5
+        base -= min(signal_penalty, 30.0)
+
+        score = max(0.0, min(base, 100.0))
+        self.proxy_reputation[proxy_key] = score
+        return score
 
 
 
@@ -297,6 +380,11 @@ class ProxyManager:
             proxy_key = proxy_key.split("://", 1)[1]
             
         self.proxy_failures[proxy_key] = self.proxy_failures.get(proxy_key, 0) + 1
+
+        # Reputation penalty for hard failures
+        rep = self.proxy_reputation.get(proxy_key, 100.0)
+        rep_penalty = 15.0 if detected or status_code == 403 else 5.0
+        self.proxy_reputation[proxy_key] = max(0.0, rep - rep_penalty)
         
         now = time.time()
         if detected or status_code == 403:
@@ -341,7 +429,8 @@ class ProxyManager:
                 "min_latency": None,
                 "max_latency": None,
                 "measurement_count": 0,
-                "is_dead": proxy_key in self.dead_proxies
+                "is_dead": proxy_key in self.dead_proxies,
+                "reputation_score": self.get_proxy_reputation(proxy_key)
             }
         
         return {
@@ -349,7 +438,8 @@ class ProxyManager:
             "min_latency": min(latencies),
             "max_latency": max(latencies),
             "measurement_count": len(latencies),
-            "is_dead": proxy_key in self.dead_proxies
+            "is_dead": proxy_key in self.dead_proxies,
+            "reputation_score": self.get_proxy_reputation(proxy_key)
         }
 
     async def health_check_all_proxies(self) -> Dict[str, Any]:
@@ -416,6 +506,11 @@ class ProxyManager:
         for p in self.all_proxies:
             key = self._proxy_key(p)
             if key not in current_cooldowns:
+                if getattr(self.settings, "proxy_reputation_enabled", True):
+                    score = self.get_proxy_reputation(p.to_string())
+                    if score < getattr(self.settings, "proxy_reputation_min_score", 20.0):
+                        self.proxy_cooldowns[key] = now + self.FAILURE_COOLDOWN
+                        continue
                 active_proxies.append(p)
                 
         # 3. Filter out slow proxies (latency check)
@@ -937,21 +1032,36 @@ class ProxyManager:
         if "://" in current_key:
             current_key = current_key.split("://", 1)[1]
                 
-        # If current is dead or we just want to rotate
-        if not current_key or current_key in self.dead_proxies or profile.proxy_rotation_strategy == "random":
+        # If current is dead/low reputation or we just want to rotate
+        current_score = None
+        if current_key and getattr(self.settings, "proxy_reputation_enabled", True):
+            current_score = self.get_proxy_reputation(current_key)
+
+        if (
+            not current_key
+            or current_key in self.dead_proxies
+            or profile.proxy_rotation_strategy == "random"
+            or (current_score is not None and current_score < getattr(self.settings, "proxy_reputation_min_score", 20.0))
+        ):
             if not self.proxies:
                 # Check if we can fetch more
                 return None
                 
-            # Filter out dead ones
+            # Filter out dead ones and low reputation if enabled
             healthy = [p for p in self.proxies if self._proxy_key(p) not in self.dead_proxies]
+            if getattr(self.settings, "proxy_reputation_enabled", True):
+                min_score = getattr(self.settings, "proxy_reputation_min_score", 20.0)
+                healthy = [p for p in healthy if self.get_proxy_reputation(p.to_string()) >= min_score]
             if not healthy:
                 logger.warning(f"No healthy proxies left for {profile.username}. Trying to replenish pool...")
                 # We return None but the orchestrator might trigger a retry or replenishment
                 return None
-                
-            # Choose new one
-            new_proxy = random.choice(healthy)
+
+            # Choose new one based on rotation strategy
+            if profile.proxy_rotation_strategy == "health_based" and getattr(self.settings, "proxy_reputation_enabled", True):
+                new_proxy = max(healthy, key=lambda p: self.get_proxy_reputation(p.to_string()))
+            else:
+                new_proxy = random.choice(healthy)
             profile.proxy = new_proxy.to_string()
             self.assignments[profile.username] = new_proxy
             logger.info(f"[ROTATE] {profile.username} rotated to {self._proxy_key(new_proxy)}")

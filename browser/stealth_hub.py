@@ -143,7 +143,7 @@ class StealthHub:
     """
     
     @staticmethod
-    def get_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0) -> str:
+    def get_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0, audio_seed: int = 98765, languages: Optional[List[str]] = None, platform: str = "Win32") -> str:
         """
         Returns a comprehensive JavaScript snippet to be injected into the browser context.
         
@@ -156,7 +156,13 @@ class StealthHub:
         """
         # Import here to get the latest version with fingerprint parameters
         from .stealth_scripts import get_full_stealth_script
-        return get_full_stealth_script(canvas_seed=canvas_seed, gpu_index=gpu_index)
+        return get_full_stealth_script(
+            canvas_seed=canvas_seed,
+            gpu_index=gpu_index,
+            audio_seed=audio_seed,
+            languages=languages,
+            platform=platform
+        )
 
     @staticmethod
     def get_random_dimensions():

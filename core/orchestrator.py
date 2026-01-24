@@ -103,7 +103,11 @@ class JobScheduler:
         self.faucet_backoff: Dict[str, Dict[str, Any]] = {}  # faucet_type -> {consecutive_failures, next_allowed_time}
         
         # Health monitoring
-        self.health_monitor = HealthMonitor()
+        self.health_monitor = HealthMonitor(
+            browser_manager=self.browser_manager,
+            proxy_manager=self.proxy_manager,
+            alert_webhook_url=self.settings.alert_webhook_url
+        )
         self.last_health_check_time = 0.0
         
         # Startup Checks
@@ -160,8 +164,10 @@ class JobScheduler:
         """Restore job queue from disk if available."""
         try:
             if os.path.exists(self.session_file):
-                with open(self.session_file, "r") as f:
-                    data = json.load(f)
+                data = self._safe_json_read(self.session_file)
+                if not data:
+                    logger.warning("Session state unreadable; skipping restore")
+                    return
                 
                 self.domain_last_access = data.get("domain_last_access", {})
                 
@@ -254,6 +260,19 @@ class JobScheduler:
                     shutil.copy2(filepath + ".backup.1", filepath)
                 except Exception as restore_err:
                     logger.error(f"Backup restoration failed: {restore_err}")
+
+    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
+        """Read JSON with fallback to backups if corrupted."""
+        candidates = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate, "r") as f:
+                    return json.load(f)
+            except Exception:
+                continue
+        return None
 
     def _persist_session(self):
         """Save session state to disk with corruption protection."""
@@ -477,6 +496,17 @@ class JobScheduler:
 
                 # Combine factors: success rate, earnings, ROI
                 priority = (success_rate * 0.5) + (earnings_factor * 0.3) + (roi_factor * 0.2)
+
+                # Time-of-day ROI optimization
+                if getattr(self.settings, "time_of_day_roi_enabled", False):
+                    hourly_roi = tracker.get_hourly_roi(stats_key, days=7)
+                    hour_key = datetime.now(timezone.utc).hour
+                    roi_by_hour = hourly_roi.get(stats_key, {})
+                    roi_pct = roi_by_hour.get(hour_key)
+                    if roi_pct is not None:
+                        weight = max(0.0, min(getattr(self.settings, "time_of_day_roi_weight", 0.15), 0.5))
+                        hour_multiplier = 1.0 + (roi_pct / 100.0) * weight
+                        priority *= max(0.3, min(hour_multiplier, 2.0))
                 return max(0.1, min(priority, 2.0))
         except Exception as e:
             logger.debug(f"Priority calculation failed for {faucet_type}: {e}")
@@ -1315,6 +1345,7 @@ class JobScheduler:
         context = None
         username = job.profile.username
         current_proxy = None
+        start_time = time.time()
         try:
             self.profile_concurrency[username] = self.profile_concurrency.get(username, 0) + 1
             
@@ -1361,15 +1392,16 @@ class JobScheduler:
             # Execute the job function
             logger.info(f"🚀 Executing {job.name} ({job.job_type}) for {username}... (Proxy: {current_proxy or 'None'})")
             start_time = time.time()
+            job_timeout = max(60, int(getattr(self.settings, "job_timeout_seconds", 600)))
             
             # Handle special job types
             if job.job_type == "auto_withdrawal_check":
                 # Auto-withdrawal check doesn't need a page/bot
-                result = await self.execute_auto_withdrawal_check(job)
+                result = await asyncio.wait_for(self.execute_auto_withdrawal_check(job), timeout=job_timeout)
             else:
                 # Regular faucet bot method
                 method = getattr(bot, job.job_type)
-                result = await method(page)
+                result = await asyncio.wait_for(method(page), timeout=job_timeout)
             
             # Post-execution status check
             status_info = await self.browser_manager.check_page_status(page)
@@ -1377,10 +1409,14 @@ class JobScheduler:
                 logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
                 if current_proxy:
                     self.record_proxy_failure(current_proxy, detected=True)
+                    if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
+                        self.proxy_manager.record_soft_signal(current_proxy, signal_type="blocked")
             elif status_info["network_error"]:
                 logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
                 if current_proxy:
                     self.record_proxy_failure(current_proxy, detected=False)
+                    if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
+                        self.proxy_manager.record_soft_signal(current_proxy, signal_type="network_error")
 
             duration = time.time() - start_time
             logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
@@ -1523,6 +1559,17 @@ class JobScheduler:
                     job.retry_count = 0
                 self.add_job(job)
             
+        except asyncio.TimeoutError:
+            logger.error(f"⏱️ Job timeout for {job.name} ({username}) after {getattr(self.settings, 'job_timeout_seconds', 600)}s")
+            from faucets.base import ClaimResult
+            result = ClaimResult(success=False, status="Timeout", next_claim_minutes=15, error_type=ErrorType.TRANSIENT)
+            try:
+                self.health_monitor.record_faucet_attempt(job.faucet_type, success=False)
+            except Exception:
+                pass
+            job.retry_count += 1
+            job.next_run = time.time() + PROXY_COOLDOWN_SECONDS
+            self.add_job(job)
         except Exception as e:
             logger.error(f"❌ Error in job {job.name} for {username}: {e}")
             # Retry logic
@@ -1568,6 +1615,20 @@ class JobScheduler:
                 self.add_job(job)
             
         finally:
+            # Record runtime costs (time/proxy) per faucet
+            try:
+                duration = max(0.0, time.time() - start_time)
+                from core.analytics import get_tracker
+                tracker = get_tracker()
+                tracker.record_runtime_cost(
+                    faucet=job.faucet_type,
+                    duration_seconds=duration,
+                    time_cost_per_hour=getattr(self.settings, "time_cost_per_hour_usd", 0.0),
+                    proxy_cost_per_hour=getattr(self.settings, "proxy_cost_per_hour_usd", 0.0),
+                    proxy_used=bool(current_proxy)
+                )
+            except Exception as cost_error:
+                logger.debug(f"Runtime cost tracking failed: {cost_error}")
             try:
                 if context:
                     # Save cookies before closing if it was a successful or partially successful run
@@ -1601,6 +1662,9 @@ class JobScheduler:
         while not self._stop_event.is_set():
             now = time.time()
 
+            # Apply operation mode restrictions periodically
+            mode_delay = self.check_and_update_mode()
+
             # Determine degraded mode based on proxy availability and failure rate
             degraded_mode = None
             delay_multiplier = 1.0
@@ -1618,6 +1682,9 @@ class JobScheduler:
                 delay_multiplier = self.settings.degraded_slow_delay_multiplier
                 effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
                 degraded_mode = f"{degraded_mode}+slow" if degraded_mode else "slow"
+
+            if mode_delay > delay_multiplier:
+                delay_multiplier = mode_delay
 
             if self.performance_alert_score >= self.settings.performance_alert_slow_threshold:
                 delay_multiplier = max(delay_multiplier, self.settings.degraded_slow_delay_multiplier)
@@ -1674,6 +1741,21 @@ class JobScheduler:
                         await self.browser_manager.restart()
                         # Reset failure count after restart
                         self.health_monitor.browser_context_failures = 0
+
+                    # Auto-response: replenish proxies if unhealthy
+                    proxy_health = health_results.get("proxy", {})
+                    if self.proxy_manager and not proxy_health.get("healthy", True):
+                        await self.proxy_manager.auto_provision_proxies(
+                            min_threshold=self.settings.low_proxy_threshold,
+                            provision_count=5
+                        )
+
+                    # Auto-response: degrade mode on system health issues
+                    system_health = health_results.get("system", {})
+                    if not system_health.get("healthy", True):
+                        from core.config import OperationMode
+                        self.current_mode = OperationMode.SLOW_MODE
+                        self.apply_mode_restrictions(self.current_mode)
                     
                     # Log summary
                     logger.info(f"Health check complete - Overall: {'✅ HEALTHY' if health_results['overall_healthy'] else '⚠️ DEGRADED'}")

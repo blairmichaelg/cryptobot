@@ -25,7 +25,7 @@ class CaptchaSolver:
     daily budget tracking to prevent cost overruns.
     """
 
-    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD, fallback_provider: Optional[str] = None, fallback_api_key: Optional[str] = None):
+    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD, fallback_provider: Optional[str] = None, fallback_api_key: Optional[str] = None, adaptive_routing: bool = False, routing_min_samples: int = 20):
         """
         Initialize the CaptchaSolver.
 
@@ -40,6 +40,9 @@ class CaptchaSolver:
         self.fallback_provider = fallback_provider.lower().replace("twocaptcha", "2captcha") if fallback_provider else None
         self.fallback_api_key = fallback_api_key
         self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
+        self.faucet_provider_stats = {}
+        self.adaptive_routing = adaptive_routing
+        self.routing_min_samples = routing_min_samples
         self.session = None
         self.daily_budget = daily_budget
         self.faucet_name = None
@@ -71,6 +74,8 @@ class CaptchaSolver:
     def set_faucet_name(self, faucet_name: Optional[str]) -> None:
         """Associate this solver instance with a faucet for cost attribution."""
         self.faucet_name = faucet_name
+        if faucet_name and faucet_name not in self.faucet_provider_stats:
+            self.faucet_provider_stats[faucet_name] = {}
 
     def set_proxy(self, proxy_string: str):
         """Set the proxy to be used for all 2Captcha requests."""
@@ -87,6 +92,63 @@ class CaptchaSolver:
         logger.info(f"Fallback provider configured: {self.fallback_provider}")
         if self.fallback_provider not in self.provider_stats:
             self.provider_stats[self.fallback_provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+
+    def _record_provider_result(self, provider: str, captcha_type: str, success: bool) -> None:
+        """Record provider success/failure statistics (global + per-faucet)."""
+        if provider not in self.provider_stats:
+            self.provider_stats[provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+        if success:
+            self.provider_stats[provider]["solves"] += 1
+            self.provider_stats[provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+        else:
+            self.provider_stats[provider]["failures"] += 1
+
+        if self.faucet_name:
+            if self.faucet_name not in self.faucet_provider_stats:
+                self.faucet_provider_stats[self.faucet_name] = {}
+            faucet_stats = self.faucet_provider_stats[self.faucet_name]
+            if provider not in faucet_stats:
+                faucet_stats[provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+            if success:
+                faucet_stats[provider]["solves"] += 1
+                faucet_stats[provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+            else:
+                faucet_stats[provider]["failures"] += 1
+
+    def _expected_cost(self, provider: str, captcha_type: str) -> Optional[float]:
+        """Estimate expected cost per successful solve for a provider."""
+        stats = None
+        if self.faucet_name and self.faucet_name in self.faucet_provider_stats:
+            stats = self.faucet_provider_stats[self.faucet_name].get(provider)
+        if not stats:
+            stats = self.provider_stats.get(provider)
+        if not stats:
+            return None
+        total = stats.get("solves", 0) + stats.get("failures", 0)
+        if total < self.routing_min_samples:
+            return None
+        success_rate = stats.get("solves", 0) / max(total, 1)
+        return self._cost_per_solve.get(captcha_type, 0.003) / max(success_rate, 0.1)
+
+    def _choose_provider_order(self, captcha_type: str) -> list:
+        """Return provider order based on expected cost if adaptive routing is enabled."""
+        providers = [self.provider]
+        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider:
+            providers.append(self.fallback_provider)
+
+        if not self.adaptive_routing or len(providers) == 1:
+            return providers
+
+        scored = []
+        for p in providers:
+            expected = self._expected_cost(p, captcha_type)
+            scored.append((p, expected))
+
+        if all(exp is None for _, exp in scored):
+            return providers
+
+        scored.sort(key=lambda item: (item[1] is None, item[1] if item[1] is not None else 0))
+        return [p for p, _ in scored]
 
     def _check_and_reset_daily_budget(self):
         """Reset daily budget counter if new day."""
@@ -238,64 +300,36 @@ class CaptchaSolver:
         """
         providers_tried = []
         
-        # Try primary provider
-        try:
-            logger.info(f"🔑 Trying primary provider: {self.provider}")
-            providers_tried.append(self.provider)
-            
-            if self.provider == "capsolver":
-                code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=self.api_key)
-            else:
-                code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=self.api_key)
-            
-            if code:
-                logger.info(f"✅ {self.provider.title()} succeeded")
-                # Track success
-                if self.provider in self.provider_stats:
-                    self.provider_stats[self.provider]["solves"] += 1
-                    self.provider_stats[self.provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
-                return code
-            else:
-                logger.warning(f"❌ {self.provider.title()} failed to return a solution")
-                if self.provider in self.provider_stats:
-                    self.provider_stats[self.provider]["failures"] += 1
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"❌ {self.provider.title()} error: {e}")
-            if self.provider in self.provider_stats:
-                self.provider_stats[self.provider]["failures"] += 1
-            
-            # Check if error is NO_SLOT or ZERO_BALANCE
-            if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
-                # Not a fallback-worthy error, propagate it
-                raise
-        
-        # Try fallback provider if configured
-        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider:
+        provider_order = self._choose_provider_order(captcha_type)
+
+        for provider in provider_order:
             try:
-                logger.info(f"🔁 Trying fallback provider: {self.fallback_provider}")
-                providers_tried.append(self.fallback_provider)
-                
-                if self.fallback_provider == "capsolver":
-                    code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=self.fallback_api_key)
+                logger.info(f"🔑 Trying provider: {provider}")
+                providers_tried.append(provider)
+
+                api_key = self.api_key
+                if provider == self.fallback_provider:
+                    api_key = self.fallback_api_key
+
+                if provider == "capsolver":
+                    code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=api_key)
                 else:
-                    code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=self.fallback_api_key)
-                
+                    code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=api_key)
+
                 if code:
-                    logger.info(f"✅ {self.fallback_provider.title()} fallback succeeded")
-                    # Track success
-                    if self.fallback_provider in self.provider_stats:
-                        self.provider_stats[self.fallback_provider]["solves"] += 1
-                        self.provider_stats[self.fallback_provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+                    logger.info(f"✅ {provider.title()} succeeded")
+                    self._record_provider_result(provider, captcha_type, success=True)
                     return code
-                else:
-                    logger.error(f"❌ {self.fallback_provider.title()} fallback also failed")
-                    if self.fallback_provider in self.provider_stats:
-                        self.provider_stats[self.fallback_provider]["failures"] += 1
+                logger.warning(f"❌ {provider.title()} failed to return a solution")
+                self._record_provider_result(provider, captcha_type, success=False)
             except Exception as e:
-                logger.error(f"❌ {self.fallback_provider.title()} fallback error: {e}")
-                if self.fallback_provider in self.provider_stats:
-                    self.provider_stats[self.fallback_provider]["failures"] += 1
+                error_msg = str(e)
+                logger.error(f"❌ {provider.title()} error: {e}")
+                self._record_provider_result(provider, captcha_type, success=False)
+
+                # If not fallback-worthy, propagate
+                if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
+                    raise
         
         # Both providers failed
         logger.error(f"❌ All captcha providers failed. Tried: {', '.join(providers_tried)}")

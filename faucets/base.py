@@ -72,7 +72,9 @@ class FaucetBot:
         self.solver = CaptchaSolver(
             api_key=key,
             provider=provider,
-            daily_budget=getattr(settings, "captcha_daily_budget", 5.0)
+            daily_budget=getattr(settings, "captcha_daily_budget", 5.0),
+            adaptive_routing=getattr(settings, "captcha_provider_routing", "fixed") == "adaptive",
+            routing_min_samples=getattr(settings, "captcha_provider_routing_min_samples", 20)
         )
         self.solver.set_headless(getattr(settings, "headless", True))
         fallback_provider = getattr(settings, "captcha_fallback_provider", None)

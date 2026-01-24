@@ -98,7 +98,8 @@ class HealthMonitor:
     ALERT_COOLDOWN_SECONDS = 3600  # 1 hour between duplicate alerts
     
     def __init__(self, log_file: Optional[str] = None, enable_azure: bool = True, 
-                 browser_manager: Optional[Any] = None, proxy_manager: Optional[Any] = None):
+                 browser_manager: Optional[Any] = None, proxy_manager: Optional[Any] = None,
+                 alert_webhook_url: Optional[str] = None):
         """
         Initialize health monitor
         
@@ -117,6 +118,7 @@ class HealthMonitor:
         # Browser and proxy managers for advanced health checks
         self.browser_manager = browser_manager
         self.proxy_manager = proxy_manager
+        self.alert_webhook_url = alert_webhook_url or os.environ.get("CRYPTOBOT_ALERT_WEBHOOK")
         
         # Health tracking
         self.browser_context_failures = 0
@@ -398,6 +400,19 @@ class HealthMonitor:
             logger.warning(alert_msg)
         else:
             logger.info(alert_msg)
+
+        # Optional webhook notification
+        if self.alert_webhook_url and REQUESTS_AVAILABLE:
+            try:
+                payload = {
+                    "text": alert_msg,
+                    "severity": severity,
+                    "component": component,
+                    "timestamp": timestamp
+                }
+                requests.post(self.alert_webhook_url, json=payload, timeout=10)
+            except Exception as exc:
+                logger.debug(f"Webhook alert failed: {exc}")
     
     async def run_full_health_check(self) -> Dict[str, Any]:
         """

@@ -64,6 +64,28 @@ class BotSettings(BaseSettings):
     block_images: bool = True
     block_media: bool = True
 
+    # Cost Modeling (USD)
+    time_cost_per_hour_usd: float = 0.0  # VM/runtime cost per bot-hour
+    proxy_cost_per_hour_usd: float = 0.0  # Proxy cost per hour of usage
+
+    # Captcha Provider Routing
+    captcha_provider_routing: str = "fixed"  # Options: fixed, adaptive
+    captcha_provider_routing_min_samples: int = 20  # Minimum samples before routing adapts
+
+    # Job Watchdog
+    job_timeout_seconds: int = 600  # Max time per job before watchdog triggers
+
+    # Time-of-day Optimization
+    time_of_day_roi_enabled: bool = True
+    time_of_day_roi_weight: float = 0.15  # Weight applied to time-of-day ROI boost
+
+    # Proxy Reputation Scoring
+    proxy_reputation_enabled: bool = True
+    proxy_reputation_min_score: float = 20.0  # Min score to be considered healthy
+
+    # Alert Routing
+    alert_webhook_url: Optional[str] = None  # Optional webhook for health alerts
+
     # Registration Defaults
     # (Moved to lines 141-146 to avoid duplication)
 

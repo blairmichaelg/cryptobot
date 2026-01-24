@@ -6,6 +6,8 @@ and detection by anti-bot systems. Based on research of modern anti-detection
 techniques used in 2024-2025.
 """
 
+from typing import Optional
+
 # WebRTC Leak Prevention - Prevents IP leak through STUN/TURN servers
 WEBRTC_PROTECTION = """
 (function() {
@@ -177,14 +179,20 @@ AUDIO_EVASION = """
 (function() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
+
+    let audioSeed = window.__AUDIO_SEED__ || 98765;
+    function seededRandom() {
+        const x = Math.sin(audioSeed++) * 10000;
+        return x - Math.floor(x);
+    }
     
     const originalGetChannelData = AudioBuffer.prototype.getChannelData;
     
     AudioBuffer.prototype.getChannelData = function(channel) {
         const data = originalGetChannelData.apply(this, arguments);
-        // Add imperceptible noise
+        // Add deterministic imperceptible noise
         for (let i = 0; i < data.length; i += 100) {
-            data[i] = data[i] + (Math.random() - 0.5) * 0.0001;
+            data[i] = data[i] + (seededRandom() - 0.5) * 0.0001;
         }
         return data;
     };
@@ -193,9 +201,8 @@ AUDIO_EVASION = """
     const origCreateOscillator = AudioContext.prototype.createOscillator;
     AudioContext.prototype.createOscillator = function() {
         const osc = origCreateOscillator.apply(this, arguments);
-        // Small frequency offset
         const origFreq = osc.frequency.value;
-        osc.frequency.value = origFreq + (Math.random() - 0.5) * 0.001;
+        osc.frequency.value = origFreq + (seededRandom() - 0.5) * 0.001;
         return osc;
     };
 })();
@@ -235,8 +242,18 @@ NAVIGATOR_SPOOF = """
     
     // Spoof languages
     try {
+        const spoofed = window.__LANGUAGES__ || ['en-US', 'en'];
         Object.defineProperty(navigator, 'languages', {
-            get: () => ['en-US', 'en'],
+            get: () => spoofed,
+            configurable: true
+        });
+    } catch(e) {}
+
+    // Spoof platform
+    try {
+        const platform = window.__PLATFORM__ || 'Win32';
+        Object.defineProperty(navigator, 'platform', {
+            get: () => platform,
             configurable: true
         });
     } catch(e) {}
@@ -285,7 +302,7 @@ FONT_PROTECTION = """
 """
 
 
-def get_full_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0) -> str:
+def get_full_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0, audio_seed: int = 98765, languages: Optional[list] = None, platform: str = "Win32") -> str:
     """
     Return combined stealth script for browser initialization.
     
@@ -300,10 +317,14 @@ def get_full_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0) -> str
         Combined JavaScript string containing all evasion techniques.
     """
     # Inject fingerprint parameters before scripts run
+    languages_literal = languages or ["en-US", "en"]
     fingerprint_init = f"""
     // === FINGERPRINT INITIALIZATION ===
     window.__FINGERPRINT_SEED__ = {canvas_seed};
     window.__GPU_INDEX__ = {gpu_index};
+    window.__AUDIO_SEED__ = {audio_seed};
+    window.__LANGUAGES__ = {languages_literal};
+    window.__PLATFORM__ = '{platform}';
     """
     
     return "\n\n".join([
