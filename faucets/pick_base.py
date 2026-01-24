@@ -189,20 +189,41 @@ class PickFaucetBase(FaucetBot):
             logger.error(f"[{self.faucet_name}] No credentials found")
             return False
 
+        login_id = creds.get("email") or creds.get("username")
+        if not login_id:
+            logger.error(f"[{self.faucet_name}] Credentials missing email/username")
+            return False
+        login_id = self.strip_email_alias(login_id)
+
         try:
             # Fill credentials - Using researched selectors
-            email_field = self.page.locator('input[type="email"], input[name="email"], input#email')
+            email_field = self.page.locator('input[type="email"], input[name="email"], input#email, input[name="username"], input[name="login"]')
             pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
-            
-            await email_field.fill(creds['email'])
-            await pass_field.fill(creds['password'])
+
+            if await email_field.count() == 0 or await pass_field.count() == 0:
+                logger.error(f"[{self.faucet_name}] Login fields not found on page")
+                return False
+
+            await email_field.first.fill(login_id)
+            await pass_field.first.fill(creds['password'])
             
             # Check for hCaptcha or Turnstile
-            if await self.page.locator(".h-captcha, .cf-turnstile").is_visible():
+            captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
+            if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
                 logger.info(f"[{self.faucet_name}] Solving login captcha...")
-                # The CaptchaSolver in base.py handles the technical details
-                # but we may need to wait for it here if the provider is non-interactive
-                await self.random_delay(5, 10)
+                solved = False
+                for attempt in range(3):
+                    try:
+                        if await self.solver.solve_captcha(self.page):
+                            solved = True
+                            break
+                        await asyncio.sleep(2)
+                    except Exception as captcha_err:
+                        logger.warning(f"[{self.faucet_name}] Captcha attempt {attempt + 1} failed: {captcha_err}")
+                        await asyncio.sleep(3)
+                if not solved:
+                    logger.error(f"[{self.faucet_name}] Captcha solve failed on login")
+                    return False
 
             login_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Login"), button:has-text("Log in")')
             await self.human_like_click(login_btn)

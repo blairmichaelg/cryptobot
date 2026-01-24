@@ -3,7 +3,7 @@ from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
 from .stealth_hub import StealthHub
-from core.config import AccountProfile, BotSettings, CONFIG_DIR
+from core.config import CONFIG_DIR
 import logging
 import random
 import os
@@ -37,9 +37,10 @@ class BrowserManager:
         self.block_media = block_media
         self.timeout = timeout
         self.user_agents = user_agents or []
-        self.browser = None
+        self.browser: Optional[Browser] = None
         self.context = None
         self.playwright = None
+        self.camoufox: Optional[AsyncCamoufox] = None
         
         # Cookie storage - encrypted by default
         # NOTE: Requires that load_dotenv() has been called BEFORE this __init__
@@ -50,30 +51,57 @@ class BrowserManager:
         else:
             self._secure_storage = None
 
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
+        """Atomic JSON write with corruption protection and backups."""
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+            if os.path.exists(filepath):
+                backup_base = filepath + ".backup"
+                for i in range(max_backups - 1, 0, -1):
+                    old = f"{backup_base}.{i}"
+                    new = f"{backup_base}.{i+1}"
+                    if os.path.exists(old):
+                        os.replace(old, new)
+                os.replace(filepath, f"{backup_base}.1")
+
+            temp_file = filepath + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            with open(temp_file, "r", encoding="utf-8") as f:
+                json.load(f)
+            os.replace(temp_file, filepath)
+        except Exception as e:
+            logger.error("Failed to safely write %s: %s", filepath, e)
+
     async def launch(self):
         """Launches a highly stealthy Camoufox instance."""
-        logger.info(f"Launching Camoufox (Headless: {self.headless})...")
+        logger.info("Launching Camoufox (Headless: %s)...", self.headless)
         
         # Construct arguments
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
         # For headless Linux servers, we need to specify realistic screen constraints
         # because auto-detection defaults to 1024x768 which has limited fingerprints
-        from camoufox.utils import Screen
+        try:
+            from camoufox.utils import Screen
+        except Exception:
+            Screen = None
         
         kwargs = {
             "headless": self.headless,
             "geoip": True,  # Auto-detect location
             "humanize": True,  # Add human-like timing
             "block_images": self.block_images,
+        }
+        if Screen:
             # Provide realistic screen constraints for headless servers
             # Common desktop resolutions have better fingerprint coverage in browserforge
-            "screen": Screen(
+            kwargs["screen"] = Screen(
                 min_width=1280,
                 max_width=1920,
                 min_height=720,
                 max_height=1080
             )
-        }
 
         # We keep the camoufox instance wrapper
         self.camoufox = AsyncCamoufox(**kwargs)
@@ -82,7 +110,7 @@ class BrowserManager:
         self.browser = await self.camoufox.__aenter__()
         return self
 
-    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None) -> BrowserContext:
+    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None) -> BrowserContext:
         """
         Creates a new isolated browser context with specific proxy and user agent.
         Includes enhanced anti-detection measures and sticky session support.
@@ -92,8 +120,8 @@ class BrowserManager:
 
         # Sticky Session Logic: Register proxy with solver if provided
         if proxy and self._secure_storage:
-             # This allows the solver to use the same proxy as the browser
-             logger.debug(f"Creating sticky context for {profile_name} with proxy {proxy}")
+            # This allows the solver to use the same proxy as the browser
+            logger.debug("Creating sticky context for %s with proxy %s", profile_name, proxy)
 
         # Randomized screen resolutions for natural fingerprints using StealthHub
         stealth_data = StealthHub.get_random_dimensions()
@@ -107,11 +135,16 @@ class BrowserManager:
             if fingerprint:
                 locale = fingerprint.get("locale")
                 timezone_id = fingerprint.get("timezone_id")
-                logger.debug(f"🔒 Using persistent fingerprint for {profile_name}: {locale}, {timezone_id}")
+                logger.debug("🔒 Using persistent fingerprint for %s: %s, %s", profile_name, locale, timezone_id)
         
         # Generate new fingerprint if not found
         canvas_seed = None
         gpu_index = None
+        if locale_override:
+            locale = locale_override
+        if timezone_override:
+            timezone_id = timezone_override
+
         if not locale or not timezone_id:
             locale = random.choice(["en-US", "en-GB", "en-CA", "en-AU"])
             timezone_id = random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"])
@@ -119,11 +152,15 @@ class BrowserManager:
             # Save for future use (canvas_seed and gpu_index will be auto-generated)
             if profile_name:
                 await self.save_profile_fingerprint(profile_name, locale, timezone_id)
-                logger.info(f"📌 Generated and saved fingerprint for {profile_name}: {locale}, {timezone_id}")
+                logger.info("📌 Generated and saved fingerprint for %s: %s, %s", profile_name, locale, timezone_id)
         else:
             # Load canvas and WebGL params from existing fingerprint
-            canvas_seed = fingerprint.get("canvas_seed")
-            gpu_index = fingerprint.get("gpu_index")
+            fingerprint_data = fingerprint or {}
+            canvas_seed = fingerprint_data.get("canvas_seed")
+            gpu_index = fingerprint_data.get("gpu_index")
+
+        if profile_name and (locale_override or timezone_override):
+            await self.save_profile_fingerprint(profile_name, locale, timezone_id, canvas_seed=canvas_seed, gpu_index=gpu_index)
 
         context_args = {
             "user_agent": user_agent or StealthHub.get_human_ua(self.user_agents),
@@ -167,7 +204,7 @@ class BrowserManager:
             else:
                 context_args["proxy"] = {"server": proxy}
 
-        logger.info(f"Creating isolated stealth context (Profile: {profile_name or 'Anonymous'}, Proxy: {proxy or 'None'}, Resolution: {dims[0]}x{dims[1]})")
+        logger.info("Creating isolated stealth context (Profile: %s, Proxy: %s, Resolution: %sx%s)", profile_name or "Anonymous", proxy or "None", dims[0], dims[1])
         context = await self.browser.new_context(**context_args)
         
         # Set global timeout for this context
@@ -187,7 +224,7 @@ class BrowserManager:
             gpu_index = 0
         
         await context.add_init_script(StealthHub.get_stealth_script(canvas_seed=canvas_seed, gpu_index=gpu_index))
-        logger.debug(f"🎨 Injected fingerprint: canvas_seed={canvas_seed}, gpu_index={gpu_index}")
+        logger.debug("🎨 Injected fingerprint: canvas_seed=%s, gpu_index=%s", canvas_seed, gpu_index)
 
         # Apply Resource Blocker using instance settings
         blocker = ResourceBlocker(block_images=self.block_images, block_media=self.block_media)
@@ -278,9 +315,8 @@ class BrowserManager:
                         pass
             
             data[profile_name] = proxy
-            
-            with open(bindings_file, "w") as f:
-                json.dump(data, f, indent=2)
+
+            self._safe_json_write(str(bindings_file), data)
         except Exception as e:
             logger.error(f"Failed to save proxy binding for {profile_name}: {e}")
 
@@ -327,9 +363,8 @@ class BrowserManager:
                 "canvas_seed": canvas_seed,
                 "gpu_index": gpu_index
             }
-            
-            with open(fingerprint_file, "w") as f:
-                json.dump(data, f, indent=2)
+
+            self._safe_json_write(str(fingerprint_file), data)
             
             logger.debug(f"💾 Saved fingerprint for {profile_name}: canvas_seed={canvas_seed}, gpu_index={gpu_index}")
         except Exception as e:

@@ -182,6 +182,30 @@ class ProxyManager:
         
         return None
 
+    async def get_geolocation_for_proxy(self, proxy_string: Optional[str]) -> Optional[Tuple[str, str]]:
+        """
+        Resolve geolocation (timezone, locale) for a proxy string.
+        Accepts full proxy URL or user:pass@ip:port formats.
+        """
+        if not proxy_string:
+            return None
+
+        try:
+            from urllib.parse import urlparse
+            candidate = proxy_string
+            if "://" not in candidate:
+                candidate = f"http://{candidate}"
+            parsed = urlparse(candidate)
+            host = parsed.hostname
+            port = parsed.port or 0
+            if not host:
+                return None
+            proxy = Proxy(ip=host, port=port, username=parsed.username or "", password=parsed.password or "", protocol=parsed.scheme or "http")
+            return await self.get_proxy_geolocation(proxy)
+        except Exception as e:
+            logger.warning(f"Failed to resolve proxy geolocation for {proxy_string}: {e}")
+            return None
+
     def _save_health_data(self):
         """
         Persist proxy health data to disk with versioning.

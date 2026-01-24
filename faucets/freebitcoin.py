@@ -51,24 +51,10 @@ class FreeBitcoinBot(FaucetBot):
             return False
 
         try:
-            logger.info(f"[FreeBitcoin] Navigating to login page: {self.base_url}/login")
-            # Use shorter timeout and more lenient wait strategy for slow proxies
-            try:
-                await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=30000)
-            except Exception as e:
-                logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
-                await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=45000)
-            await self.random_delay(2, 4)
-            
-            # Handle Cloudflare if present
-            await self.handle_cloudflare(max_wait_seconds=30)
-            
-            # Close cookie banner if present
-            await self.close_popups()
-            
-            # Log current page state for debugging
-            logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
-            
+            login_urls = [f"{self.base_url}/login", self.base_url]
+            email_field = None
+            password_field = None
+
             # Try multiple selectors for email/username field
             email_selectors = [
                 "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
@@ -76,11 +62,46 @@ class FreeBitcoinBot(FaucetBot):
                 "input[type='email']",
                 "input[name='email']",
                 "#email",
-                "#login_form_bt_address",  # Common FreeBitcoin selector
+                "#login_form_btc_address",
+                "input#login_form_btc_address",
+                "#login_form_bt_address",  # legacy misspelling seen in older versions
                 "form input[type='text']:first-of-type",
             ]
-            
-            email_field = await self._find_selector(email_selectors, "email/username field", timeout=10000)
+
+            # Try multiple selectors for password field
+            password_selectors = [
+                "input[name='password']",
+                "input[name='login_password_input']",
+                "input[type='password']",
+                "#password",
+                "#login_form_password",
+            ]
+
+            for login_url in login_urls:
+                logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
+                # Use shorter timeout and more lenient wait strategy for slow proxies
+                try:
+                    await self.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                except Exception as e:
+                    logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
+                    await self.page.goto(login_url, wait_until="commit", timeout=45000)
+                await self.random_delay(2, 4)
+
+                # Handle Cloudflare if present
+                await self.handle_cloudflare(max_wait_seconds=30)
+
+                # Close cookie banner if present
+                await self.close_popups()
+
+                # Log current page state for debugging
+                logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
+
+                email_field = await self._find_selector(email_selectors, "email/username field", timeout=10000)
+                if email_field:
+                    password_field = await self._find_selector(password_selectors, "password field", timeout=5000)
+                    if password_field:
+                        break
+
             if not email_field:
                 logger.error("[FreeBitcoin] Could not find email/username field on login page")
                 # Take screenshot for debugging
@@ -90,17 +111,7 @@ class FreeBitcoinBot(FaucetBot):
                 except Exception:
                     pass
                 return False
-                
-            # Try multiple selectors for password field
-            password_selectors = [
-                "input[name='password']",
-                "input[name='login_password_input']",
-                "input[type='password']",
-                "#password",
-                "#login_form_password",
-            ]
-            
-            password_field = await self._find_selector(password_selectors, "password field", timeout=5000)
+
             if not password_field:
                 logger.error("[FreeBitcoin] Could not find password field on login page")
                 try:
@@ -111,9 +122,14 @@ class FreeBitcoinBot(FaucetBot):
                 return False
 
             # Fill Login with human-like typing
-            username_display = creds['username'][:10] + "***" if len(creds['username']) > 10 else creds['username'][:3] + "***"
+            login_id = creds.get("username") or creds.get("email")
+            if not login_id:
+                logger.error("[FreeBitcoin] Credentials missing username/email")
+                return False
+            login_id = self.strip_email_alias(login_id)
+            username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
             logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
-            await self.human_type(email_field, creds['username'])
+            await self.human_type(email_field, login_id)
             await self.random_delay(0.5, 1.5)
             await self.human_type(password_field, creds['password'])
             await self.idle_mouse(1.0)  # Simulate thinking time before submission

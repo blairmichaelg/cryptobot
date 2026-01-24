@@ -186,10 +186,13 @@ async def main():
                     
                 bot = bot_class(settings, None)
                 # Inject credentials
-                bot.settings_account_override = {
+                override = {
                     "username": profile.username,
                     "password": profile.password
                 }
+                if "pick" in f_type:
+                    override["email"] = profile.username
+                bot.settings_account_override = override
                 
                 # Sticky Proxy Injection
                 if profile.proxy:

@@ -214,7 +214,7 @@ class EarningsTracker:
         
         # Ensure file exists and is writable
         if not os.path.exists(ANALYTICS_FILE):
-             self._save()
+            self._save()
              
         self._load()
     
@@ -354,6 +354,92 @@ class EarningsTracker:
             "net_profit_usd": total_earnings_usd - total_costs,
             "roi": (total_earnings_usd / total_costs) if total_costs > 0 else 0
         }
+
+    def get_faucet_profitability(self, hours: int = 24) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate per-faucet profitability in USD using tracked costs.
+
+        Returns:
+            Dict mapping faucet -> {earnings_usd, costs_usd, net_profit_usd, roi}
+        """
+        import asyncio
+
+        cutoff = time.time() - (hours * 3600)
+        earnings_by_faucet_currency: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        for c in self.claims:
+            if c.get("timestamp", 0) >= cutoff and c.get("success"):
+                faucet = c.get("faucet")
+                currency = c.get("currency")
+                amount = c.get("amount", 0.0)
+                if faucet and currency:
+                    earnings_by_faucet_currency[faucet][currency] += amount
+
+        costs_by_faucet: Dict[str, float] = defaultdict(float)
+        for cost in self.costs:
+            if cost.get("timestamp", 0) >= cutoff:
+                faucet = cost.get("faucet")
+                if faucet:
+                    costs_by_faucet[faucet] += float(cost.get("amount_usd", 0.0))
+
+        currencies = set()
+        for faucet, currency_map in earnings_by_faucet_currency.items():
+            for currency in currency_map.keys():
+                currencies.add(currency)
+
+        price_feed = get_price_feed()
+
+        async def _get_prices() -> Dict[str, Optional[float]]:
+            tasks = {currency: price_feed.get_price(currency) for currency in currencies}
+            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+            prices = {}
+            for currency, result in zip(tasks.keys(), results):
+                prices[currency] = None if isinstance(result, Exception) else result
+            return prices
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                prices = executor.submit(asyncio.run, _get_prices()).result()
+        else:
+            prices = asyncio.run(_get_prices()) if currencies else {}
+
+        faucet_profitability: Dict[str, Dict[str, float]] = {}
+        for faucet, currency_map in earnings_by_faucet_currency.items():
+            earnings_usd = 0.0
+            for currency, amount in currency_map.items():
+                price = prices.get(currency)
+                if price is None:
+                    continue
+                decimals = price_feed.CURRENCY_DECIMALS.get(currency.upper(), 8)
+                coin_amount = amount / (10 ** decimals)
+                earnings_usd += coin_amount * price
+
+            costs_usd = costs_by_faucet.get(faucet, 0.0)
+            net_profit = earnings_usd - costs_usd
+            roi = (net_profit / costs_usd) if costs_usd > 0 else 0.0
+            faucet_profitability[faucet] = {
+                "earnings_usd": earnings_usd,
+                "costs_usd": costs_usd,
+                "net_profit_usd": net_profit,
+                "roi": roi
+            }
+
+        # Ensure faucets with only costs still appear
+        for faucet, costs_usd in costs_by_faucet.items():
+            if faucet not in faucet_profitability:
+                faucet_profitability[faucet] = {
+                    "earnings_usd": 0.0,
+                    "costs_usd": costs_usd,
+                    "net_profit_usd": -costs_usd,
+                    "roi": -1.0 if costs_usd > 0 else 0.0
+                }
+
+        return faucet_profitability
     
     def get_session_stats(self) -> Dict[str, Any]:
         """Get statistics for the current session."""

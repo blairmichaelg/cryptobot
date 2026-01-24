@@ -9,6 +9,7 @@ import shutil
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Callable, Any, Union, TYPE_CHECKING
 from datetime import datetime, timezone, timedelta
+from enum import Enum
 from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
 from playwright.async_api import Page, BrowserContext
 
@@ -16,6 +17,16 @@ if TYPE_CHECKING:
     from faucets.base import ClaimResult
 
 logger = logging.getLogger(__name__)
+
+class ErrorType(Enum):
+    """Classification of error types for intelligent recovery."""
+    TRANSIENT = "transient"  # Network timeout, temporary unavailable
+    RATE_LIMIT = "rate_limit"  # 429, cloudflare challenge
+    PROXY_ISSUE = "proxy_issue"  # Proxy detection, IP blocked
+    PERMANENT = "permanent"  # Auth failed, account banned
+    FAUCET_DOWN = "faucet_down"  # 500/503 server errors
+    CAPTCHA_FAILED = "captcha_failed"  # Captcha solve timeout
+    UNKNOWN = "unknown"
 
 # Constants for magic numbers (Code Quality: extracted from hardcoded values)
 MAX_PROXY_FAILURES = 3
@@ -95,14 +106,15 @@ class JobScheduler:
         self.proxy_failures: Dict[str, Dict[str, Any]] = {}  # Key: proxy URL
         self.proxy_index: Dict[str, int] = {}  # Key: profile.username
         
-        # Circuit Breaker Tracking
+        # Circuit Breaker Tracking with Error Type Awareness
         self.faucet_failures: Dict[str, int] = {} # Key: faucet_type
+        self.faucet_error_types: Dict[str, List[ErrorType]] = {} # Track recent error types per faucet
         self.faucet_cooldowns: Dict[str, float] = {} # Key: faucet_type, Value: timestamp
         self.CIRCUIT_BREAKER_THRESHOLD = 5
         self.CIRCUIT_BREAKER_COOLDOWN = 14400 # 4 hours
         self.RETRYABLE_COOLDOWN = 600  # 10 minutes for temporary failures
         
-        # Failure classification
+        # Failure classification (legacy - replaced by ErrorType enum)
         self.PERMANENT_FAILURES = ["auth_failed", "account_banned", "account_disabled", "invalid_credentials"]
         self.RETRYABLE_FAILURES = ["proxy_blocked", "proxy_detection", "cloudflare", "rate_limit", "timeout", "connection_error"]
         # Domain rate limiting - prevents hitting same faucet too fast
@@ -227,6 +239,21 @@ class JobScheduler:
         """Record that we just accessed this faucet domain."""
         self.domain_last_access[faucet_type] = time.time()
 
+    async def _get_proxy_locale_timezone(self, proxy: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+        """Resolve locale/timezone hints based on proxy geolocation."""
+        if not proxy or not self.proxy_manager:
+            return None, None
+
+        try:
+            geo = await self.proxy_manager.get_geolocation_for_proxy(proxy)
+            if not geo:
+                return None, None
+            timezone_id, locale = geo
+            return locale, timezone_id
+        except Exception as e:
+            logger.debug(f"Proxy geolocation lookup failed for {proxy}: {e}")
+            return None, None
+
     def is_off_peak_time(self) -> bool:
         """
         Check if current time is optimal for withdrawals (lower network fees).
@@ -267,18 +294,23 @@ class JobScheduler:
         from core.analytics import get_tracker
         
         try:
-            stats = get_tracker().get_faucet_stats(24)
-            hourly = get_tracker().get_hourly_rate(hours=24)
-            
+            tracker = get_tracker()
+            stats = tracker.get_faucet_stats(24)
+            hourly = tracker.get_hourly_rate(hours=24)
+            profitability = tracker.get_faucet_profitability(hours=24)
+
             if faucet_type in stats:
                 success_rate = stats[faucet_type].get('success_rate', 50) / 100
                 earnings_per_hour = hourly.get(faucet_type, 0)
-                
+
                 # Normalize earnings (assume 100 satoshi/hour is baseline)
                 earnings_factor = min(1 + (earnings_per_hour / 100), 2.0)
-                
-                # Combine factors: success rate weighted 60%, earnings 40%
-                priority = (success_rate * 0.6) + (earnings_factor * 0.4)
+
+                roi = profitability.get(faucet_type, {}).get("roi", 0.0)
+                roi_factor = max(0.3, min(1.0 + roi, 2.0))
+
+                # Combine factors: success rate, earnings, ROI
+                priority = (success_rate * 0.5) + (earnings_factor * 0.3) + (roi_factor * 0.2)
                 return max(0.1, min(priority, 2.0))
         except Exception as e:
             logger.debug(f"Priority calculation failed for {faucet_type}: {e}")
@@ -315,28 +347,15 @@ class JobScheduler:
             if success_rate < self.settings.faucet_min_success_rate:
                 return True, f"Low success rate: {success_rate:.1f}% (threshold: {self.settings.faucet_min_success_rate}%)"
             
-            # Check ROI (requires cost tracking)
-            # Calculate faucet-specific profitability
-            profitability = get_tracker().get_profitability(hours=24)
-            
-            # Get faucet earnings
-            earnings = faucet_stats.get('earnings', 0)
-            
-            # Estimate costs for this faucet (approximate based on claim count)
-            # Average captcha cost is ~$0.003, assume 1 captcha per claim
-            estimated_costs = faucet_stats['total'] * 0.003
-            
-            # Calculate ROI using simplified estimation
-            # Note: Full conversion requires async price feed which is available in get_profitability()
-            # We use a conservative fixed estimate here for the auto-suspend check
-            if estimated_costs > 0:
-                # Conservative estimate: assume low earnings (0.0001 USD per satoshi)
-                # This is intentionally pessimistic to avoid false positives
-                earnings_usd = earnings * 0.0001
-                
-                roi = (earnings_usd - estimated_costs) / estimated_costs
-                
-                if roi < self.settings.faucet_roi_threshold:
+            # Check ROI using tracked costs (require at least one success/earning)
+            success_count = faucet_stats.get("success", 0)
+            earnings = faucet_stats.get("earnings", 0.0)
+            if success_count > 0 and earnings > 0:
+                profitability = get_tracker().get_faucet_profitability(hours=24)
+                faucet_profit = profitability.get(faucet_type, {})
+                roi = faucet_profit.get("roi")
+
+                if roi is not None and roi < self.settings.faucet_roi_threshold:
                     return True, f"Negative ROI: {roi:.2f} (threshold: {self.settings.faucet_roi_threshold})"
             
             return False, ""
@@ -494,19 +513,26 @@ class JobScheduler:
             
             # Create context
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
+            locale_hint, timezone_hint = await self._get_proxy_locale_timezone(current_proxy)
             context = await self.browser_manager.create_context(
                 proxy=current_proxy,
                 user_agent=ua,
-                profile_name=profile.username
+                profile_name=profile.username,
+                locale_override=locale_hint,
+                timezone_override=timezone_hint
             )
             page = await self.browser_manager.new_page(context=context)
             
             # Instantiate bot
             bot = faucet_class(self.settings, page)
-            bot.settings_account_override = {
+            override = {
                 "username": profile.username,
                 "password": profile.password,
             }
+            if "pick" in faucet_name.lower():
+                override["email"] = profile.username
+            bot.settings_account_override = override
+            bot.set_behavior_profile(profile_name=profile.username, profile_hint=getattr(profile, "behavior_profile", None))
             if current_proxy:
                 bot.set_proxy(current_proxy)
             
@@ -666,6 +692,74 @@ class JobScheduler:
             logger.error(f"❌ PROXY BURNED (Detected by site): {proxy}. Blacklisted for 12 hours.")
         else:
             logger.warning(f"⚠️ Proxy connection failure: {proxy}. Failures: {self.proxy_failures[proxy]['failures']}")
+    
+    def _track_error_type(self, faucet_type: str, error_type: ErrorType):
+        """Track error types for circuit breaker intelligence."""
+        if faucet_type not in self.faucet_error_types:
+            self.faucet_error_types[faucet_type] = []
+        
+        # Keep last 10 errors
+        self.faucet_error_types[faucet_type].append(error_type)
+        if len(self.faucet_error_types[faucet_type]) > 10:
+            self.faucet_error_types[faucet_type].pop(0)
+    
+    def _should_trip_circuit_breaker(self, faucet_type: str, error_type: ErrorType) -> bool:
+        """Determine if circuit breaker should trip based on error type.
+        
+        Only count PERMANENT and repeated PROXY_ISSUE errors toward circuit breaker.
+        TRANSIENT errors don't trip the breaker.
+        """
+        if error_type == ErrorType.TRANSIENT:
+            return False
+        
+        if error_type == ErrorType.PERMANENT:
+            return True
+        
+        # For PROXY_ISSUE, only trip if we see it repeatedly
+        if error_type == ErrorType.PROXY_ISSUE:
+            recent_errors = self.faucet_error_types.get(faucet_type, [])
+            proxy_error_count = sum(1 for e in recent_errors if e == ErrorType.PROXY_ISSUE)
+            return proxy_error_count >= 3
+        
+        return True  # Default: count toward breaker
+    
+    def _get_recovery_delay(self, error_type: ErrorType, retry_count: int, current_proxy: Optional[str]) -> tuple[float, str]:
+        """Calculate recovery delay based on error type and retry count.
+        
+        Returns:
+            Tuple of (delay_seconds, recovery_action_description)
+        """
+        if error_type == ErrorType.TRANSIENT:
+            if retry_count == 0:
+                return 0, "Retry immediately"
+            else:
+                return 300, "Requeue +5min after transient error"
+        
+        elif error_type == ErrorType.RATE_LIMIT:
+            # Exponential backoff: 10min, 30min, 2hr
+            delays = [600, 1800, 7200]
+            delay = delays[min(retry_count, len(delays) - 1)]
+            return delay, f"Rate limit backoff: {delay/60:.0f}min"
+        
+        elif error_type == ErrorType.PROXY_ISSUE:
+            if current_proxy:
+                self.record_proxy_failure(current_proxy, detected=True)
+                return 1800, "Rotate proxy, requeue +30min"
+            else:
+                return 1800, "No proxy available, requeue +30min"
+        
+        elif error_type == ErrorType.PERMANENT:
+            # Don't requeue - will be handled by caller
+            return float('inf'), "Permanent failure - account disabled"
+        
+        elif error_type == ErrorType.FAUCET_DOWN:
+            return 14400, "Faucet down - skip 4 hours"
+        
+        elif error_type == ErrorType.CAPTCHA_FAILED:
+            return 900, "Captcha failed - requeue +15min"
+        
+        else:  # UNKNOWN
+            return 600, "Unknown error - requeue +10min"
 
     async def _run_job_wrapper(self, job: Job):
         """Wraps job execution with context management and error handling."""
@@ -681,10 +775,13 @@ class JobScheduler:
             # Create isolated context for the job
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
             # Sticky Session: Pass profile_name
+            locale_hint, timezone_hint = await self._get_proxy_locale_timezone(current_proxy)
             context = await self.browser_manager.create_context(
                 proxy=current_proxy,
                 user_agent=ua,
-                profile_name=username
+                profile_name=username,
+                locale_override=locale_hint,
+                timezone_override=timezone_hint
             )
             page = await self.browser_manager.new_page(context=context)
             
@@ -700,10 +797,14 @@ class JobScheduler:
                 raise ValueError(f"Unknown faucet type: {job.faucet_type}")
             
             bot = bot_class(self.settings, page)
-            bot.settings_account_override = {
+            override = {
                 "username": job.profile.username,
                 "password": job.profile.password,
             }
+            if "pick" in job.faucet_type.lower():
+                override["email"] = job.profile.username
+            bot.settings_account_override = override
+            bot.set_behavior_profile(profile_name=username, profile_hint=getattr(job.profile, "behavior_profile", None))
             # Ensure bot knows about proxy
             if current_proxy:
                  bot.set_proxy(current_proxy)
@@ -744,7 +845,33 @@ class JobScheduler:
                     # Reset Circuit Breaker on success
                     self.faucet_failures[job.faucet_type] = 0
                     job.retry_count = 0  # Reset retry count on success
+                    # Clear error type tracking on success
+                    if job.faucet_type in self.faucet_error_types:
+                        self.faucet_error_types[job.faucet_type] = []
                 else:
+                    # Classify the error type
+                    error_type = ErrorType.UNKNOWN
+                    if hasattr(result, 'error_type') and isinstance(result.error_type, ErrorType):
+                        error_type = result.error_type
+                    else:
+                        # Fallback classification based on status message
+                        status_lower = result.status.lower()
+                        if any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
+                            error_type = ErrorType.PERMANENT
+                        elif any(rate in status_lower for rate in ["too many requests", "slow down", "rate limit"]):
+                            error_type = ErrorType.RATE_LIMIT
+                        elif any(proxy in status_lower for proxy in ["proxy", "vpn detected", "unusual activity"]):
+                            error_type = ErrorType.PROXY_ISSUE
+                        elif "captcha" in status_lower and "failed" in status_lower:
+                            error_type = ErrorType.CAPTCHA_FAILED
+                        elif "timeout" in status_lower or "connection" in status_lower:
+                            error_type = ErrorType.TRANSIENT
+                    
+                    # Track error type for circuit breaker intelligence
+                    self._track_error_type(job.faucet_type, error_type)
+                    
+                    logger.info(f"🔍 Error classified as: {error_type.value} for {job.name}")
+                    
                     # Handle withdrawal job failures differently
                     if "withdraw" in job.job_type.lower():
                         # Withdrawal-specific retry logic with exponential backoff
@@ -777,11 +904,33 @@ class JobScheduler:
                             self.add_job(job)
                             return
                     else:
-                        # Increment failure count for non-withdrawal jobs
-                        self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
-                        if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
-                            logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times consecutively.")
-                            self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
+                        # Handle PERMANENT errors - disable account
+                        if error_type == ErrorType.PERMANENT:
+                            logger.error(f"❌ PERMANENT FAILURE: {job.name} - {result.status}")
+                            logger.error(f"🚫 Disabling account: {job.profile.username} for {job.faucet_type}")
+                            # Don't requeue permanent failures
+                            return
+                        
+                        # Get recovery delay and action
+                        delay, action = self._get_recovery_delay(error_type, job.retry_count, current_proxy)
+                        logger.info(f"📋 Recovery action: {action}")
+                        
+                        # Handle FAUCET_DOWN - skip entire faucet
+                        if error_type == ErrorType.FAUCET_DOWN:
+                            logger.warning(f"⚠️ Faucet appears down: {job.faucet_type}. Skipping for 4 hours.")
+                            self.faucet_cooldowns[job.faucet_type] = time.time() + delay
+                            job.next_run = time.time() + delay
+                            self.add_job(job)
+                            return
+                        
+                        # Check if circuit breaker should trip
+                        if self._should_trip_circuit_breaker(job.faucet_type, error_type):
+                            self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
+                            if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
+                                logger.error(f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times (error: {error_type.value})")
+                                self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
+                        else:
+                            logger.debug(f"⚡ Transient error - not counting toward circuit breaker")
                         
                 wait_time = result.next_claim_minutes * 60
                 # Add jitter for non-withdrawal jobs

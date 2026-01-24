@@ -36,5 +36,11 @@
     "timezone_id": "Asia/Tokyo",
     "canvas_seed": 269312,
     "gpu_index": 8
+  },
+  "test_user@example.com": {
+    "human_profile": "fast"
+  },
+  "different_user@example.com": {
+    "human_profile": "normal"
   }
 }

@@ -3,13 +3,17 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING, Dict, Tuple
 from playwright.async_api import Page, Locator
 from solvers.captcha import CaptchaSolver
 from core.config import BotSettings
+from browser.stealth_hub import HumanProfile
 
 from core.extractor import DataExtractor
 from core.analytics import get_tracker
+
+if TYPE_CHECKING:
+    from core.orchestrator import ErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +24,35 @@ class ClaimResult:
     next_claim_minutes: float = 0
     amount: str = "0"
     balance: str = "0"
+    error_type: Optional['ErrorType'] = None  # Add error type classification
 
 class FaucetBot:
     """Base class for Faucet Bots."""
+
+    BEHAVIOR_PROFILES: Dict[str, Dict[str, Tuple[float, float]]] = {
+        "fast": {
+            "delay_range": (1.0, 3.0),
+            "typing_ms": (40, 110),
+            "idle_seconds": (0.6, 1.6),
+            "reading_seconds": (1.0, 3.0),
+            "focus_blur_seconds": (0.4, 1.6)
+        },
+        "balanced": {
+            "delay_range": (2.0, 5.0),
+            "typing_ms": (60, 160),
+            "idle_seconds": (1.5, 3.5),
+            "reading_seconds": (2.0, 5.0),
+            "focus_blur_seconds": (0.6, 2.6)
+        },
+        "cautious": {
+            "delay_range": (3.0, 8.0),
+            "typing_ms": (80, 220),
+            "idle_seconds": (2.5, 6.0),
+            "reading_seconds": (4.0, 9.0),
+            "focus_blur_seconds": (1.0, 4.0)
+        }
+    }
+    DEFAULT_BEHAVIOR_PROFILE = "balanced"
     
     def __init__(self, settings: BotSettings, page: Page, action_lock: asyncio.Lock = None):
         """
@@ -37,15 +67,81 @@ class FaucetBot:
         self.page = page
         self.action_lock = action_lock
         # Initialize solver
-        provider = settings.captcha_provider.lower()
-        key = settings.capsolver_api_key if provider == "capsolver" else settings.twocaptcha_api_key
-        self.solver = CaptchaSolver(api_key=key, provider=provider)
+        provider = getattr(settings, "captcha_provider", "2captcha").lower()
+        key = getattr(settings, "capsolver_api_key", None) if provider == "capsolver" else getattr(settings, "twocaptcha_api_key", None)
+        self.solver = CaptchaSolver(
+            api_key=key,
+            provider=provider,
+            daily_budget=getattr(settings, "captcha_daily_budget", 5.0)
+        )
+        fallback_provider = getattr(settings, "captcha_fallback_provider", None)
+        fallback_key = getattr(settings, "captcha_fallback_api_key", None)
+        if fallback_provider and fallback_key:
+            self.solver.set_fallback_provider(fallback_provider, fallback_key)
             
         self._faucet_name = "Generic"
         self.faucet_name = "Generic"
         self.base_url = ""
         self.base_url = ""
         self.settings_account_override = None # Allow manual injection of credentials
+        self.behavior_profile_name = self.DEFAULT_BEHAVIOR_PROFILE
+        self.behavior_profile = self.BEHAVIOR_PROFILES[self.DEFAULT_BEHAVIOR_PROFILE]
+        self._behavior_rng = random.Random()
+        
+        # Human timing profile for advanced stealth
+        self.human_profile = None  # Will be loaded from fingerprint or set on first use
+
+    def set_behavior_profile(self, profile_name: Optional[str] = None, profile_hint: Optional[str] = None):
+        """
+        Set a timing profile for humanization based on profile name or explicit hint.
+        """
+        profile_key = None
+        if profile_hint and profile_hint in self.BEHAVIOR_PROFILES:
+            profile_key = profile_hint
+        elif profile_name:
+            profile_keys = list(self.BEHAVIOR_PROFILES.keys())
+            seeded_rng = random.Random(hash(profile_name))
+            profile_key = seeded_rng.choice(profile_keys)
+        else:
+            profile_key = self.DEFAULT_BEHAVIOR_PROFILE
+
+        self.behavior_profile_name = profile_key
+        self.behavior_profile = self.BEHAVIOR_PROFILES.get(profile_key, self.BEHAVIOR_PROFILES[self.DEFAULT_BEHAVIOR_PROFILE])
+        seed_basis = profile_name or profile_key or self.DEFAULT_BEHAVIOR_PROFILE
+        self._behavior_rng = random.Random(hash(seed_basis))
+
+    def _resolve_delay_range(self, min_s: Optional[float], max_s: Optional[float]) -> Tuple[float, float]:
+        if min_s is None or max_s is None:
+            min_s, max_s = self.behavior_profile.get("delay_range", (2.0, 5.0))
+        return float(min_s), float(max_s)
+
+    def _resolve_typing_range(self, delay_min: Optional[int], delay_max: Optional[int]) -> Tuple[int, int]:
+        if delay_min is None or delay_max is None:
+            delay_min, delay_max = self.behavior_profile.get("typing_ms", (60, 160))
+        return int(delay_min), int(delay_max)
+
+    def _resolve_idle_duration(self, duration: Optional[float]) -> float:
+        if duration is None:
+            min_s, max_s = self.behavior_profile.get("idle_seconds", (1.5, 3.5))
+            return self._behavior_rng.uniform(min_s, max_s)
+        return float(duration)
+
+    def _resolve_reading_duration(self, duration: Optional[float]) -> float:
+        if duration is None:
+            min_s, max_s = self.behavior_profile.get("reading_seconds", (2.0, 5.0))
+            return self._behavior_rng.uniform(min_s, max_s)
+        return float(duration)
+
+    def _resolve_focus_blur_delay(self) -> float:
+        min_s, max_s = self.behavior_profile.get("focus_blur_seconds", (0.6, 2.6))
+        return self._behavior_rng.uniform(min_s, max_s)
+
+    async def think_pause(self, reason: str = ""):
+        """Small pause to simulate user thinking before critical actions."""
+        delay = self._behavior_rng.uniform(0.2, 0.6)
+        if reason in {"pre_login", "pre_claim"}:
+            delay += self._behavior_rng.uniform(0.6, 1.4)
+        await asyncio.sleep(delay)
 
     @property
     def faucet_name(self) -> str:
@@ -62,6 +158,84 @@ class FaucetBot:
         if self.solver:
             self.solver.set_proxy(proxy_string)
 
+    def classify_error(self, exception: Optional[Exception] = None, page_content: Optional[str] = None, status_code: Optional[int] = None) -> 'ErrorType':
+        """
+        Classify error type based on exception, page content, and HTTP status.
+        
+        Args:
+            exception: The exception that was raised (if any)
+            page_content: The page HTML/text content (if available)
+            status_code: HTTP status code (if available)
+        
+        Returns:
+            ErrorType enum value for intelligent recovery
+        """
+        from core.orchestrator import ErrorType
+        
+        # Check status codes first
+        if status_code:
+            if status_code in [500, 502, 503, 504]:
+                logger.debug(f"[{self.faucet_name}] Classified as FAUCET_DOWN (status {status_code})")
+                return ErrorType.FAUCET_DOWN
+            elif status_code == 429:
+                logger.debug(f"[{self.faucet_name}] Classified as RATE_LIMIT (status 429)")
+                return ErrorType.RATE_LIMIT
+        
+        # Check exception type and message
+        if exception:
+            error_msg = str(exception).lower()
+            
+            # Captcha failures - check before timeout since captcha timeouts are specific
+            if "captcha" in error_msg and any(term in error_msg for term in ["failed", "timeout", "error"]):
+                logger.debug(f"[{self.faucet_name}] Classified as CAPTCHA_FAILED")
+                return ErrorType.CAPTCHA_FAILED
+            
+            # Timeout/connection errors
+            if any(term in error_msg for term in ["timeout", "timed out", "connection reset", "connection refused"]):
+                logger.debug(f"[{self.faucet_name}] Classified as TRANSIENT (timeout/connection)")
+                return ErrorType.TRANSIENT
+        
+        # Check page content for specific error messages
+        if page_content:
+            content_lower = page_content.lower()
+            
+            # Permanent failures - account issues
+            if any(term in content_lower for term in [
+                "banned", "suspended", "disabled", 
+                "invalid credentials", "wrong password",
+                "account locked", "account closed"
+            ]):
+                logger.debug(f"[{self.faucet_name}] Classified as PERMANENT (account issue)")
+                return ErrorType.PERMANENT
+            
+            # Rate limiting
+            if any(term in content_lower for term in [
+                "too many requests", "slow down", "rate limit",
+                "try again later", "please wait"
+            ]):
+                logger.debug(f"[{self.faucet_name}] Classified as RATE_LIMIT")
+                return ErrorType.RATE_LIMIT
+            
+            # Proxy detection
+            if any(term in content_lower for term in [
+                "proxy detected", "vpn detected", "unusual activity",
+                "suspicious activity", "automated access", "bot detected"
+            ]):
+                logger.debug(f"[{self.faucet_name}] Classified as PROXY_ISSUE")
+                return ErrorType.PROXY_ISSUE
+            
+            # Cloudflare/security challenges
+            if any(term in content_lower for term in [
+                "cloudflare", "checking your browser", "security check",
+                "ddos protection", "ray id"
+            ]):
+                logger.debug(f"[{self.faucet_name}] Classified as RATE_LIMIT (cloudflare)")
+                return ErrorType.RATE_LIMIT
+        
+        # Default to UNKNOWN if we can't classify
+        logger.debug(f"[{self.faucet_name}] Classified as UNKNOWN (no clear indicators)")
+        return ErrorType.UNKNOWN
+    
     @staticmethod
     def strip_email_alias(email: Optional[str]) -> Optional[str]:
         """
@@ -152,24 +326,110 @@ class FaucetBot:
         return None
 
 
-    async def random_delay(self, min_s=2, max_s=5):
+    async def random_delay(self, min_s: Optional[float] = None, max_s: Optional[float] = None):
         """
         Wait for a random amount of time to mimic human behavior.
+        Uses human timing profile if available, otherwise falls back to parameters.
 
         Args:
-            min_s: Minimum wait time in seconds.
-            max_s: Maximum wait time in seconds.
+            min_s: Minimum wait time in seconds (optional).
+            max_s: Maximum wait time in seconds (optional).
         """
-        await asyncio.sleep(random.uniform(min_s, max_s))
+        # Use human profile timing if available and no explicit override
+        if self.human_profile and min_s is None and max_s is None:
+            delay = HumanProfile.get_action_delay(self.human_profile, "click")
+            
+            # Check if user should idle (simulates distraction)
+            should_pause, pause_duration = HumanProfile.should_idle(self.human_profile)
+            if should_pause:
+                logger.debug(f"[{self.faucet_name}] Human profile '{self.human_profile}' idle pause: {pause_duration:.1f}s")
+                await asyncio.sleep(pause_duration)
+                return
+        else:
+            # Fallback to legacy behavior profile system
+            min_s, max_s = self._resolve_delay_range(min_s, max_s)
+            delay = self._behavior_rng.uniform(min_s, max_s)
+        
+        await asyncio.sleep(delay)
+
+    async def thinking_pause(self):
+        """
+        Realistic \"thinking\" pause before important actions.
+        Uses human profile if available.
+        """
+        if self.human_profile:
+            delay = HumanProfile.get_thinking_pause(self.human_profile)
+            logger.debug(f"[{self.faucet_name}] Thinking pause ({self.human_profile}): {delay:.2f}s")
+        else:
+            # Fallback to reasonable default
+            delay = random.uniform(1.0, 3.0)
+        
+        await asyncio.sleep(delay)
+
+    def load_human_profile(self, profile_name: str) -> str:
+        """
+        Load or assign human timing profile for this account.
+        Profile is persisted in profile_fingerprints.json for consistency.
+        
+        Args:
+            profile_name: Account/profile identifier
+            
+        Returns:
+            Selected profile type (fast/normal/cautious/distracted)
+        """
+        from pathlib import Path
+        import json
+        
+        config_dir = Path(__file__).parent.parent / "config"
+        fingerprint_file = config_dir / "profile_fingerprints.json"
+        
+        # Load existing fingerprints
+        fingerprints = {}
+        if fingerprint_file.exists():
+            try:
+                with open(fingerprint_file, 'r') as f:
+                    fingerprints = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load profile fingerprints: {e}")
+        
+        # Check if profile already has human_profile assigned
+        if profile_name in fingerprints and "human_profile" in fingerprints[profile_name]:
+            self.human_profile = fingerprints[profile_name]["human_profile"]
+            logger.info(f"[{self.faucet_name}] Loaded existing human profile '{self.human_profile}' for {profile_name}")
+        else:
+            # Assign new profile
+            self.human_profile = HumanProfile.get_random_profile()
+            
+            # Save to fingerprints
+            if profile_name not in fingerprints:
+                fingerprints[profile_name] = {}
+            fingerprints[profile_name]["human_profile"] = self.human_profile
+            
+            try:
+                config_dir.mkdir(parents=True, exist_ok=True)
+                with open(fingerprint_file, 'w') as f:
+                    json.dump(fingerprints, f, indent=2)
+                logger.info(f"[{self.faucet_name}] Assigned new human profile '{self.human_profile}' for {profile_name}")
+            except Exception as e:
+                logger.error(f"Failed to save human profile: {e}")
+        
+        return self.human_profile
 
     async def human_like_click(self, locator: Locator):
         """
         Simulate a human-like click with Bézier-curve style movement,
         randomized delays, scrolling, and offset clicks.
+        Includes profile-based pre-click pause for realism.
         """
         if await locator.is_visible():
             await locator.scroll_into_view_if_needed()
-            await asyncio.sleep(random.uniform(0.2, 0.6))
+            
+            # Profile-based pre-click pause (thinking/aiming)
+            if self.human_profile:
+                pre_click_delay = HumanProfile.get_action_delay(self.human_profile, "click") * 0.3
+                await asyncio.sleep(pre_click_delay)
+            else:
+                await asyncio.sleep(random.uniform(0.2, 0.6))
             
             # Remove blocking overlays
             await self.remove_overlays()
@@ -210,15 +470,16 @@ class FaucetBot:
             overlays.forEach(el => el.remove());
         }""")
 
-    async def human_type(self, selector: Union[str, Locator], text: str, delay_min=50, delay_max=150):
+    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None):
         """
         Type text into a field with human-like delays between keystrokes.
+        Uses human profile timing if available.
         
         Args:
             selector: CSS selector or Playwright Locator
             text: Text to type
-            delay_min: Minimum delay in ms
-            delay_max: Maximum delay in ms
+            delay_min: Minimum delay in ms (optional)
+            delay_max: Maximum delay in ms (optional)
         """
         locator = self.page.locator(selector) if isinstance(selector, str) else selector
         
@@ -227,17 +488,35 @@ class FaucetBot:
         # Clear existing text if any (optional, context dependent)
         await locator.fill("") 
         
-        for char in text:
-            await locator.press(char) # press sends keydown/keyup events
-            await asyncio.sleep(random.randint(delay_min, delay_max) / 1000)
+        # Use human profile for typing speed if available
+        if self.human_profile and delay_min is None and delay_max is None:
+            # Get per-character delay from profile
+            char_delay_s = HumanProfile.get_action_delay(self.human_profile, "type")
+            for char in text:
+                await locator.press(char)
+                await asyncio.sleep(char_delay_s)
+        else:
+            # Fallback to legacy behavior profile system
+            delay_min, delay_max = self._resolve_typing_range(delay_min, delay_max)
+            for char in text:
+                await locator.press(char) # press sends keydown/keyup events
+            await asyncio.sleep(self._behavior_rng.randint(delay_min, delay_max) / 1000)
 
-    async def idle_mouse(self, duration: float = 2.0):
+    async def idle_mouse(self, duration: Optional[float] = None):
         """
         Move mouse randomly to simulate user reading/thinking.
+        Uses human profile for timing if available.
         
         Args:
-            duration: Approximate duration in seconds
+            duration: Approximate duration in seconds (optional)
         """
+        # Use human profile scroll timing if no duration specified
+        if duration is None:
+            if self.human_profile:
+                duration = HumanProfile.get_action_delay(self.human_profile, "scroll") * 2
+            else:
+                duration = self._resolve_idle_duration(duration)
+        
         start = time.time()
         while time.time() - start < duration:
             # Get current viewport size
@@ -251,36 +530,44 @@ class FaucetBot:
             y = random.randint(0, h)
             
             # Move in short burst
-            await self.page.mouse.move(x, y, steps=random.randint(5, 20))
-            await asyncio.sleep(random.uniform(0.1, 0.5))
+            await self.page.mouse.move(x, y, steps=self._behavior_rng.randint(5, 20))
+            await asyncio.sleep(self._behavior_rng.uniform(0.1, 0.5))
 
-    async def simulate_reading(self, duration: float = 2.0):
+    async def simulate_reading(self, duration: Optional[float] = None):
         """
         Simulate a user reading content with natural scrolling behavior.
+        Uses human profile for timing if available.
         
         Combines idle mouse movement with randomized scrolling to mimic
         real user interaction patterns while consuming content.
         
         Args:
-            duration: Approximate duration in seconds to simulate reading
+            duration: Approximate duration in seconds to simulate reading (optional)
         """
+        # Use human profile read timing if no duration specified
+        if duration is None:
+            if self.human_profile:
+                duration = HumanProfile.get_action_delay(self.human_profile, "read")
+            else:
+                duration = self._resolve_reading_duration(duration)
+        
         start = time.time()
         while time.time() - start < duration:
             # Small random scrolls (mostly down, sometimes up)
-            direction = random.choice([1, 1, 1, -1])  # 75% down, 25% up
-            delta = random.randint(30, 100) * direction
+            direction = self._behavior_rng.choice([1, 1, 1, -1])  # 75% down, 25% up
+            delta = self._behavior_rng.randint(30, 100) * direction
             await self.page.mouse.wheel(0, delta)
             
             # Natural pause between scrolls
-            await asyncio.sleep(random.uniform(0.4, 1.2))
+            await asyncio.sleep(self._behavior_rng.uniform(0.4, 1.2))
             
             # Occasional small mouse movement
-            if random.random() < 0.3:
+            if self._behavior_rng.random() < 0.3:
                 vp = self.page.viewport_size
                 if vp:
-                    x = random.randint(int(vp['width'] * 0.2), int(vp['width'] * 0.8))
-                    y = random.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.7))
-                    await self.page.mouse.move(x, y, steps=random.randint(3, 8))
+                    x = self._behavior_rng.randint(int(vp['width'] * 0.2), int(vp['width'] * 0.8))
+                    y = self._behavior_rng.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.7))
+                    await self.page.mouse.move(x, y, steps=self._behavior_rng.randint(3, 8))
 
     async def random_focus_blur(self):
         """
@@ -289,18 +576,23 @@ class FaucetBot:
         Dispatches blur/focus events with realistic timing to mimic
         a user switching between tabs or windows.
         """
-        await self.page.evaluate("""() => {
+        delay = self._resolve_focus_blur_delay()
+        delay_ms = int(delay * 1000)
+        await self.page.evaluate(
+            """() => {
             // Dispatch blur event (user switched away)
             document.dispatchEvent(new Event('blur'));
             window.dispatchEvent(new FocusEvent('blur'));
-            
+
             // Schedule focus event after random delay (user came back)
-            const delay = Math.random() * 2000 + 500;  // 0.5-2.5 seconds
+            const delay = %d;  // profile-based delay
             setTimeout(() => {
                 document.dispatchEvent(new Event('focus'));
                 window.dispatchEvent(new FocusEvent('focus'));
             }, delay);
-        }""")
+        }"""
+            % delay_ms
+        )
 
     async def handle_cloudflare(self, max_wait_seconds: int = 60) -> bool:
         """
@@ -638,7 +930,19 @@ class FaucetBot:
     async def login_wrapper(self) -> bool:
         """
         Ensure we are logged in, with failure state checking.
+        Automatically loads human timing profile if not already loaded.
         """
+        # Load human profile if not already loaded
+        if self.human_profile is None:
+            # Get account credentials to derive profile name
+            creds = self.get_credentials(self.faucet_name)
+            if creds and creds.get('username'):
+                profile_name = creds['username']
+                self.load_human_profile(profile_name)
+            else:
+                # Fallback to faucet name as profile identifier
+                self.load_human_profile(self.faucet_name)
+        
         failure = await self.check_failure_states()
         if failure:
             logger.error(f"[{self.faucet_name}] Failure state detected: {failure}")
@@ -824,19 +1128,68 @@ class FaucetBot:
              
     async def claim_wrapper(self, page: Page) -> ClaimResult:
         self.page = page
-        # Ensure logged in with new wrapper
-        if not await self.login_wrapper():
-            return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
+        page_content = None
+        status_code = None
         
-        result = await self.claim()
-        # Handle cases where claim() might return a boolean (legacy)
-        if isinstance(result, bool):
-            result = ClaimResult(success=result, status="Claimed" if result else "Failed")
+        try:
+            await self.think_pause("pre_login")
+            # Ensure logged in with new wrapper
+            if not await self.login_wrapper():
+                # Try to get page content for error classification
+                try:
+                    page_content = await page.content()
+                    response = page.url
+                    # Try to infer status from page state
+                except Exception:
+                    pass
+                
+                # Classify login failure
+                error_type = self.classify_error(None, page_content, status_code)
+                return ClaimResult(
+                    success=False, 
+                    status="Login/Access Failed", 
+                    next_claim_minutes=30,
+                    error_type=error_type
+                )
             
-        # Record analytics for the claim
-        await self._record_analytics(result)
+            await self.think_pause("pre_claim")
+            result = await self.claim()
             
-        return result
+            # Handle cases where claim() might return a boolean (legacy)
+            if isinstance(result, bool):
+                result = ClaimResult(success=result, status="Claimed" if result else "Failed")
+            
+            # If claim failed, try to classify the error
+            if not result.success and not hasattr(result, 'error_type'):
+                try:
+                    page_content = await page.content()
+                except Exception:
+                    page_content = None
+                
+                result.error_type = self.classify_error(None, page_content, status_code)
+                logger.info(f"[{self.faucet_name}] Claim failed - classified as {result.error_type.value}")
+                
+            # Record analytics for the claim
+            await self._record_analytics(result)
+                
+            return result
+            
+        except Exception as e:
+            # Classify exception-based errors
+            try:
+                page_content = await page.content()
+            except Exception:
+                page_content = None
+            
+            error_type = self.classify_error(e, page_content, status_code)
+            logger.error(f"[{self.faucet_name}] Exception in claim_wrapper: {e} (classified as {error_type.value})")
+            
+            return ClaimResult(
+                success=False,
+                status=f"Exception: {str(e)[:100]}",
+                next_claim_minutes=15,
+                error_type=error_type
+            )
 
     async def ptc_wrapper(self, page: Page) -> ClaimResult:
         self.page = page

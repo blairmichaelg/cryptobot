@@ -25,7 +25,7 @@ class CaptchaSolver:
     daily budget tracking to prevent cost overruns.
     """
 
-    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD):
+    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD, fallback_provider: Optional[str] = None, fallback_api_key: Optional[str] = None):
         """
         Initialize the CaptchaSolver.
 
@@ -37,8 +37,8 @@ class CaptchaSolver:
         self.api_key = api_key
         self.provider = provider.lower().replace("twocaptcha", "2captcha")
         # Fallback support (optional secondary provider)
-        self.fallback_provider = None
-        self.fallback_api_key = None
+        self.fallback_provider = fallback_provider.lower().replace("twocaptcha", "2captcha") if fallback_provider else None
+        self.fallback_api_key = fallback_api_key
         self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
         self.session = None
         self.daily_budget = daily_budget
@@ -75,13 +75,13 @@ class CaptchaSolver:
         """Set the proxy to be used for all 2Captcha requests."""
         self.proxy_string = proxy_string
 
-        def set_fallback_provider(self, provider: str, api_key: str):
-            """Set a fallback captcha provider in case primary fails."""
-            self.fallback_provider = provider.lower().replace("twocaptcha", "2captcha")
-            self.fallback_api_key = api_key
-            logger.info(f"Fallback provider configured: {self.fallback_provider}")
-            if self.fallback_provider not in self.provider_stats:
-                self.provider_stats[self.fallback_provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+    def set_fallback_provider(self, provider: str, api_key: str):
+        """Set a fallback captcha provider in case primary fails."""
+        self.fallback_provider = provider.lower().replace("twocaptcha", "2captcha")
+        self.fallback_api_key = api_key
+        logger.info(f"Fallback provider configured: {self.fallback_provider}")
+        if self.fallback_provider not in self.provider_stats:
+            self.provider_stats[self.fallback_provider] = {"solves": 0, "failures": 0, "cost": 0.0}
 
     def _check_and_reset_daily_budget(self):
         """Reset daily budget counter if new day."""
@@ -260,9 +260,9 @@ class CaptchaSolver:
 
                 if sitekey:
                     if self.provider == "capsolver":
-                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context)
+                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context, api_key=self.api_key)
                     else:
-                        code = await self._solve_2captcha(sitekey, page.url, method, proxy_context)
+                        code = await self._solve_2captcha(sitekey, page.url, method, proxy_context, api_key=self.api_key)
 
                     
                     if code:
@@ -274,6 +274,26 @@ class CaptchaSolver:
                         logger.error(f"❌ {self.provider.title()} failed to return a solution.")
             except Exception as e:
                 logger.error(f"{self.provider.title()} Error: {e}")
+
+        # 2.5. Fallback provider path (if configured)
+        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider and method and sitekey:
+            if self._can_afford_solve(method):
+                try:
+                    logger.info(f"🔁 Trying fallback provider: {self.fallback_provider}")
+                    if self.fallback_provider == "capsolver":
+                        code = await self._solve_capsolver(sitekey, page.url, method, proxy_context, api_key=self.fallback_api_key)
+                    else:
+                        code = await self._solve_2captcha(sitekey, page.url, method, proxy_context, api_key=self.fallback_api_key)
+
+                    if code:
+                        logger.info(f"✅ {self.fallback_provider.title()} Solved! Injecting token...")
+                        await self._inject_token(page, method, code)
+                        self._record_solve(method, True)
+                        return True
+                    else:
+                        logger.error(f"❌ {self.fallback_provider.title()} failed to return a solution.")
+                except Exception as e:
+                    logger.error(f"{self.fallback_provider.title()} Error: {e}")
 
         # 3. Manual Fallback Path
         return await self._wait_for_human(page, timeout)
@@ -409,13 +429,14 @@ class CaptchaSolver:
             logger.error(f"Error solving image captcha: {e}")
             return await self._wait_for_human(page, 120)
 
-    async def _solve_2captcha(self, sitekey, url, method, proxy_context=None):
+    async def _solve_2captcha(self, sitekey, url, method, proxy_context=None, api_key: Optional[str] = None):
         session = await self._get_session()
+        api_key = api_key or self.api_key
         
         # 1. Submit
         req_url = "http://2captcha.com/in.php"
         params = {
-            "key": self.api_key,
+            "key": api_key,
             "method": method,
             "pageurl": url,
             "json": 1
@@ -462,7 +483,7 @@ class CaptchaSolver:
             await asyncio.sleep(5)
             waited += 5
             
-            poll_url = f"http://2captcha.com/res.php?key={self.api_key}&action=get&id={request_id}&json=1"
+            poll_url = f"http://2captcha.com/res.php?key={api_key}&action=get&id={request_id}&json=1"
             async with session.get(poll_url) as resp:
                 try:
                     data = await resp.json()
@@ -489,8 +510,9 @@ class CaptchaSolver:
         return None
 
 
-    async def _solve_capsolver(self, sitekey, url, method, proxy_context=None):
+    async def _solve_capsolver(self, sitekey, url, method, proxy_context=None, api_key: Optional[str] = None):
         session = await self._get_session()
+        api_key = api_key or self.api_key
         
         # Determine Task Type (ProxyLess or Proxy)
         # CapSolver uses different task names for proxy vs proxyless
@@ -523,7 +545,7 @@ class CaptchaSolver:
              # task_payload["proxyType"] = proxy_context.get("proxy_type", "http").lower()
 
         payload = {
-            "clientKey": self.api_key,
+            "clientKey": api_key,
             "task": task_payload
         }
 
@@ -546,7 +568,7 @@ class CaptchaSolver:
             await asyncio.sleep(2)
             waited += 2
             
-            async with session.post("https://api.capsolver.com/getTaskResult", json={"clientKey": self.api_key, "taskId": task_id}) as resp:
+            async with session.post("https://api.capsolver.com/getTaskResult", json={"clientKey": api_key, "taskId": task_id}) as resp:
                 try:
                     data = await resp.json()
                 except Exception:

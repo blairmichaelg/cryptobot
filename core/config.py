@@ -1,3 +1,5 @@
+import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from pydantic import Field, BaseModel
@@ -8,6 +10,8 @@ BASE_DIR = Path(__file__).parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 LOGS_DIR = BASE_DIR / "logs"
 
+logger = logging.getLogger(__name__)
+
 class AccountProfile(BaseModel):
     faucet: str
     username: str
@@ -17,6 +21,7 @@ class AccountProfile(BaseModel):
     proxy_rotation_strategy: str = "round_robin"  # Options: round_robin, random, health_based
     residential_proxy: bool = False  # Flag to indicate if proxies are residential
     enabled: bool = True
+    behavior_profile: Optional[str] = None  # Optional timing profile (fast, balanced, cautious)
 
 class BotSettings(BaseSettings):
     """
@@ -32,6 +37,9 @@ class BotSettings(BaseSettings):
     twocaptcha_api_key: Optional[str] = None
     use_2captcha_proxies: bool = True  # Set to True to enable 2Captcha proxy integration
     capsolver_api_key: Optional[str] = None
+    captcha_daily_budget: float = 5.0  # Daily spend cap for captcha solving
+    captcha_fallback_provider: Optional[str] = None  # Optional fallback provider (e.g., capsolver)
+    captcha_fallback_api_key: Optional[str] = None
     
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
@@ -146,6 +154,54 @@ class BotSettings(BaseSettings):
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
                 ]
+
+        self._load_faucet_config_defaults()
+
+    def _load_faucet_config_defaults(self) -> None:
+        """
+        Load accounts and wallet addresses from config/faucet_config.json
+        if not already provided via environment settings.
+        """
+        config_path = CONFIG_DIR / "faucet_config.json"
+        if not config_path.exists():
+            return
+
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(f"Failed to load faucet_config.json: {exc}")
+            return
+
+        if not self.accounts:
+            accounts_data = data.get("accounts", {})
+            if isinstance(accounts_data, dict):
+                for faucet, info in accounts_data.items():
+                    if not isinstance(info, dict):
+                        continue
+                    if not info.get("enabled", True):
+                        continue
+                    username = info.get("username")
+                    password = info.get("password")
+                    if not username or not password:
+                        continue
+                    proxy = info.get("proxy")
+                    try:
+                        self.accounts.append(
+                            AccountProfile(
+                                faucet=faucet,
+                                username=username,
+                                password=password,
+                                proxy=proxy,
+                                enabled=info.get("enabled", True)
+                            )
+                        )
+                    except Exception as exc:
+                        logger.debug(f"Skipping invalid account entry for {faucet}: {exc}")
+
+        if not self.wallet_addresses:
+            wallet_addresses = data.get("wallet_addresses")
+            if isinstance(wallet_addresses, dict):
+                self.wallet_addresses = wallet_addresses
 
     # Registration Defaults
     # Registration Defaults - Moved to ensure single definition
