@@ -1,6 +1,8 @@
 [Unit]
 Description=Faucet Worker Automation Service
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -8,10 +10,29 @@ User=azureuser
 WorkingDirectory=%h/Repositories/cryptobot
 EnvironmentFile=%h/Repositories/cryptobot/.env
 ExecStart=%h/Repositories/cryptobot/.venv/bin/python main.py
+
+# Restart configuration with exponential backoff
 Restart=always
 RestartSec=10
+# Exponential backoff: starts at 10s, increases on repeated failures
+StartLimitAction=restart
+
+# Watchdog configuration - service must notify systemd periodically
+WatchdogSec=300
+# If service doesn't send watchdog ping in 5 minutes, restart it
+
+# Resource limits to prevent runaway processes
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
 StandardOutput=append:%h/Repositories/cryptobot/logs/production_run.log
 StandardError=append:%h/Repositories/cryptobot/logs/production_run.log
+SyslogIdentifier=faucet_worker
+
+# Health check notification
+# The service should send sd_notify() WATCHDOG=1 to reset the timer
+# If not sent before WatchdogSec expires, systemd restarts the service
 
 [Install]
 WantedBy=multi-user.target
