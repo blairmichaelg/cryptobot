@@ -375,7 +375,8 @@ class CaptchaSolver:
         # 2) Fallback to DOM selectors
         if not method:
             turnstile_elem = await page.query_selector(
-                ".cf-turnstile, iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [id*='cf-turnstile']"
+                ".cf-turnstile, .cf-turnstile[data-sitekey], [data-sitekey][class*='turnstile'], "
+                "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [id*='cf-turnstile']"
             )
             if turnstile_elem:
                 method = "turnstile"
@@ -461,7 +462,9 @@ class CaptchaSolver:
             
             if not sitekey:
                 # Check if any captcha frames exist at all as a last resort
-                has_frames = await page.query_selector("iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile']")
+                has_frames = await page.query_selector(
+                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey]"
+                )
                 if not has_frames:
                     return True
                 if self.headless:
