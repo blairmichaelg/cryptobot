@@ -74,6 +74,11 @@ class HealthCheckResult:
 class HealthMonitor:
     """Health monitoring system for Cryptobot"""
     
+    # Restart backoff configuration
+    INITIAL_BACKOFF_SECONDS = 10
+    BACKOFF_MULTIPLIER = 2
+    MAX_BACKOFF_SECONDS = 300
+    
     def __init__(self, log_file: Optional[str] = None, enable_azure: bool = True):
         """
         Initialize health monitor
@@ -109,7 +114,7 @@ class HealthMonitor:
         # Load restart backoff state
         self.restart_count = 0
         self.last_restart_time = None
-        self.backoff_seconds = 10
+        self.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
         self._load_restart_state()
     
     def _load_restart_state(self):
@@ -551,8 +556,11 @@ Alerts:
             self.restart_count += 1
             self.last_restart_time = now
             
-            # Exponential backoff: 10s, 20s, 40s, 80s, 160s, max 300s
-            self.backoff_seconds = min(self.backoff_seconds * 2, 300)
+            # Exponential backoff: configurable multiplier, max delay
+            self.backoff_seconds = min(
+                self.backoff_seconds * self.BACKOFF_MULTIPLIER, 
+                self.MAX_BACKOFF_SECONDS
+            )
             self._save_restart_state()
             
             return True
@@ -564,7 +572,7 @@ Alerts:
         """Reset the restart backoff counter"""
         self.restart_count = 0
         self.last_restart_time = None
-        self.backoff_seconds = 10
+        self.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
         self._save_restart_state()
         logger.info("Reset restart backoff counter")
     
