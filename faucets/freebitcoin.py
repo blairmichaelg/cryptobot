@@ -29,8 +29,9 @@ class FreeBitcoinBot(FaucetBot):
         for selector in selectors:
             try:
                 locator = self.page.locator(selector).first
-                # Check if element exists with short timeout
-                if await locator.count() > 0 and await locator.is_visible(timeout=timeout):
+                # Check if element exists and is visible
+                count = await locator.count()
+                if count > 0 and await locator.is_visible(timeout=timeout):
                     logger.debug(f"[FreeBitcoin] Found {element_name} with selector: {selector}")
                     return locator
             except Exception:
