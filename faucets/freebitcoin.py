@@ -344,6 +344,19 @@ class FreeBitcoinBot(FaucetBot):
             
             # Small delay to let page settle
             await self.random_delay(2, 3)
+
+            # Re-check CAPTCHA after submit (some pages render challenge only after submit)
+            try:
+                try:
+                    await self.page.wait_for_selector(
+                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile']",
+                        timeout=8000
+                    )
+                except Exception:
+                    pass
+                await self.solver.solve_captcha(self.page)
+            except Exception as captcha_err:
+                logger.debug(f"[FreeBitcoin] Post-submit CAPTCHA solve skipped/failed: {captcha_err}")
             
             # Check if logged in
             if await self.is_logged_in():
