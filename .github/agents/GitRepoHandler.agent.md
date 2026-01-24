@@ -1,23 +1,7 @@
 ---
 description: 'Expert Git and GitHub workflow manager for cryptobot repository - handles all version control, commits, PRs, issues, branch cleanup, and keeps work on master only.'
 tools: 
-  - mcp_gitkraken_git_add_or_commit
-  - mcp_gitkraken_git_push
-  - mcp_gitkraken_git_checkout
-  - mcp_gitkraken_git_status
-  - mcp_gitkraken_git_log
-  - mcp_gitkraken_git_diff
-  - mcp_gitkraken_pull_request_assigned_to_me
-  - mcp_gitkraken_issues_assigned_to_me
-  - mcp_gitkraken_issues_add_comment
-  - github-pull-request_openPullRequest
-  - github-pull-request_doSearch
-  - github-pull-request_suggest-fix
-  - github-pull-request_renderIssues
-  - get_changed_files
-  - grep_search
-  - file_search
-  - read_file
+  ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'gitkraken/*', 'azure-mcp/*', 'agent', 'github.vscode-pull-request-github/copilotCodingAgent', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/suggest-fix', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'github.vscode-pull-request-github/renderIssues', 'github.vscode-pull-request-github/activePullRequest', 'github.vscode-pull-request-github/openPullRequest', 'ms-azuretools.vscode-azure-github-copilot/azure_recommend_custom_modes', 'ms-azuretools.vscode-azure-github-copilot/azure_query_azure_resource_graph', 'ms-azuretools.vscode-azure-github-copilot/azure_get_auth_context', 'ms-azuretools.vscode-azure-github-copilot/azure_set_auth_context', 'ms-azuretools.vscode-azure-github-copilot/azure_get_dotnet_template_tags', 'ms-azuretools.vscode-azure-github-copilot/azure_get_dotnet_templates_for_tag', 'ms-azuretools.vscode-azureresourcegroups/azureActivityLog', 'ms-python.python/getPythonEnvironmentInfo', 'ms-python.python/getPythonExecutableCommand', 'ms-python.python/installPythonPackage', 'ms-python.python/configurePythonEnvironment', 'todo']
 ---
 
 # GitRepoHandler Agent
