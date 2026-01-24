@@ -288,6 +288,13 @@ class FreeBitcoinBot(FaucetBot):
             # Check for CAPTCHA on login page
             logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
             try:
+                try:
+                    await self.page.wait_for_selector(
+                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile']",
+                        timeout=8000
+                    )
+                except Exception:
+                    pass
                 await self.solver.solve_captcha(self.page)
                 logger.debug("[FreeBitcoin] Login CAPTCHA solved")
             except Exception as captcha_err:
@@ -356,16 +363,33 @@ class FreeBitcoinBot(FaucetBot):
                 ".alert",
                 "[class*='error']",
             ]
-            
+            captcha_error = False
             for selector in error_selectors:
                 try:
                     error_elem = await self._find_selector_any_frame([selector], "error message", timeout=2000)
                     if error_elem:
                         error_text = await error_elem.text_content()
                         logger.error(f"[FreeBitcoin] Login error message: {error_text}")
+                        if error_text and "captcha" in error_text.lower():
+                            captcha_error = True
                         break
                 except Exception:
                     continue
+
+            if captcha_error:
+                try:
+                    logger.info("[FreeBitcoin] Captcha error detected. Attempting re-solve and re-submit...")
+                    await self.solver.solve_captcha(self.page)
+                    await self.random_delay(1.0, 2.0)
+                    submit_btn_retry = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
+                    if submit_btn_retry:
+                        await self.human_like_click(submit_btn_retry)
+                        await self.random_delay(2.0, 3.0)
+                        if await self.is_logged_in():
+                            logger.info("✅ [FreeBitcoin] Login successful after captcha retry")
+                            return True
+                except Exception as retry_err:
+                    logger.warning(f"[FreeBitcoin] Captcha retry failed: {retry_err}")
             
             # Take screenshot for debugging
             try:
