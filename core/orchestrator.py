@@ -934,14 +934,13 @@ class JobScheduler:
         healthy_proxies = 0
         if self.proxy_manager:
             try:
-                now = time.time()
                 healthy_proxies = len([
                     p for p in self.proxy_manager.proxies
-                    if self.proxy_manager._proxy_key(p) not in self.proxy_manager.dead_proxies
-                    and self.proxy_manager.proxy_cooldowns.get(self.proxy_manager._proxy_key(p), 0) <= now
+                    if not self.proxy_manager.get_proxy_stats(p).get("is_dead")
                 ])
             except Exception:
                 healthy_proxies = len(self.proxy_manager.proxies)
+
             if healthy_proxies < self.settings.low_proxy_threshold:
                 return OperationMode.LOW_PROXY
         
@@ -997,7 +996,7 @@ class JobScheduler:
             self.settings.max_concurrent_bots = min(2, old_concurrent)
             logger.warning(
                 f"⚠️ LOW_PROXY mode: Reduced concurrency to {self.settings.max_concurrent_bots} "
-                f"(healthy proxies: {len([p for p in self.proxy_manager.proxies if p.healthy]) if self.proxy_manager else 0})"
+                f"(healthy proxies: {len(self.proxy_manager.proxies) if self.proxy_manager else 0})"
             )
         
         elif mode == OperationMode.LOW_BUDGET:

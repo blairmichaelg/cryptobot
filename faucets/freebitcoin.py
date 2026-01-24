@@ -119,7 +119,6 @@ class FreeBitcoinBot(FaucetBot):
                 f"{self.base_url}/login",
                 f"{self.base_url}/login.php",
                 self.base_url,
-                f"{self.base_url}/?op=home",
             ]
             email_field = None
             password_field = None
@@ -395,7 +394,7 @@ class FreeBitcoinBot(FaucetBot):
         for attempt in range(max_retries):
             try:
                 logger.info(f"[DEBUG] Attempt {attempt + 1}/{max_retries}: Navigating to {self.base_url}/")
-            response = await self.page.goto(f"{self.base_url}/", wait_until="domcontentloaded", timeout=nav_timeout)
+                response = await self.page.goto(f"{self.base_url}/", wait_until="domcontentloaded", timeout=nav_timeout)
                 if response is not None:
                     try:
                         status = response.status
@@ -417,7 +416,7 @@ class FreeBitcoinBot(FaucetBot):
                 # Extract Balance with fallback selectors
                 logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
-                    "#balance", 
+                    "#balance",
                     fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
                 )
                 logger.info(f"[DEBUG] Balance: {balance}")
@@ -458,12 +457,12 @@ class FreeBitcoinBot(FaucetBot):
                             balance=balance
                         )
                     logger.info("[DEBUG] Roll button found. Initiating Captcha Solve...")
-                    
+
                     # Handle Cloudflare & Captcha
                     logger.debug("[DEBUG] Checking for CloudFlare protection...")
                     cf_result = await self.handle_cloudflare()
                     logger.debug(f"[DEBUG] CloudFlare check result: {cf_result}")
-                    
+
                     # Solve CAPTCHA with error handling
                     logger.debug("[DEBUG] Solving CAPTCHA for claim...")
                     try:
@@ -472,51 +471,53 @@ class FreeBitcoinBot(FaucetBot):
                     except Exception as captcha_err:
                         logger.error(f"[DEBUG] CAPTCHA solve failed: {captcha_err}")
                         return ClaimResult(
-                            success=False, 
-                            status="CAPTCHA Failed", 
-                            next_claim_minutes=15, 
+                            success=False,
+                            status="CAPTCHA Failed",
+                            next_claim_minutes=15,
                             balance=balance
                         )
-                    
+
                     # Double check visibility after potential captcha delay
                     if await roll_btn.is_visible():
                         await self.human_like_click(roll_btn)
                         await self.idle_mouse(1.0)  # Read result naturally
                         await asyncio.sleep(5)
                         await self.close_popups()
-                        
+
                         # Check result with fallback selectors
                         result = self.page.locator(
                             "#winnings, .winning-amount, .result-amount, .btc-won, span:has-text('BTC')"
                         ).first
-                        
+
                         if await result.is_visible():
                             won = await result.text_content()
                             # Use DataExtractor for consistent parsing
                             clean_amount = DataExtractor.extract_balance(won)
                             logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
                             return ClaimResult(
-                                success=True, 
-                                status="Claimed", 
-                                next_claim_minutes=60, 
-                                amount=clean_amount, 
+                                success=True,
+                                status="Claimed",
+                                next_claim_minutes=60,
+                                amount=clean_amount,
                                 balance=balance
                             )
                     else:
-                        logger.warning(f"[DEBUG] Roll button disappeared after captcha solve. "
-                                     f"Page URL: {self.page.url}, Roll button count: {await self.page.locator('#free_play_form_button').count()}")
+                        logger.warning(
+                            f"[DEBUG] Roll button disappeared after captcha solve. "
+                            f"Page URL: {self.page.url}, Roll button count: {await self.page.locator('#free_play_form_button').count()}"
+                        )
                         return ClaimResult(
-                            success=False, 
-                            status="Roll Button Vanished", 
-                            next_claim_minutes=15, 
+                            success=False,
+                            status="Roll Button Vanished",
+                            next_claim_minutes=15,
                             balance=balance
                         )
                 else:
                     logger.warning("Roll button not found (possibly hidden or blocked)")
                     return ClaimResult(
-                        success=False, 
-                        status="Roll Button Not Found", 
-                        next_claim_minutes=15, 
+                        success=False,
+                        status="Roll Button Not Found",
+                        next_claim_minutes=15,
                         balance=balance
                     )
 
@@ -528,11 +529,11 @@ class FreeBitcoinBot(FaucetBot):
                     await asyncio.sleep(backoff_time)
                     continue
                 return ClaimResult(
-                    success=False, 
-                    status=f"Timeout after {max_retries} attempts", 
+                    success=False,
+                    status=f"Timeout after {max_retries} attempts",
                     next_claim_minutes=30
                 )
-                
+
             except Exception as e:
                 logger.error(f"FreeBitcoin claim failed attempt {attempt + 1}/{max_retries}: {e}")
                 if attempt < max_retries - 1:
@@ -541,8 +542,8 @@ class FreeBitcoinBot(FaucetBot):
                     await asyncio.sleep(backoff_time)
                     continue
                 return ClaimResult(
-                    success=False, 
-                    status=f"Error: {e}", 
+                    success=False,
+                    status=f"Error: {e}",
                     next_claim_minutes=30
                 )
             
