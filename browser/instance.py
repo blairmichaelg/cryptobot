@@ -1,4 +1,5 @@
 from playwright.async_api import BrowserContext, Page
+from browserforge.fingerprints import Screen
 from camoufox.async_api import AsyncCamoufox
 from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
@@ -90,6 +91,11 @@ class BrowserManager:
             "humanize": True,  # Add human-like timing
             "block_images": self.block_images,
         }
+
+        # Avoid browserforge header generation failures with low-resolution
+        # headless defaults (e.g., 1024x768) by constraining to a common size.
+        if self.headless:
+            kwargs["screen"] = Screen(max_width=1920, max_height=1080)
 
         # We keep the camoufox instance wrapper
         self.camoufox = AsyncCamoufox(**kwargs)

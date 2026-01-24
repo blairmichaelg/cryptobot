@@ -7,15 +7,15 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=azureuser
-WorkingDirectory=%h/Repositories/cryptobot
-EnvironmentFile=%h/Repositories/cryptobot/.env
-ExecStart=%h/Repositories/cryptobot/.venv/bin/python main.py
+WorkingDirectory=/home/azureuser/Repositories/cryptobot
+EnvironmentFile=/home/azureuser/Repositories/cryptobot/.env
+Environment=HEADLESS=true
+ExecStart=/home/azureuser/Repositories/cryptobot/.venv/bin/python main.py
 
 # Restart configuration with exponential backoff
 Restart=always
 RestartSec=10
 # Exponential backoff: starts at 10s, increases on repeated failures
-StartLimitAction=restart
 
 # Watchdog configuration - service must notify systemd periodically
 WatchdogSec=300
@@ -26,8 +26,8 @@ MemoryMax=4G
 CPUQuota=200%
 
 # Logging
-StandardOutput=append:%h/Repositories/cryptobot/logs/production_run.log
-StandardError=append:%h/Repositories/cryptobot/logs/production_run.log
+StandardOutput=append:/home/azureuser/Repositories/cryptobot/logs/production_run.log
+StandardError=append:/home/azureuser/Repositories/cryptobot/logs/production_run.log
 SyslogIdentifier=faucet_worker
 
 # Health check notification

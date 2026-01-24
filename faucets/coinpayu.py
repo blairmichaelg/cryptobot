@@ -138,7 +138,12 @@ class CoinPayUBot(FaucetBot):
         for attempt in range(max_retries):
             try:
                 logger.info(f"[{self.faucet_name}] Navigating to login... (Attempt {attempt + 1}/{max_retries})")
-                await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=30000)
+                timeout_ms = getattr(self.settings, "timeout", 60000)
+                await self.page.goto(
+                    f"{self.base_url}/login",
+                    wait_until="domcontentloaded",
+                    timeout=timeout_ms,
+                )
                 
                 # Handle Cloudflare challenge if present
                 await self.handle_cloudflare(max_wait_seconds=30)
