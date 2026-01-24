@@ -490,43 +490,48 @@ class FreeBitcoinBot(FaucetBot):
             # Check for CAPTCHA on login page
             logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
             try:
+                captcha_present = False
                 try:
-                    await self.page.wait_for_selector(
-                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile']",
-                        timeout=8000
-                    )
+                    captcha_present = await self.page.query_selector(
+                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], "
+                        "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], #int_page_captchas img, #int_page_captchas input"
+                    ) is not None
                 except Exception:
-                    pass
-                solved = await self.solver.solve_captcha(self.page)
-                if solved is False:
-                    logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
-                    return False
-                if not await self._wait_for_captcha_token():
-                    logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
-                # Handle text/image captcha input if present
-                captcha_input = await self._find_selector_any_frame(
-                    [
-                        "input[name='captcha']",
-                        "input[name='captcha_code']",
-                        "#captcha",
-                        "#captcha_code",
-                        "input[id*='captcha']",
-                        "input[name*='captcha']",
-                    ],
-                    "captcha input",
-                    timeout=2000
-                )
-                if captcha_input:
-                    captcha_text = await self.solver.solve_text_captcha(
-                        self.page,
-                        "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
+                    captcha_present = False
+
+                if captcha_present:
+                    solved = await self.solver.solve_captcha(self.page)
+                    if solved is False:
+                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
+                        return False
+                    if not await self._wait_for_captcha_token():
+                        logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
+                    # Handle text/image captcha input if present
+                    captcha_input = await self._find_selector_any_frame(
+                        [
+                            "input[name='captcha']",
+                            "input[name='captcha_code']",
+                            "#captcha",
+                            "#captcha_code",
+                            "input[id*='captcha']",
+                            "input[name*='captcha']",
+                        ],
+                        "captcha input",
+                        timeout=2000
                     )
-                    if captcha_text:
-                        await captcha_input.fill(captcha_text)
+                    if captcha_input:
+                        captcha_text = await self.solver.solve_text_captcha(
+                            self.page,
+                            "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
+                        )
+                        if captcha_text:
+                            await captcha_input.fill(captcha_text)
+                    else:
+                        await self._log_login_diagnostics("captcha_input_not_found")
+                    await self.random_delay(1.5, 2.5)
+                    logger.debug("[FreeBitcoin] Login CAPTCHA solved")
                 else:
-                    await self._log_login_diagnostics("captcha_input_not_found")
-                await self.random_delay(1.5, 2.5)
-                logger.debug("[FreeBitcoin] Login CAPTCHA solved")
+                    logger.debug("[FreeBitcoin] No CAPTCHA detected on login page")
             except Exception as captcha_err:
                 logger.debug(f"[FreeBitcoin] No CAPTCHA required or solve failed: {captcha_err}")
                 # Continue anyway, CAPTCHA might not be required
@@ -544,6 +549,17 @@ class FreeBitcoinBot(FaucetBot):
             ]
             
             submit_btn = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
+            login_response_task = None
+            try:
+                login_response_task = asyncio.create_task(
+                    self.page.wait_for_response(
+                        lambda response: "op=login" in response.url or "login" in response.url,
+                        timeout=15000
+                    )
+                )
+            except Exception:
+                login_response_task = None
+
             if submit_btn:
                 logger.debug("[FreeBitcoin] Clicking submit button...")
                 await self.human_like_click(submit_btn)
@@ -562,6 +578,13 @@ class FreeBitcoinBot(FaucetBot):
                         except Exception:
                             pass
                         return False
+
+            if login_response_task:
+                try:
+                    response = await login_response_task
+                    logger.info("[FreeBitcoin] Login response: %s %s", response.status, response.url)
+                except Exception:
+                    logger.debug("[FreeBitcoin] Login response not detected within timeout")
             
             # Wait for navigation or login success
             logger.debug("[FreeBitcoin] Waiting for login to complete...")
