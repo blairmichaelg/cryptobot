@@ -29,9 +29,8 @@ class FreeBitcoinBot(FaucetBot):
         for selector in selectors:
             try:
                 locator = self.page.locator(selector).first
-                # Check if element exists and is visible
-                count = await locator.count()
-                if count > 0 and await locator.is_visible(timeout=timeout):
+                # is_visible() already checks existence internally
+                if await locator.is_visible(timeout=timeout):
                     logger.debug(f"[FreeBitcoin] Found {element_name} with selector: {selector}")
                     return locator
             except Exception:
@@ -63,8 +62,7 @@ class FreeBitcoinBot(FaucetBot):
             await self.close_popups()
             
             # Log current page state for debugging
-            current_url = self.page.url
-            logger.debug(f"[FreeBitcoin] Current URL: {current_url}")
+            logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
             
             # Try multiple selectors for email/username field
             email_selectors = [
@@ -108,7 +106,8 @@ class FreeBitcoinBot(FaucetBot):
                 return False
 
             # Fill Login with human-like typing
-            logger.info(f"[FreeBitcoin] Filling login credentials for user: {creds['username'][:10]}***")
+            username_display = creds['username'][:10] + "***" if len(creds['username']) > 10 else creds['username'][:3] + "***"
+            logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
             await self.human_type(email_field, creds['username'])
             await self.random_delay(0.5, 1.5)
             await self.human_type(password_field, creds['password'])

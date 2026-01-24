@@ -117,9 +117,8 @@ async def test_freebitcoin_login_no_credentials(mock_settings, mock_page, mock_s
     assert result is False
 
 
-@pytest.mark.asyncio
-async def test_freebitcoin_login_success(mock_settings, mock_page, mock_solver):
-    """Test successful login"""
+def create_login_form_mocks():
+    """Helper to create mock locators for login form elements"""
     # Mock email field
     email_locator = MagicMock()
     email_locator.count = AsyncMock(return_value=1)
@@ -169,7 +168,13 @@ async def test_freebitcoin_login_success(mock_settings, mock_page, mock_solver):
             return login_btn
         return MagicMock()
     
-    mock_page.locator.side_effect = locator_side_effect
+    return locator_side_effect
+
+
+@pytest.mark.asyncio
+async def test_freebitcoin_login_success(mock_settings, mock_page, mock_solver):
+    """Test successful login"""
+    mock_page.locator.side_effect = create_login_form_mocks()
     
     bot = FreeBitcoinBot(mock_settings, mock_page)
     bot.random_delay = AsyncMock()
@@ -189,56 +194,7 @@ async def test_freebitcoin_login_success(mock_settings, mock_page, mock_solver):
 @pytest.mark.asyncio
 async def test_freebitcoin_login_timeout_handled(mock_settings, mock_page, mock_solver):
     """Test login handles timeout gracefully"""
-    # Mock email field
-    email_locator = MagicMock()
-    email_locator.count = AsyncMock(return_value=1)
-    email_locator.is_visible = AsyncMock(return_value=True)
-    email_locator.first = email_locator
-    
-    # Mock password field
-    password_locator = MagicMock()
-    password_locator.count = AsyncMock(return_value=1)
-    password_locator.is_visible = AsyncMock(return_value=True)
-    password_locator.first = password_locator
-    
-    # Mock balance visibility for login check
-    balance_locator = MagicMock()
-    balance_locator.is_visible = AsyncMock(return_value=True)
-    
-    # Mock 2FA not visible
-    twofa_locator = MagicMock()
-    twofa_locator.count = AsyncMock(return_value=0)
-    twofa_locator.is_visible = AsyncMock(return_value=False)
-    twofa_locator.first = twofa_locator
-    
-    # Mock login button
-    login_btn = MagicMock()
-    login_btn.count = AsyncMock(return_value=1)
-    login_btn.is_visible = AsyncMock(return_value=True)
-    login_btn.is_disabled = AsyncMock(return_value=False)
-    login_btn.scroll_into_view_if_needed = AsyncMock()
-    login_btn.bounding_box = AsyncMock(return_value={'x': 0, 'y': 0, 'width': 100, 'height': 50})
-    login_btn.first = login_btn
-    
-    def locator_side_effect(selector):
-        # Email field selectors
-        if "btc_address" in selector or "login_email_input" in selector or "email" in selector:
-            return email_locator
-        # Password field selectors
-        elif "password" in selector:
-            return password_locator
-        # Balance check
-        elif "balance" in selector:
-            return balance_locator
-        # 2FA field
-        elif "2fa" in selector or "twofa" in selector:
-            return twofa_locator
-        # Submit button
-        elif "login_button" in selector or "submit" in selector or "Login" in selector:
-            return login_btn
-        return MagicMock()
-    
-    mock_page.locator.side_effect = locator_side_effect
+    mock_page.locator.side_effect = create_login_form_mocks()
     mock_page.wait_for_url.side_effect = asyncio.TimeoutError("Timeout")
     
     bot = FreeBitcoinBot(mock_settings, mock_page)
