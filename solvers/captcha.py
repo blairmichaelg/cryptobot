@@ -357,6 +357,16 @@ class CaptchaSolver:
         # 1. Detection & Extraction
         sitekey = None
         method = None
+
+        # Small wait for captcha widgets to render (non-blocking if absent)
+        try:
+            await page.wait_for_selector(
+                "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [data-sitekey], "
+                "iframe[src*='hcaptcha'], iframe[src*='recaptcha']",
+                timeout=6000
+            )
+        except Exception:
+            pass
         
         # Turnstile
         # 1) Check iframes by URL first (more reliable for Cloudflare Turnstile)
