@@ -677,6 +677,72 @@ class CaptchaSolver:
             logger.error(f"Error solving image captcha: {e}")
             return await self._wait_for_human(page, 120)
 
+    async def solve_text_captcha(self, page, image_selector: str, timeout: int = 120) -> Optional[str]:
+        """Solve a text-based captcha from an image element using 2Captcha.
+
+        Returns the captcha text if solved, otherwise None.
+        """
+        if not self.api_key:
+            logger.warning("⚠️ No API key for text captcha. Falling back to manual.")
+            await self._wait_for_human(page, timeout)
+            return None
+
+        try:
+            captcha_element = await page.query_selector(image_selector)
+            if not captcha_element:
+                logger.warning("Could not find captcha image element for text solve")
+                return None
+
+            box = await captcha_element.bounding_box()
+            if not box:
+                logger.warning("Could not get captcha bounding box")
+                return None
+
+            import base64
+            screenshot_bytes = await captcha_element.screenshot()
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+            session = await self._get_session()
+            submit_url = "http://2captcha.com/in.php"
+            params = {
+                "key": self.api_key,
+                "method": "base64",
+                "body": screenshot_b64,
+                "json": 1
+            }
+
+            async with session.post(submit_url, data=params) as resp:
+                data = await resp.json()
+                if data.get("status") != 1:
+                    logger.error(f"2Captcha Text Submit Error: {data}")
+                    return None
+                request_id = data["request"]
+
+            waited = 0
+            while waited < timeout:
+                await asyncio.sleep(5)
+                waited += 5
+                poll_url = f"http://2captcha.com/res.php?key={self.api_key}&action=get&id={request_id}&json=1"
+                async with session.get(poll_url) as resp:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        continue
+                if data.get("status") == 1:
+                    text = data.get("request")
+                    if text:
+                        logger.info("✅ Text captcha solved")
+                        return text.strip()
+                if data.get("request") != "CAPCHA_NOT_READY":
+                    logger.error(f"2Captcha Text Poll Error: {data}")
+                    return None
+
+        except Exception as e:
+            logger.error(f"Error solving text captcha: {e}")
+            return None
+
+        return None
+
     async def _solve_2captcha(self, sitekey, url, method, proxy_context=None, api_key: Optional[str] = None):
         session = await self._get_session()
         api_key = api_key or self.api_key

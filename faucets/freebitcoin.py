@@ -325,6 +325,26 @@ class FreeBitcoinBot(FaucetBot):
                     return False
                 if not await self._wait_for_captcha_token():
                     logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
+                # Handle text/image captcha input if present
+                captcha_input = await self._find_selector_any_frame(
+                    [
+                        "input[name='captcha']",
+                        "input[name='captcha_code']",
+                        "#captcha",
+                        "#captcha_code",
+                        "input[id*='captcha']",
+                        "input[name*='captcha']",
+                    ],
+                    "captcha input",
+                    timeout=2000
+                )
+                if captcha_input:
+                    captcha_text = await self.solver.solve_text_captcha(
+                        self.page,
+                        "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
+                    )
+                    if captcha_text:
+                        await captcha_input.fill(captcha_text)
                 await self.random_delay(1.5, 2.5)
                 logger.debug("[FreeBitcoin] Login CAPTCHA solved")
             except Exception as captcha_err:
@@ -428,6 +448,25 @@ class FreeBitcoinBot(FaucetBot):
                         return False
                     if not await self._wait_for_captcha_token():
                         logger.warning("[FreeBitcoin] CAPTCHA token not detected after retry solve")
+                    captcha_input = await self._find_selector_any_frame(
+                        [
+                            "input[name='captcha']",
+                            "input[name='captcha_code']",
+                            "#captcha",
+                            "#captcha_code",
+                            "input[id*='captcha']",
+                            "input[name*='captcha']",
+                        ],
+                        "captcha input",
+                        timeout=2000
+                    )
+                    if captcha_input:
+                        captcha_text = await self.solver.solve_text_captcha(
+                            self.page,
+                            "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
+                        )
+                        if captcha_text:
+                            await captcha_input.fill(captcha_text)
                     await self.random_delay(1.0, 2.0)
                     submit_btn_retry = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
                     if submit_btn_retry:
