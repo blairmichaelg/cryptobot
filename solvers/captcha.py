@@ -358,22 +358,39 @@ class CaptchaSolver:
         sitekey = None
         method = None
         
-        # Turnstile
-        turnstile_elem = await page.query_selector(".cf-turnstile, iframe[src*='turnstile'], [id*='cf-turnstile'], [data-sitekey][class*='turnstile']")
-        if turnstile_elem:
-            method = "turnstile"
-            sitekey = await turnstile_elem.get_attribute("data-sitekey")
-            if not sitekey:
-                # Try to extract from iframe src
-                src = await turnstile_elem.get_attribute("src")
-                if src and "sitekey=" in src:
-                    sitekey = src.split("sitekey=")[1].split("&")[0]
-                elif src and "k=" in src:
-                    sitekey = src.split("k=")[1].split("&")[0]
-            
-            # If still no sitekey, try searching in scripts
-            if not sitekey:
-                sitekey = await page.evaluate("() => typeof turnstile !== 'undefined' ? (turnstile._render_parameters || {}).sitekey : null")
+            # Turnstile
+            # 1) Check iframes by URL first (more reliable for Cloudflare Turnstile)
+            for frame in page.frames:
+                frame_url = frame.url or ""
+                if "turnstile" in frame_url or "challenges.cloudflare.com" in frame_url:
+                    if "sitekey=" in frame_url:
+                        method = "turnstile"
+                        sitekey = frame_url.split("sitekey=")[1].split("&")[0]
+                        break
+                    if "k=" in frame_url:
+                        method = "turnstile"
+                        sitekey = frame_url.split("k=")[1].split("&")[0]
+                        break
+
+            # 2) Fallback to DOM selectors
+            if not method:
+                turnstile_elem = await page.query_selector(
+                    ".cf-turnstile, iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [id*='cf-turnstile']"
+                )
+                if turnstile_elem:
+                    method = "turnstile"
+                    sitekey = await turnstile_elem.get_attribute("data-sitekey")
+                    if not sitekey:
+                        # Try to extract from iframe src
+                        src = await turnstile_elem.get_attribute("src")
+                        if src and "sitekey=" in src:
+                            sitekey = src.split("sitekey=")[1].split("&")[0]
+
+                    # If still no sitekey, try searching in scripts
+                    if not sitekey:
+                        sitekey = await page.evaluate(
+                            "() => typeof turnstile !== 'undefined' ? (turnstile._render_parameters || {}).sitekey : null"
+                        )
 
         # hCaptcha
         if not method:
