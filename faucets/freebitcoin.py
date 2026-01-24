@@ -14,6 +14,31 @@ class FreeBitcoinBot(FaucetBot):
     async def is_logged_in(self) -> bool:
         return await self.page.locator("#balance").is_visible()
 
+    async def _find_selector(self, selectors: list, element_name: str = "element", timeout: int = 5000):
+        """
+        Try multiple selectors and return the first one that exists and is visible.
+        
+        Args:
+            selectors: List of CSS selectors to try
+            element_name: Name of element for logging
+            timeout: Total timeout in milliseconds
+            
+        Returns:
+            Locator if found, None otherwise
+        """
+        for selector in selectors:
+            try:
+                locator = self.page.locator(selector).first
+                # is_visible() already checks existence internally
+                if await locator.is_visible(timeout=timeout):
+                    logger.debug(f"[FreeBitcoin] Found {element_name} with selector: {selector}")
+                    return locator
+            except Exception:
+                continue
+        
+        logger.warning(f"[FreeBitcoin] Could not find {element_name}. Tried selectors: {selectors}")
+        return None
+
     async def login(self) -> bool:
         # Check for override (Multi-Account Loop)
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
@@ -22,55 +47,182 @@ class FreeBitcoinBot(FaucetBot):
             creds = self.settings.get_account("freebitcoin")
             
         if not creds: 
-            logger.error("FreeBitcoin credentials missing")
+            logger.error("[FreeBitcoin] Credentials missing - set FREEBITCOIN_USERNAME and FREEBITCOIN_PASSWORD")
             return False
 
         try:
-            await self.page.goto(f"{self.base_url}/login")
-            await self.random_delay()
+            logger.info(f"[FreeBitcoin] Navigating to login page: {self.base_url}/login")
+            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=60000)
+            await self.random_delay(2, 4)
+            
+            # Handle Cloudflare if present
+            await self.handle_cloudflare(max_wait_seconds=30)
             
             # Close cookie banner if present
             await self.close_popups()
+            
+            # Log current page state for debugging
+            logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
+            
+            # Try multiple selectors for email/username field
+            email_selectors = [
+                "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
+                "input[name='login_email_input']",
+                "input[type='email']",
+                "input[name='email']",
+                "#email",
+                "#login_form_bt_address",  # Common FreeBitcoin selector
+                "form input[type='text']:first-of-type",
+            ]
+            
+            email_field = await self._find_selector(email_selectors, "email/username field", timeout=10000)
+            if not email_field:
+                logger.error("[FreeBitcoin] Could not find email/username field on login page")
+                # Take screenshot for debugging
+                try:
+                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_email_field.png")
+                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_email_field.png")
+                except Exception:
+                    pass
+                return False
+                
+            # Try multiple selectors for password field
+            password_selectors = [
+                "input[name='password']",
+                "input[name='login_password_input']",
+                "input[type='password']",
+                "#password",
+                "#login_form_password",
+            ]
+            
+            password_field = await self._find_selector(password_selectors, "password field", timeout=5000)
+            if not password_field:
+                logger.error("[FreeBitcoin] Could not find password field on login page")
+                try:
+                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_password_field.png")
+                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_password_field.png")
+                except Exception:
+                    pass
+                return False
 
             # Fill Login with human-like typing
-            email_field = self.page.locator("input[name='login_email_input']")
-            if await email_field.is_visible():
-                logger.debug("[FreeBitcoin] Filling login credentials with human-like typing")
-                await self.human_type("input[name='login_email_input']", creds['username'])
-                await self.random_delay(0.5, 1.5)
-                await self.human_type("input[name='login_password_input']", creds['password'])
-                await self.idle_mouse(1.0)  # Simulate thinking time before submission
-                
-                # Check for 2FA or CAPTCHA on login
-                if await self.page.locator("#login_2fa_input").is_visible():
-                     logger.warning("2FA DETECTED! Use manual mode to enter code.")
-                     await self.solver.solve_captcha(self.page) # Waits for manual input
-
-                # Sometimes there is a captcha on login
-                logger.debug("[FreeBitcoin] Checking for login CAPTCHA")
-                try:
-                    await self.solver.solve_captcha(self.page)
-                except Exception as captcha_err:
-                    logger.warning(f"[FreeBitcoin] Login CAPTCHA solve failed: {captcha_err}")
-                    # Continue anyway, might not need CAPTCHA
-
-                submit = self.page.locator("#login_button")
-                await self.human_like_click(submit)
-                
-                logger.debug("[FreeBitcoin] Waiting for login redirect...")
-                try:
-                    await self.page.wait_for_url(f"{self.base_url}/", timeout=60000)
-                except asyncio.TimeoutError:
-                    logger.warning("[FreeBitcoin] Login redirect timeout, checking if already logged in...")
-                    # Continue to check login status anyway
+            username_display = creds['username'][:10] + "***" if len(creds['username']) > 10 else creds['username'][:3] + "***"
+            logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
+            await self.human_type(email_field, creds['username'])
+            await self.random_delay(0.5, 1.5)
+            await self.human_type(password_field, creds['password'])
+            await self.idle_mouse(1.0)  # Simulate thinking time before submission
             
-            # Check if logged in (url is base url, and specific element exists)
-            if await self.page.locator("#balance").is_visible():
-                logger.info("FreeBitcoin logged in.")
-                return True
+            # Check for 2FA field
+            twofa_selectors = [
+                "#login_2fa_input",
+                "input[name='2fa']",
+                "input[name='twofa']",
+                "input[placeholder*='2FA' i]",
+            ]
+            twofa_field = await self._find_selector(twofa_selectors, "2FA field", timeout=2000)
+            if twofa_field:
+                logger.warning("[FreeBitcoin] 2FA DETECTED! Manual intervention required.")
+                # Don't proceed automatically with 2FA
+                return False
+
+            # Check for CAPTCHA on login page
+            logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
+            try:
+                await self.solver.solve_captcha(self.page)
+                logger.debug("[FreeBitcoin] Login CAPTCHA solved")
+            except Exception as captcha_err:
+                logger.debug(f"[FreeBitcoin] No CAPTCHA required or solve failed: {captcha_err}")
+                # Continue anyway, CAPTCHA might not be required
+
+            # Try multiple selectors for submit button
+            submit_selectors = [
+                "#login_button",
+                "button[type='submit']",
+                "input[type='submit']",
+                "button:has-text('Login')",
+                "button:has-text('Log In')",
+                "button:has-text('Sign In')",
+                ".login-button",
+                "#login_form_button",
+            ]
+            
+            submit_btn = await self._find_selector(submit_selectors, "submit button", timeout=5000)
+            if not submit_btn:
+                logger.error("[FreeBitcoin] Could not find submit button")
+                try:
+                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_submit.png")
+                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_submit.png")
+                except Exception:
+                    pass
+                return False
+            
+            logger.debug("[FreeBitcoin] Clicking submit button...")
+            await self.human_like_click(submit_btn)
+            
+            # Wait for navigation or login success
+            logger.debug("[FreeBitcoin] Waiting for login to complete...")
+            try:
+                await self.page.wait_for_url(f"{self.base_url}/**", timeout=60000)
+                logger.debug(f"[FreeBitcoin] Navigation completed to: {self.page.url}")
+            except asyncio.TimeoutError:
+                logger.warning("[FreeBitcoin] Login redirect timeout, checking if logged in anyway...")
+            
+            # Small delay to let page settle
+            await self.random_delay(2, 3)
+            
+            # Check if logged in - try multiple selectors for balance
+            balance_selectors = [
+                "#balance",
+                ".balance",
+                "[data-balance]",
+                ".user-balance",
+                "span.balance",
+            ]
+            
+            for selector in balance_selectors:
+                try:
+                    if await self.page.locator(selector).is_visible(timeout=5000):
+                        logger.info(f"✅ [FreeBitcoin] Login successful! Balance element found: {selector}")
+                        return True
+                except Exception:
+                    continue
+            
+            # Login failed - check for error messages
+            logger.error("[FreeBitcoin] Login failed - balance element not found")
+            
+            # Try to capture error message
+            error_selectors = [
+                ".alert-danger",
+                ".error",
+                ".login-error",
+                "[class*='error']",
+            ]
+            
+            for selector in error_selectors:
+                try:
+                    error_elem = self.page.locator(selector).first
+                    if await error_elem.is_visible(timeout=2000):
+                        error_text = await error_elem.text_content()
+                        logger.error(f"[FreeBitcoin] Login error message: {error_text}")
+                        break
+                except Exception:
+                    continue
+            
+            # Take screenshot for debugging
+            try:
+                await self.page.screenshot(path="logs/freebitcoin_login_failed.png")
+                logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed.png")
+            except Exception:
+                pass
                 
         except Exception as e:
-            logger.error(f"FreeBitcoin login failed: {e}")
+            logger.error(f"[FreeBitcoin] Login exception: {e}", exc_info=True)
+            try:
+                await self.page.screenshot(path="logs/freebitcoin_login_exception.png")
+                logger.info("[FreeBitcoin] Exception screenshot saved")
+            except Exception:
+                pass
             
         return False
 
