@@ -355,91 +355,182 @@ class EarningsTracker:
             "roi": (total_earnings_usd / total_costs) if total_costs > 0 else 0
         }
 
-    def get_faucet_profitability(self, hours: int = 24) -> Dict[str, Dict[str, float]]:
+    def get_faucet_profitability(self, faucet: str, days: int = 7) -> dict:
         """
-        Calculate per-faucet profitability in USD using tracked costs.
-
+        Calculate ROI metrics for a faucet over last N days.
+        
         Returns:
-            Dict mapping faucet -> {earnings_usd, costs_usd, net_profit_usd, roi}
+            {
+                "total_earned_usd": float,
+                "total_cost_usd": float,
+                "net_profit_usd": float,
+                "roi_percentage": float,
+                "avg_earnings_per_claim": float,
+                "claim_count": int,
+                "profitability_score": float  # 0-100+
+            }
         """
         import asyncio
-
+        
+        hours = days * 24
         cutoff = time.time() - (hours * 3600)
-        earnings_by_faucet_currency: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
-        for c in self.claims:
-            if c.get("timestamp", 0) >= cutoff and c.get("success"):
-                faucet = c.get("faucet")
+        now = time.time()
+        
+        # Get all claims for this faucet within time window
+        faucet_claims = [
+            c for c in self.claims
+            if c.get("faucet") == faucet and c.get("timestamp", 0) >= cutoff
+        ]
+        
+        # Get costs for this faucet
+        faucet_costs = [
+            cost for cost in self.costs
+            if cost.get("faucet") == faucet and cost.get("timestamp", 0) >= cutoff
+        ]
+        
+        # Calculate metrics
+        claim_count = len(faucet_claims)
+        success_count = sum(1 for c in faucet_claims if c.get("success"))
+        
+        # Count captcha failures (failed claims with costs)
+        captcha_failures = len([c for c in faucet_claims if not c.get("success")])
+        
+        # Calculate earnings with time-decay weighting
+        earnings_by_currency = defaultdict(lambda: {"amount": 0.0, "weighted_amount": 0.0})
+        for c in faucet_claims:
+            if c.get("success"):
                 currency = c.get("currency")
                 amount = c.get("amount", 0.0)
-                if faucet and currency:
-                    earnings_by_faucet_currency[faucet][currency] += amount
-
-        costs_by_faucet: Dict[str, float] = defaultdict(float)
-        for cost in self.costs:
-            if cost.get("timestamp", 0) >= cutoff:
-                faucet = cost.get("faucet")
-                if faucet:
-                    costs_by_faucet[faucet] += float(cost.get("amount_usd", 0.0))
-
-        currencies = set()
-        for faucet, currency_map in earnings_by_faucet_currency.items():
-            for currency in currency_map.keys():
-                currencies.add(currency)
-
+                timestamp = c.get("timestamp", 0)
+                
+                # Time decay: recent claims weighted higher (exponential decay)
+                # Formula: weight = e^(-0.1 * days_ago)
+                days_ago = (now - timestamp) / 86400
+                time_weight = 2.71828 ** (-0.1 * days_ago)  # e^(-0.1 * days_ago)
+                
+                earnings_by_currency[currency]["amount"] += amount
+                earnings_by_currency[currency]["weighted_amount"] += amount * time_weight
+        
+        # Convert to USD
         price_feed = get_price_feed()
-
-        async def _get_prices() -> Dict[str, Optional[float]]:
-            tasks = {currency: price_feed.get_price(currency) for currency in currencies}
-            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-            prices = {}
-            for currency, result in zip(tasks.keys(), results):
-                prices[currency] = None if isinstance(result, Exception) else result
-            return prices
-
+        
+        async def _convert_to_usd():
+            total_usd = 0.0
+            weighted_usd = 0.0
+            for currency, data in earnings_by_currency.items():
+                price = await price_feed.get_price(currency)
+                if price:
+                    decimals = price_feed.CURRENCY_DECIMALS.get(currency.upper(), 8)
+                    coin_amount = data["amount"] / (10 ** decimals)
+                    weighted_coin_amount = data["weighted_amount"] / (10 ** decimals)
+                    total_usd += coin_amount * price
+                    weighted_usd += weighted_coin_amount * price
+            return total_usd, weighted_usd
+        
+        # Run async conversion
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = None
-
+        
         if loop and loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                prices = executor.submit(asyncio.run, _get_prices()).result()
+                total_earned_usd, weighted_earned_usd = executor.submit(asyncio.run, _convert_to_usd()).result()
         else:
-            prices = asyncio.run(_get_prices()) if currencies else {}
-
-        faucet_profitability: Dict[str, Dict[str, float]] = {}
-        for faucet, currency_map in earnings_by_faucet_currency.items():
-            earnings_usd = 0.0
-            for currency, amount in currency_map.items():
-                price = prices.get(currency)
-                if price is None:
+            total_earned_usd, weighted_earned_usd = asyncio.run(_convert_to_usd())
+        
+        # Calculate total costs
+        total_cost_usd = sum(cost.get("amount_usd", 0.0) for cost in faucet_costs)
+        
+        # Calculate metrics
+        net_profit_usd = total_earned_usd - total_cost_usd
+        roi_percentage = (net_profit_usd / total_cost_usd * 100) if total_cost_usd > 0 else 0.0
+        avg_earnings_per_claim = total_earned_usd / success_count if success_count > 0 else 0.0
+        
+        # Calculate profitability score (0-100+)
+        # Base score: ROI percentage capped at 100
+        base_score = min(roi_percentage, 100) if roi_percentage > 0 else roi_percentage
+        
+        # Success rate bonus: +20 points for >80% success rate
+        success_rate = (success_count / claim_count * 100) if claim_count > 0 else 0
+        success_bonus = 0
+        if success_rate > 80:
+            success_bonus = 20
+        elif success_rate > 60:
+            success_bonus = 10
+        elif success_rate > 40:
+            success_bonus = 5
+        
+        # Captcha failure penalty: -5 points per 10% failure rate
+        captcha_failure_rate = (captcha_failures / claim_count * 100) if claim_count > 0 else 0
+        captcha_penalty = -(captcha_failure_rate / 10) * 5
+        
+        # Time-decay factor: use weighted earnings for more recent performance
+        # If weighted earnings are significantly higher than total, boost score
+        time_decay_bonus = 0
+        if total_earned_usd > 0:
+            weighted_ratio = weighted_earned_usd / total_earned_usd
+            if weighted_ratio > 1.2:  # Recent performance is 20% better
+                time_decay_bonus = 10
+            elif weighted_ratio > 1.1:
+                time_decay_bonus = 5
+        
+        profitability_score = base_score + success_bonus + captcha_penalty + time_decay_bonus
+        
+        return {
+            "total_earned_usd": total_earned_usd,
+            "total_cost_usd": total_cost_usd,
+            "net_profit_usd": net_profit_usd,
+            "roi_percentage": roi_percentage,
+            "avg_earnings_per_claim": avg_earnings_per_claim,
+            "claim_count": claim_count,
+            "success_count": success_count,
+            "success_rate": success_rate,
+            "captcha_failure_rate": captcha_failure_rate,
+            "profitability_score": profitability_score,
+            "time_weighted_earnings_usd": weighted_earned_usd
+        }
+    
+    def get_profitability_report(self, days: int = 7, min_claims: int = 3) -> List[Dict[str, Any]]:
+        """
+        Generate a ranked list of faucets by profitability.
+        
+        Args:
+            days: Number of days to analyze
+            min_claims: Minimum number of claims required to include faucet
+            
+        Returns:
+            List of faucet profitability dicts, sorted by profitability_score (highest first)
+        """
+        # Get all unique faucets that have claims
+        cutoff = time.time() - (days * 24 * 3600)
+        faucets = set(
+            c.get("faucet") for c in self.claims
+            if c.get("timestamp", 0) >= cutoff and c.get("faucet")
+        )
+        
+        # Calculate profitability for each faucet
+        report = []
+        for faucet in faucets:
+            try:
+                metrics = self.get_faucet_profitability(faucet, days)
+                
+                # Skip if not enough data
+                if metrics["claim_count"] < min_claims:
                     continue
-                decimals = price_feed.CURRENCY_DECIMALS.get(currency.upper(), 8)
-                coin_amount = amount / (10 ** decimals)
-                earnings_usd += coin_amount * price
-
-            costs_usd = costs_by_faucet.get(faucet, 0.0)
-            net_profit = earnings_usd - costs_usd
-            roi = (net_profit / costs_usd) if costs_usd > 0 else 0.0
-            faucet_profitability[faucet] = {
-                "earnings_usd": earnings_usd,
-                "costs_usd": costs_usd,
-                "net_profit_usd": net_profit,
-                "roi": roi
-            }
-
-        # Ensure faucets with only costs still appear
-        for faucet, costs_usd in costs_by_faucet.items():
-            if faucet not in faucet_profitability:
-                faucet_profitability[faucet] = {
-                    "earnings_usd": 0.0,
-                    "costs_usd": costs_usd,
-                    "net_profit_usd": -costs_usd,
-                    "roi": -1.0 if costs_usd > 0 else 0.0
-                }
-
-        return faucet_profitability
+                
+                report.append({
+                    "faucet": faucet,
+                    **metrics
+                })
+            except Exception as e:
+                logger.warning(f"Failed to calculate profitability for {faucet}: {e}")
+        
+        # Sort by profitability score (highest first)
+        report.sort(key=lambda x: x["profitability_score"], reverse=True)
+        
+        return report
     
     def get_session_stats(self) -> Dict[str, Any]:
         """Get statistics for the current session."""

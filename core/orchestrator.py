@@ -130,6 +130,11 @@ class JobScheduler:
         self.last_health_check_time = 0
         self.consecutive_job_failures = 0
         
+        # Profitability-based priority management
+        self.disabled_faucets: Dict[str, float] = {}  # faucet -> timestamp when disabled
+        self.faucet_priority_multipliers: Dict[str, float] = {}  # faucet -> priority multiplier
+        self.last_priority_update_time = 0
+        
         # Try to restore session on init
         self._restore_session()
 
@@ -158,6 +163,32 @@ class JobScheduler:
                 logger.info(f"Restored session: {restored_count} jobs, {len(self.domain_last_access)} domains")
         except Exception as e:
             logger.warning(f"Could not restore session: {e}")
+
+    def has_only_test_jobs(self) -> bool:
+        """Return True if the queue contains only legacy test jobs."""
+        return bool(self.queue) and all(j.faucet_type.lower() == "test" for j in self.queue)
+
+    def purge_jobs(self, predicate: Callable[["Job"], bool]) -> int:
+        """Remove queued jobs matching a predicate. Returns count removed."""
+        removed = 0
+        remaining: List[Job] = []
+        removed_types = set()
+        for job in self.queue:
+            if predicate(job):
+                removed += 1
+                removed_types.add(job.faucet_type)
+            else:
+                remaining.append(job)
+        self.queue = remaining
+
+        # Clean stale domain access entries for removed faucet types
+        if removed_types:
+            active_types = {j.faucet_type for j in self.queue}
+            for f_type in list(self.domain_last_access.keys()):
+                if f_type in removed_types and f_type not in active_types:
+                    self.domain_last_access.pop(f_type, None)
+
+        return removed
 
     def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
         """Atomic JSON write with corruption protection and backups.
@@ -364,6 +395,113 @@ class JobScheduler:
             logger.debug(f"Auto-suspend check failed for {faucet_type}: {e}")
             return False, ""
 
+    def update_job_priorities(self):
+        """
+        Recalculate job priorities based on profitability.
+        
+        - High-ROI faucets (score > 200%) get priority boost (lower priority number)
+        - Low-ROI faucets (score < 50%) get priority penalty (higher priority number)
+        - Faucets with negative ROI for 3+ days are auto-disabled
+        """
+        from core.analytics import get_tracker
+        
+        try:
+            tracker = get_tracker()
+            profitability_report = tracker.get_profitability_report(days=7, min_claims=3)
+            
+            if not profitability_report:
+                logger.debug("No profitability data available for priority update")
+                return
+            
+            now = time.time()
+            priority_changes = []
+            
+            for metrics in profitability_report:
+                faucet = metrics["faucet"]
+                score = metrics["profitability_score"]
+                roi_pct = metrics["roi_percentage"]
+                net_profit = metrics["net_profit_usd"]
+                
+                # Calculate priority multiplier based on profitability score
+                # Score > 100: High priority (multiplier 0.5-0.8)
+                # Score 50-100: Normal priority (multiplier 0.9-1.0)
+                # Score 0-50: Low priority (multiplier 1.1-1.5)
+                # Score < 0: Very low priority (multiplier 1.5-2.0)
+                
+                if score > 200:
+                    multiplier = 0.5  # Highest priority
+                elif score > 100:
+                    multiplier = 0.6 + (200 - score) / 500  # 0.6-0.8
+                elif score > 50:
+                    multiplier = 0.9 + (100 - score) / 500  # 0.9-1.0
+                elif score > 0:
+                    multiplier = 1.0 + (50 - score) / 100  # 1.0-1.5
+                else:
+                    multiplier = 1.5 + min(abs(score) / 100, 0.5)  # 1.5-2.0
+                
+                # Store old multiplier for comparison
+                old_multiplier = self.faucet_priority_multipliers.get(faucet, 1.0)
+                self.faucet_priority_multipliers[faucet] = multiplier
+                
+                # Log significant changes (>20% difference)
+                if abs(multiplier - old_multiplier) > 0.2:
+                    direction = "↑" if multiplier < old_multiplier else "↓"  # Lower multiplier = higher priority
+                    priority_changes.append(
+                        f"{direction} {faucet}: {old_multiplier:.2f} → {multiplier:.2f} "
+                        f"(score: {score:.1f}, ROI: {roi_pct:.1f}%)"
+                    )
+                
+                # Auto-disable check: negative ROI for 3+ days
+                if net_profit < 0 and metrics["claim_count"] >= 10:  # At least 10 claims to be sure
+                    # Check if negative for multiple days
+                    if faucet not in self.disabled_faucets:
+                        # First time seeing negative - check 3-day trend
+                        three_day_metrics = tracker.get_faucet_profitability(faucet, days=3)
+                        if three_day_metrics["net_profit_usd"] < 0:
+                            # Still negative in last 3 days - disable it
+                            self.disabled_faucets[faucet] = now
+                            logger.warning(
+                                f"⛔ AUTO-DISABLED: {faucet} due to consistent losses "
+                                f"(7d ROI: {roi_pct:.1f}%, net: ${net_profit:.4f})"
+                            )
+                            priority_changes.append(f"⛔ DISABLED {faucet} (negative ROI)")
+                
+                # Re-enable check: if previously disabled and now profitable
+                elif faucet in self.disabled_faucets and score > 50:
+                    del self.disabled_faucets[faucet]
+                    logger.info(
+                        f"✅ AUTO-ENABLED: {faucet} restored due to improved profitability "
+                        f"(score: {score:.1f}, ROI: {roi_pct:.1f}%)"
+                    )
+                    priority_changes.append(f"✅ ENABLED {faucet} (score {score:.1f})")
+            
+            # Apply new priorities to queued jobs
+            for job in self.queue:
+                if job.faucet_type in self.faucet_priority_multipliers:
+                    multiplier = self.faucet_priority_multipliers[job.faucet_type]
+                    # Adjust priority (lower is better, so multiply base priority)
+                    base_priority = 1 if "withdraw" in job.job_type.lower() else 0
+                    job.priority = int(base_priority * multiplier * 10)  # Scale to integers
+            
+            # Resort queue after priority changes
+            if priority_changes:
+                self.queue.sort()
+                logger.info(f"📊 PRIORITY UPDATE: {len(priority_changes)} changes")
+                for change in priority_changes[:10]:  # Log first 10 changes
+                    logger.info(f"  {change}")
+            
+            # Log overall profitability summary
+            high_roi = [m for m in profitability_report if m["profitability_score"] > 100]
+            low_roi = [m for m in profitability_report if m["profitability_score"] < 50]
+            
+            logger.info(
+                f"💹 Profitability Summary: {len(high_roi)} high-ROI, "
+                f"{len(low_roi)} low-ROI, {len(self.disabled_faucets)} disabled"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to update job priorities: {e}", exc_info=True)
+    
     async def schedule_withdrawal_jobs(self):
         """
         Automatically schedule withdrawal jobs for all faucets with withdraw() support.
@@ -1018,6 +1156,24 @@ class JobScheduler:
         
         while not self._stop_event.is_set():
             now = time.time()
+
+            # Determine degraded mode based on proxy availability and failure rate
+            degraded_mode = None
+            delay_multiplier = 1.0
+            effective_max_concurrent_bots = self.settings.max_concurrent_bots
+
+            if self.proxy_manager:
+                proxy_count = len(self.proxy_manager.proxies)
+                if proxy_count == 0:
+                    degraded_mode = "maintenance"
+                elif proxy_count < self.settings.low_proxy_threshold:
+                    degraded_mode = "low_proxy"
+                    effective_max_concurrent_bots = min(effective_max_concurrent_bots, self.settings.low_proxy_max_concurrent_bots)
+
+            if self.consecutive_job_failures >= self.settings.degraded_failure_threshold:
+                delay_multiplier = self.settings.degraded_slow_delay_multiplier
+                effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
+                degraded_mode = f"{degraded_mode}+slow" if degraded_mode else "slow"
             
             # Schedule withdrawal jobs once at startup
             if not withdrawal_jobs_scheduled:
@@ -1032,6 +1188,12 @@ class JobScheduler:
             if now - self.last_heartbeat_time >= HEARTBEAT_INTERVAL_SECONDS:
                 self._write_heartbeat()
                 self.last_heartbeat_time = now
+            
+            # Update job priorities every hour based on profitability
+            if now - self.last_priority_update_time >= 3600:  # 1 hour
+                logger.info("🔄 Updating job priorities based on profitability...")
+                self.update_job_priorities()
+                self.last_priority_update_time = now
             
             if now - self.last_persist_time >= SESSION_PERSIST_INTERVAL:
                 self._persist_session()
@@ -1068,9 +1230,13 @@ class JobScheduler:
                 username = job.profile.username
                 active_global = len(self.running_jobs)
                 active_profile = self.profile_concurrency.get(username, 0)
+
+                if degraded_mode == "maintenance":
+                    logger.warning("🛑 Maintenance Mode: No proxies available. Pausing new jobs.")
+                    break
                 
                 # Check constraints
-                if active_global >= self.settings.max_concurrent_bots:
+                if active_global >= effective_max_concurrent_bots:
                     break  # Global limit reached
                 
                 # Use a default if max_concurrent_per_profile is not yet in config
@@ -1080,10 +1246,25 @@ class JobScheduler:
                 
                 # Check domain rate limiting
                 domain_delay = self.get_domain_delay(job.faucet_type)
+                if delay_multiplier > 1.0:
+                    domain_delay *= delay_multiplier
                 if domain_delay > 0:
                     logger.debug(f"⏳ Rate limit: {job.name} must wait {domain_delay:.1f}s for {job.faucet_type}")
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
+                
+                # Check if faucet is auto-disabled due to negative ROI
+                if job.faucet_type in self.disabled_faucets:
+                    disabled_time = self.disabled_faucets[job.faucet_type]
+                    # Keep disabled for at least 24 hours before re-evaluation
+                    if now - disabled_time < 86400:
+                        logger.debug(f"⛔ Skipping disabled faucet: {job.faucet_type}")
+                        job.next_run = now + 3600  # Check again in 1 hour
+                        continue
+                    # After 24 hours, remove from disabled list for re-evaluation
+                    else:
+                        logger.info(f"🔄 Re-evaluating previously disabled faucet: {job.faucet_type}")
+                        del self.disabled_faucets[job.faucet_type]
                 
                 # Check Circuit Breaker
                 if job.faucet_type in self.faucet_cooldowns:
