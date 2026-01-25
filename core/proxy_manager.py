@@ -22,7 +22,8 @@ class Proxy:
 
     def to_string(self) -> str:
         """Returns the proxy string format expected by Playwright: http://user:pass@ip:port or http://ip:port"""
-        if self.username and self.password:
+        if self.username and self.password is not None:
+            # Include colon even if password is empty to support providers that expect user: (e.g., Zyte proxy auth)
             return f"{self.protocol}://{self.username}:{self.password}@{self.ip}:{self.port}"
         elif self.username:
             # Fix #35: Keep username even if password is empty (Common for whitelisted sessions)
@@ -43,7 +44,7 @@ class ProxyManager:
     Also provides proxy health monitoring with latency tracking.
     """
 
-    # Validation constants
+    # Validation defaults (can be overridden via settings)
     VALIDATION_TIMEOUT_SECONDS = 15
     VALIDATION_TEST_URL = "https://www.google.com"
     LATENCY_HISTORY_MAX = 5  # Keep last 5 latency measurements per proxy
@@ -59,6 +60,13 @@ class ProxyManager:
         self.settings = settings
         self.api_key = settings.twocaptcha_api_key
         self.proxy_provider = (settings.proxy_provider or "2captcha").lower()
+        self.VALIDATION_TIMEOUT_SECONDS = getattr(settings, "proxy_validation_timeout_seconds", self.VALIDATION_TIMEOUT_SECONDS)
+        self.VALIDATION_TEST_URL = getattr(settings, "proxy_validation_url", self.VALIDATION_TEST_URL)
+        self.zyte_api_key = getattr(settings, "zyte_api_key", None)
+        self.zyte_proxy_host = getattr(settings, "zyte_proxy_host", "api.zyte.com") or "api.zyte.com"
+        self.zyte_proxy_port = int(getattr(settings, "zyte_proxy_port", 8011) or 8011)
+        self.zyte_proxy_protocol = getattr(settings, "zyte_proxy_protocol", "http") or "http"
+        self.zyte_pool_size = int(getattr(settings, "zyte_pool_size", 20) or 20)
         self.proxies: List[Proxy] = []
         self.all_proxies: List[Proxy] = [] # Fix: Master list to preserve proxies during cooldown
         self.validated_proxies: List[Proxy] = []  # Only proxies that passed validation
@@ -89,6 +97,40 @@ class ProxyManager:
         # Auto-load on init
         self.load_proxies_from_file()
         self._load_health_data()
+
+        # Bootstrap Zyte proxies if configured and none are loaded from file.
+        if not self.proxies and self.proxy_provider == "zyte":
+            self._build_zyte_proxies(quantity=self.zyte_pool_size)
+
+    def _build_zyte_proxies(self, quantity: int = 10) -> int:
+        """Create in-memory Zyte proxy entries (no disk write to avoid key leakage)."""
+        if not self.zyte_api_key:
+            logger.error("[ZYTE] API key missing; cannot build Zyte proxy pool.")
+            return 0
+
+        count = max(1, quantity)
+        proxies = [
+            Proxy(
+                ip=self.zyte_proxy_host,
+                port=self.zyte_proxy_port,
+                username=self.zyte_api_key,
+                password="",
+                protocol=self.zyte_proxy_protocol,
+            )
+            for _ in range(count)
+        ]
+
+        self.all_proxies = list(proxies)
+        self.proxies = list(proxies)
+        self._prune_health_data_for_active_proxies(self.proxies)
+        logger.info(
+            "[ZYTE] Loaded %s proxy endpoint(s) into pool (%s://%s:%s).",
+            len(proxies),
+            self.zyte_proxy_protocol,
+            self.zyte_proxy_host,
+            self.zyte_proxy_port,
+        )
+        return len(proxies)
 
     def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
         """Atomic JSON write with corruption protection and backups."""
@@ -129,6 +171,19 @@ class ProxyManager:
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique key for a proxy (full string with session)."""
         return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
+
+    def _mask_proxy_key(self, proxy_key: str) -> str:
+        """Redact credentials from proxy key for logging."""
+        try:
+            if self.proxy_provider == "zyte" and self.zyte_api_key:
+                if self.zyte_api_key in proxy_key:
+                    return proxy_key.replace(self.zyte_api_key, "***")
+            if self.proxy_provider == "2captcha" and self.api_key:
+                if self.api_key in proxy_key:
+                    return proxy_key.replace(self.api_key, "***")
+        except Exception:
+            return proxy_key
+        return proxy_key
 
     def _proxy_host_port_from_str(self, proxy_str: str) -> str:
         if not proxy_str:
@@ -409,7 +464,7 @@ class ProxyManager:
                         # Save health data after update
                         self._save_health_data()
                         
-                        logger.debug(f"[LATENCY] Proxy {proxy_key} latency: {latency_ms:.0f}ms")
+                        logger.debug(f"[LATENCY] Proxy {self._mask_proxy_key(proxy_key)} latency: {latency_ms:.0f}ms")
                         return latency_ms
                     else:
                         self.record_failure(proxy_url)
@@ -417,11 +472,11 @@ class ProxyManager:
                         
         except asyncio.TimeoutError:
             self.record_failure(proxy_url)
-            logger.warning(f"[TIMEOUT] Proxy {proxy_key} timed out during latency check")
+            logger.warning(f"[TIMEOUT] Proxy {self._mask_proxy_key(proxy_key)} timed out during latency check")
             return None
         except Exception as e:
             self.record_failure(proxy_url)
-            logger.warning(f"[ERROR] Proxy {proxy_key} latency check failed: {e}")
+            logger.warning(f"[ERROR] Proxy {self._mask_proxy_key(proxy_key)} latency check failed: {e}")
             return None
 
     def record_failure(self, proxy_str: str, detected: bool = False, status_code: int = 0):
@@ -446,7 +501,7 @@ class ProxyManager:
         if detected or status_code == 403:
             # 403 or detection: 1 hour cooldown for THIS session
             self.proxy_cooldowns[proxy_key] = now + self.DETECTION_COOLDOWN
-            logger.error(f"[COOLDOWN] Proxy session {proxy_key} detected/403. Cooling down for 1h.")
+            logger.error(f"[COOLDOWN] Proxy session {self._mask_proxy_key(proxy_key)} detected/403. Cooling down for 1h.")
 
             if host_port:
                 self.proxy_host_failures[host_port] = self.proxy_host_failures.get(host_port, 0) + 1
@@ -463,7 +518,7 @@ class ProxyManager:
             self.proxy_cooldowns[proxy_key] = now + self.FAILURE_COOLDOWN
             if proxy_key not in self.dead_proxies:
                 self.dead_proxies.append(proxy_key)
-            logger.warning(f"[COOLDOWN] Proxy session {proxy_key} failed {self.proxy_failures[proxy_key]} times. Cooling down for 5m.")
+            logger.warning(f"[COOLDOWN] Proxy session {self._mask_proxy_key(proxy_key)} failed {self.proxy_failures[proxy_key]} times. Cooling down for 5m.")
 
         # Persist health data after failure
         self._save_health_data()
@@ -557,7 +612,7 @@ class ProxyManager:
             del self.proxy_cooldowns[k]
             if k in self.proxy_failures:
                 self.proxy_failures[k] = 0 # Reset failures after cooldown
-            logger.debug(f"[RESTORE] Proxy {k} finished cooldown.")
+            logger.debug(f"[RESTORE] Proxy {self._mask_proxy_key(k)} finished cooldown.")
 
         # 2. Filter active proxies
         # We start with ALL proxies and exclude ONLY those that are currently cooling down
@@ -598,7 +653,8 @@ class ProxyManager:
                 final_proxies.append(p)
         
         if slow_proxies_keys:
-            logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {slow_proxies_keys[:3]}...")
+            masked = [self._mask_proxy_key(k) for k in slow_proxies_keys[:3]]
+            logger.warning(f"Removing {len(slow_proxies_keys)} slow proxies: {masked}...")
 
         # If we removed everything, try to salvage at least one proxy to avoid a hard stall
         if not final_proxies and self.all_proxies:
@@ -614,7 +670,7 @@ class ProxyManager:
             best = candidates[0]
             best_key = self._proxy_key(best)
             if best_key in self.proxy_cooldowns:
-                logger.warning("⚠️ All proxies are in cooldown. Temporarily reusing %s to avoid zero-proxy stall.", best_key)
+                logger.warning("⚠️ All proxies are in cooldown. Temporarily reusing %s to avoid zero-proxy stall.", self._mask_proxy_key(best_key))
                 self.proxy_cooldowns.pop(best_key, None)
             final_proxies = [best]
 
@@ -637,7 +693,7 @@ class ProxyManager:
                 restored = [p for p in self.all_proxies if self._proxy_key(p) == oldest_key]
                 if restored:
                     self.proxies = restored
-                    logger.info("[RESTORE] Re-enabled one proxy to avoid empty pool: %s", oldest_key)
+                    logger.info("[RESTORE] Re-enabled one proxy to avoid empty pool: %s", self._mask_proxy_key(oldest_key))
                     self._save_health_data()
              
         return removed
@@ -668,10 +724,10 @@ class ProxyManager:
                         logger.warning(f"[WARN] Proxy {proxy.ip}:{proxy.port} returned status {resp.status}")
                         return False
         except asyncio.TimeoutError:
-            logger.warning(f"[TIMEOUT] Proxy {proxy.ip}:{proxy.port} timed out during validation")
+            logger.warning(f"[TIMEOUT] Proxy {self._mask_proxy_key(self._proxy_key(proxy))} timed out during validation")
             return False
         except Exception as e:
-            logger.warning(f"[ERROR] Proxy {proxy.ip}:{proxy.port} validation failed: {e}")
+            logger.warning(f"[ERROR] Proxy {self._mask_proxy_key(self._proxy_key(proxy))} validation failed: {e}")
             return False
 
     async def validate_all_proxies(self) -> int:
@@ -934,6 +990,9 @@ class ProxyManager:
         
         If no base proxy exists, attempts to fetch configuration from 2Captcha API first.
         """
+        if self.proxy_provider == "zyte":
+            return self._build_zyte_proxies(quantity)
+
         if self.proxy_provider != "2captcha":
             return await self.fetch_proxies_from_provider(quantity)
 
@@ -1091,13 +1150,13 @@ class ProxyManager:
         If we have proxies, we overwrite the profile.proxy field.
         """
         if not self.proxies:
-            logger.warning("No 2Captcha proxies loaded. Creating fallback assignments from config.")
+            logger.warning("No proxies loaded for provider '%s'. Creating fallback assignments from config.", self.proxy_provider)
             return
 
         session_proxies = [p for p in self.proxies if "-session-" in (p.username or "")]
         assignable = session_proxies if session_proxies else list(self.proxies)
 
-        logger.info(f"Assigning {len(assignable)} proxies to {len(profiles)} profiles (Sticky Strategy)...")
+        logger.info(f"Assigning {len(assignable)} proxies to {len(profiles)} profiles (Sticky Strategy, provider={self.proxy_provider})...")
 
         def _normalize(name: str) -> str:
             return str(name).lower().replace("_", "").replace(" ", "")
@@ -1109,7 +1168,10 @@ class ProxyManager:
         
         for i, profile in enumerate(profiles):
             faucet_key = _normalize(getattr(profile, "faucet", ""))
-            if faucet_key and any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass):
+            # Allow exact or long-prefix matches only (avoid short substrings bypassing, e.g., 'coin' or 'free').
+            if faucet_key and any(
+                faucet_key == b or faucet_key.startswith(b) for b in bypass
+            ):
                 logger.info("   Profile '%s' bypasses proxies for faucet '%s'", profile.username, profile.faucet)
                 profile.proxy = None
                 profile.residential_proxy = False
@@ -1123,12 +1185,15 @@ class ProxyManager:
             # INJECT into profile
             profile.proxy = proxy.to_string()
             profile.residential_proxy = True # Assume 2Captcha proxies are residential
-            logger.info(f"   Profile '{profile.username}' -> Proxy {proxy.ip}:{proxy.port}")
+            logger.info(f"   Profile '{profile.username}' -> Proxy {self._mask_proxy_key(self._proxy_key(proxy))}")
 
     def get_proxy_for_solver(self, username: str) -> Optional[str]:
         """
         Returns the proxy string (user:pass@ip:port) for the captcha solver.
         """
+        # Only meaningful for 2Captcha provider; Zyte/webshare should not be leaked to solver.
+        if self.proxy_provider != "2captcha":
+            return None
         if username in self.assignments:
             return self.assignments[username].to_2captcha_string()
         return None
@@ -1195,7 +1260,7 @@ class ProxyManager:
                 new_proxy = random.choice(healthy)
             profile.proxy = new_proxy.to_string()
             self.assignments[profile.username] = new_proxy
-            logger.info(f"[ROTATE] {profile.username} rotated to {self._proxy_key(new_proxy)}")
+            logger.info(f"[ROTATE] {profile.username} rotated to {self._mask_proxy_key(self._proxy_key(new_proxy))}")
             return profile.proxy
         
         return current_proxy_str
@@ -1224,7 +1289,7 @@ class ProxyManager:
         
         try:
             # Use existing fetch method if using API
-            if self.proxy_provider in ["2captcha", "webshare"]:
+            if self.proxy_provider in ["2captcha", "webshare", "zyte"]:
                 added = await self.fetch_proxies_from_api(provision_count)
                 if added > 0:
                     logger.info(f"✅ Auto-provisioned {added} new proxies via API")
@@ -1259,7 +1324,7 @@ class ProxyManager:
             proxy_key = self._proxy_key(proxy)
             failures = self.proxy_failures.get(proxy_key, 0)
             if failures >= failure_threshold:
-                logger.info(f"Removing proxy with {failures} failures: {proxy_key}")
+                logger.info(f"Removing proxy with {failures} failures: {self._mask_proxy_key(proxy_key)}")
                 self.proxies.remove(proxy)
                 self.dead_proxies.append(proxy_key)
                 removed += 1

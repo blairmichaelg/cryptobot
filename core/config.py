@@ -56,9 +56,18 @@ class BotSettings(BaseSettings):
     
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
-    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare
+    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare, zyte
     webshare_api_key: Optional[str] = None
     webshare_page_size: int = 50
+    # Proxy validation/health
+    proxy_validation_url: str = "https://www.google.com"  # Lightweight URL for latency checks
+    proxy_validation_timeout_seconds: int = 15
+    # Zyte proxy (proxy mode). Host/port are for proxy endpoint; protocol can be http/https.
+    zyte_api_key: Optional[str] = None
+    zyte_proxy_host: str = "api.zyte.com"
+    zyte_proxy_port: int = 8011
+    zyte_proxy_protocol: str = "http"
+    zyte_pool_size: int = 20  # In-memory logical slots for sticky assignment
     # Proxy routing overrides
     proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
     # Image blocking overrides (allow images for selected faucets)
