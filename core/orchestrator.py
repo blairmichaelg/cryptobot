@@ -796,9 +796,12 @@ class JobScheduler:
             from core.auto_withdrawal import get_auto_withdrawal_instance
             from core.analytics import get_tracker
             
-            # Check if wallet RPC is configured
+            # Check if wallet RPC is configured and credentials provided
             if not self.settings.wallet_rpc_urls:
                 logger.info("⏭️  No wallet RPC configured - skipping auto-withdrawal")
+                return
+            if not (self.settings.electrum_rpc_user and self.settings.electrum_rpc_pass):
+                logger.info("⏭️  No RPC credentials present - skipping auto-withdrawal")
                 return
             
             # Create wallet daemon instance
@@ -808,6 +811,15 @@ class JobScheduler:
                 rpc_pass=self.settings.electrum_rpc_pass or ""
             )
             
+            # Verify connectivity to at least one wallet daemon
+            try:
+                ok = await wallet.check_connection("BTC")
+            except Exception:
+                ok = False
+            if not ok:
+                logger.info("⏭️  Wallet daemon unreachable - skipping auto-withdrawal")
+                return
+
             # Get analytics tracker
             tracker = get_tracker()
             

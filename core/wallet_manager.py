@@ -197,6 +197,96 @@ class WalletDaemon:
         
         return is_night or is_weekend
 
+    async def get_address_balance_api(self, coin: str, address: str) -> Optional[float]:
+        """Fetch on-chain balance for a single address using public APIs.
+
+        Uses lightweight explorer endpoints (read-only) so it works for Cake
+        wallet receive-only addresses without requiring RPC credentials.
+
+        Returns the confirmed balance in the main unit (BTC/LTC/DOGE/ETH/TRX/etc.).
+        Coins without public balance APIs (e.g., XMR) return None.
+        """
+        coin = coin.upper()
+        session = await self._get_session()
+
+        try:
+            if coin == "BTC":
+                url = f"https://api.blockcypher.com/v1/btc/main/addrs/{address}/balance"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return float(data.get("final_balance", 0)) / 100000000
+
+            if coin == "LTC":
+                url = f"https://api.blockcypher.com/v1/ltc/main/addrs/{address}/balance"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return float(data.get("final_balance", 0)) / 100000000
+
+            if coin == "DOGE":
+                url = f"https://sochain.com/api/v2/get_address_balance/DOGE/{address}"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        balance = data.get("data", {}).get("confirmed_balance")
+                        return float(balance) if balance is not None else 0.0
+
+            if coin == "ETH":
+                # Cloudflare-hosted Etherscan-lite endpoint via BlockCypher
+                url = f"https://api.blockcypher.com/v1/eth/main/addrs/{address}/balance"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # BlockCypher returns wei
+                        return float(data.get("final_balance", 0)) / 1e18
+
+            if coin == "TRX":
+                url = f"https://apilist.tronscan.org/api/account?address={address}"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        balance = data.get("balance")
+                        return float(balance) / 1e6 if balance is not None else 0.0
+
+            if coin in {"BCH", "DASH"}:
+                # Use BlockCypher where supported; BCH/DASH not universally available
+                url = f"https://api.blockcypher.com/v1/{coin.lower()}/main/addrs/{address}/balance"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return float(data.get("final_balance", 0)) / 100000000
+
+            logger.info(f"No public balance API configured for {coin}; returning None")
+            return None
+        except Exception as exc:
+            logger.warning(f"Failed to fetch address balance for {coin}: {exc}")
+            return None
+
+    async def get_balances_for_addresses(self, wallet_addresses: Dict[str, Any]) -> Dict[str, float]:
+        """Fetch balances for all configured addresses.
+
+        Supports dict entries like {"BTC": {"address": "..."}} or {"BTC": "addr"}.
+        Unsupported coins are skipped gracefully.
+        """
+        balances: Dict[str, float] = {}
+
+        for coin, entry in wallet_addresses.items():
+            address: Optional[str] = None
+            if isinstance(entry, dict):
+                address = entry.get("address") or entry.get("wallet") or entry.get("addr")
+            elif isinstance(entry, str):
+                address = entry
+
+            if not address:
+                continue
+
+            balance = await self.get_address_balance_api(coin, address)
+            if balance is not None:
+                balances[coin.upper()] = balance
+
+        return balances
+
     async def should_withdraw_now(
         self, 
         coin: str, 

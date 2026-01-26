@@ -288,7 +288,11 @@ class FaucetBot:
         Get the appropriate withdrawal address based on configuration.
         
         Checks settings.use_faucetpay first, falls back to direct wallet.
-        Priority: FaucetPay → Direct Wallet → wallet_addresses dict
+        Priority (configurable):
+        1) wallet_addresses dict when prefer_wallet_addresses=True (Cake direct)
+        2) FaucetPay
+        3) Direct wallet fields
+        4) wallet_addresses dict fallback
         
         Args:
             coin: Cryptocurrency symbol (BTC, LTC, DOGE, TRX, ETH, etc.)
@@ -307,6 +311,21 @@ class FaucetBot:
             "MATIC": "POLYGON",
         }
         coin = coin_map.get(coin, coin)
+
+        prefer_wallet = getattr(self.settings, "prefer_wallet_addresses", False)
+        wallet_dict = getattr(self.settings, "wallet_addresses", {}) if hasattr(self.settings, "wallet_addresses") else {}
+
+        if prefer_wallet and wallet_dict:
+            dict_entry = wallet_dict.get(coin)
+            if dict_entry:
+                if isinstance(dict_entry, dict):
+                    for key in ("address", "wallet", "addr"):
+                        if dict_entry.get(key):
+                            logger.debug(f"[{self.faucet_name}] Using preferred wallet_addresses dict ({key}) for {coin}")
+                            return str(dict_entry.get(key))
+                else:
+                    logger.debug(f"[{self.faucet_name}] Using preferred wallet_addresses dict for {coin}")
+                    return str(dict_entry)
         
         # 1. FaucetPay mode (preferred for micro-earnings)
         if self.settings.use_faucetpay:

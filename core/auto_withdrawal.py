@@ -64,6 +64,20 @@ class AutoWithdrawal:
             Withdrawal address or None
         """
         currency = currency.upper()
+
+        prefer_wallet = getattr(self.settings, "prefer_wallet_addresses", False)
+        wallet_dict = getattr(self.settings, "wallet_addresses", {}) if hasattr(self.settings, "wallet_addresses") else {}
+
+        # Prefer explicit wallet_addresses entries (e.g., Cake) when opted in
+        if prefer_wallet and wallet_dict:
+            entry = wallet_dict.get(currency)
+            if entry:
+                if isinstance(entry, dict):
+                    for key in ("address", "wallet", "addr"):
+                        if entry.get(key):
+                            return str(entry.get(key))
+                else:
+                    return str(entry)
         
         # Check if using FaucetPay
         if self.settings.use_faucetpay:

@@ -116,6 +116,7 @@ class BotSettings(BaseSettings):
     doge_withdrawal_address: Optional[str] = None
     electrum_rpc_user: Optional[str] = None
     electrum_rpc_pass: Optional[str] = None
+    prefer_wallet_addresses: bool = True  # Prefer config wallet_addresses (e.g., Cake) over FaucetPay
 
     # FaucetPay Integration (Micro-Wallet for Fee Optimization)
     use_faucetpay: bool = True  # Toggle FaucetPay vs Direct withdrawals
