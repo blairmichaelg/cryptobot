@@ -30,6 +30,7 @@ secrets/
 *.log.*
 *.log.gz
 faucet_bot.log*
+logs/
 
 # Testing
 .pytest_cache/
@@ -65,6 +66,12 @@ faucet_config.json
 *.state
 session_state.json
 heartbeat.txt
+config/session_state.json.backup.*
+config/profile_fingerprints.json.backup.*
+config/cookie_profiles.json.backup.*
+config/proxy_bindings.json.backup.*
+config/proxy_health.json.backup.*
+earnings_analytics.json.backup.*
 
 # Analytics databases
 *.db
@@ -99,3 +106,4 @@ setup_*.ps1
 proxies.txt
 verify_solver_proxy.py
 config/price_cache.json
+config/cookies_encrypted/
