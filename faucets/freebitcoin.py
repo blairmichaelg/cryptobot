@@ -731,7 +731,8 @@ class FreeBitcoinBot(FaucetBot):
                 "form[action*='op=login']",
             ]
 
-            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            nav_timeout = max(getattr(self.settings, "timeout", 90000), 90000)
+            retry_timeout = max(nav_timeout, 120000)
 
             for login_url in login_urls:
                 logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
@@ -740,7 +741,11 @@ class FreeBitcoinBot(FaucetBot):
                     response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=nav_timeout)
                 except Exception as e:
                     logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
-                    response = await self.page.goto(login_url, wait_until="commit", timeout=nav_timeout)
+                    try:
+                        response = await self.page.goto(login_url, wait_until="commit", timeout=retry_timeout)
+                    except Exception as commit_err:
+                        logger.warning(f"[FreeBitcoin] Commit navigation failed: {commit_err}")
+                        continue
                 if response is not None:
                     try:
                         status = response.status
@@ -758,7 +763,7 @@ class FreeBitcoinBot(FaucetBot):
                 await self.random_delay(2, 4)
 
                 # Handle Cloudflare if present
-                await self.handle_cloudflare(max_wait_seconds=60)
+                await self.handle_cloudflare(max_wait_seconds=90)
 
                 # Close cookie banner if present
                 await self.close_popups()

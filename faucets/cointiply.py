@@ -106,7 +106,12 @@ class CointiplyBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Starting login process")
-            await self.page.goto(f"{self.base_url}/login", wait_until="networkidle")
+            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            try:
+                await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
+                await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
             await self.handle_cloudflare()
             
             # Use human_type for stealth
@@ -131,7 +136,7 @@ class CointiplyBot(FaucetBot):
             await self.human_like_click(submit)
             
             # Wait for navigation with timeout
-            await self.page.wait_for_url("**/home", timeout=15000)
+            await self.page.wait_for_url("**/home", timeout=30000)
             logger.info(f"[{self.faucet_name}] ✅ Login successful")
             return True
             
@@ -153,7 +158,12 @@ class CointiplyBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
                 
-                await self.page.goto(f"{self.base_url}/faucet", wait_until="networkidle")
+                nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                try:
+                    await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
+                except Exception as e:
+                    logger.warning(f"[{self.faucet_name}] Faucet navigation retry with commit: {e}")
+                    await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
                 await self.handle_cloudflare()
                 
                 # Extract current balance

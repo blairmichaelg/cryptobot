@@ -35,7 +35,12 @@ class FaucetCryptoBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Navigating to login page (attempt {attempt + 1}/{max_retries})...")
                 # v4.0+ uses /login (not /login.php)
-                await self.page.goto(f"{self.base_url}/login", wait_until="networkidle")
+                nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                try:
+                    await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
+                except Exception as e:
+                    logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
+                    await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
                 await self.handle_cloudflare()
                 await self.random_delay(1, 2)
                 
@@ -71,7 +76,7 @@ class FaucetCryptoBot(FaucetBot):
                 await self.human_like_click(login_btn.first)
                 
                 # Wait for navigation to dashboard
-                await self.page.wait_for_url("**/dashboard", timeout=20000)
+                await self.page.wait_for_url("**/dashboard", timeout=30000)
                 logger.info(f"[{self.faucet_name}] ✅ Login successful!")
                 return True
                 
@@ -104,7 +109,12 @@ class FaucetCryptoBot(FaucetBot):
                 # Navigate to faucet page if not already there
                 if "faucet" not in self.page.url.lower():
                     logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
-                    await self.page.goto(f"{self.base_url}/faucet")
+                    nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                    try:
+                        await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
+                    except Exception as e:
+                        logger.warning(f"[{self.faucet_name}] Faucet navigation retry with commit: {e}")
+                        await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
                     await self.handle_cloudflare()
                     await self.random_delay(1, 3)
                 

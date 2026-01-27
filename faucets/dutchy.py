@@ -105,7 +105,12 @@ class DutchyBot(FaucetBot):
             else:
                 page = self.page
             
-            await page.goto(f"{self.base_url}/shortlinks.php", wait_until="networkidle")
+            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            try:
+                await page.goto(f"{self.base_url}/shortlinks.php", wait_until="domcontentloaded", timeout=nav_timeout)
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Shortlinks navigation retry with commit: {e}")
+                await page.goto(f"{self.base_url}/shortlinks.php", wait_until="commit", timeout=nav_timeout)
             
             # DutchyCorp shortlink selectors (adjust based on actual site structure)
             links = page.locator("a[href*='shortlink']:has-text('Claim'), .shortlink-btn, a.btn:has-text('Visit')")
@@ -204,7 +209,12 @@ class DutchyBot(FaucetBot):
         for attempt in range(1, self.max_retries + 1):
             try:
                 logger.info(f"[{self.faucet_name}] Login attempt {attempt}/{self.max_retries}")
-                await self.page.goto(f"{self.base_url}/login.php", wait_until="networkidle")
+                nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                try:
+                    await self.page.goto(f"{self.base_url}/login.php", wait_until="domcontentloaded", timeout=nav_timeout)
+                except Exception as e:
+                    logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
+                    await self.page.goto(f"{self.base_url}/login.php", wait_until="commit", timeout=nav_timeout)
                 
                 # Check for common failure states
                 failure_state = await self.check_failure_states()
@@ -359,7 +369,12 @@ class DutchyBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Checking {roll_name}...")
-            await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="networkidle")
+            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            try:
+                await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="domcontentloaded", timeout=nav_timeout)
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] {roll_name} navigation retry with commit: {e}")
+                await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="commit", timeout=nav_timeout)
             
             # Close interfering popups
             await self.close_popups()
@@ -445,7 +460,12 @@ class DutchyBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
-            await self.page.goto(f"{self.base_url}/balance.php", wait_until="networkidle")
+            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            try:
+                await self.page.goto(f"{self.base_url}/balance.php", wait_until="domcontentloaded", timeout=nav_timeout)
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Balance navigation retry with commit: {e}")
+                await self.page.goto(f"{self.base_url}/balance.php", wait_until="commit", timeout=nav_timeout)
             
             # Close any interfering popups
             await self.close_popups()
@@ -471,7 +491,7 @@ class DutchyBot(FaucetBot):
             # (In production, could add logic to prefer specific coins)
             target_btn = withdraw_btns.nth(0)
             await self.human_like_click(target_btn)
-            await self.page.wait_for_load_state("networkidle")
+            await self.page.wait_for_load_state("domcontentloaded")
             
             # Withdrawal confirmation page
             # Select FaucetPay as withdrawal method if available

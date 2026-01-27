@@ -42,15 +42,23 @@ class PickFaucetBase(FaucetBot):
         Returns:
             True if navigation succeeded, False if all retries exhausted
         """
+        nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+
         for attempt in range(max_retries):
             try:
-                # Use networkidle and shorter timeout (15s) for faster failure detection
-                response = await self.page.goto(url, timeout=15000, wait_until="networkidle")
+                response = await self.page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
                 if response and response.ok:
                     return True
                 # Even if response isn't perfect, page may have loaded
                 return True
             except Exception as e:
+                try:
+                    response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
+                    if response and response.ok:
+                        return True
+                    return True
+                except Exception:
+                    pass
                 error_str = str(e)
                 # Check for connection/TLS errors that warrant retry
                 if any(err in error_str for err in [
@@ -132,7 +140,7 @@ class PickFaucetBase(FaucetBot):
             register_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Register"), button:has-text("Sign Up"), button:has-text("Create Account")')
             await self.human_like_click(register_btn)
             
-            await self.page.wait_for_load_state("networkidle", timeout=30000)
+            await self.page.wait_for_load_state("domcontentloaded", timeout=30000)
             
             # Check for success indicators
             page_content = await self.page.content()
@@ -248,7 +256,7 @@ class PickFaucetBase(FaucetBot):
             login_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Login"), button:has-text("Log in")')
             await self.human_like_click(login_btn)
             
-            await self.page.wait_for_load_state("networkidle", timeout=30000)
+            await self.page.wait_for_load_state("domcontentloaded", timeout=30000)
             
             if await self.is_logged_in():
                 logger.info(f"[{self.faucet_name}] Login successful")
