@@ -273,7 +273,7 @@ class ProxyManager:
 
         # If everything is in cooldown after pruning, release the earliest one
         if active_keys and len(self.proxy_cooldowns) >= len(active_keys):
-            oldest_key = min(self.proxy_cooldowns, key=self.proxy_cooldowns.get)
+            oldest_key = min(self.proxy_cooldowns.items(), key=lambda x: x[1])[0]
             self.proxy_cooldowns.pop(oldest_key, None)
             if oldest_key in self.proxy_failures:
                 self.proxy_failures[oldest_key] = 0
@@ -686,7 +686,7 @@ class ProxyManager:
         if not self.proxies and self.all_proxies:
             logger.warning("⚠️ All proxies are currently in cooldown or slow!")
             if self.proxy_cooldowns:
-                oldest_key = min(self.proxy_cooldowns, key=self.proxy_cooldowns.get)
+                oldest_key = min(self.proxy_cooldowns.items(), key=lambda x: x[1])[0]
                 self.proxy_cooldowns.pop(oldest_key, None)
                 if oldest_key in self.proxy_failures:
                     self.proxy_failures[oldest_key] = 0
@@ -962,11 +962,12 @@ class ProxyManager:
                                             else:
                                                 proxy_str = proxy_data
                                             
-                                            # Parse proxy string
-                                            proxy = self._parse_proxy_string(f"http://{proxy_str}" if not proxy_str.startswith("http") else proxy_str)
-                                            if proxy:
-                                                logger.info(f"[2CAPTCHA] ✅ Fetched proxy config: {proxy.ip}:{proxy.port}")
-                                                return proxy
+                                            # Parse proxy string (ensure it's a string)
+                                            if isinstance(proxy_str, str):
+                                                proxy = self._parse_proxy_string(f"http://{proxy_str}" if not proxy_str.startswith("http") else proxy_str)
+                                                if proxy:
+                                                    logger.info(f"[2CAPTCHA] ✅ Fetched proxy config: {proxy.ip}:{proxy.port}")
+                                                    return proxy
                             except (json.JSONDecodeError, ValueError):
                                 logger.debug(f"[2CAPTCHA] Non-JSON response from {url}: {await resp.text()}")
                                 continue
