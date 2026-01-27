@@ -38,7 +38,7 @@ class TronPickBot(PickFaucetBase):
         
         logger.info(f"[{self.faucet_name}] Initialized with base URL: {self.base_url}")
     
-    async def get_balance(self) -> str:
+    async def get_balance(self, selector: str = ".balance", fallback_selectors: list = None) -> str:
         """Extract TRX balance from the page with enhanced error handling.
         
         Returns:
@@ -46,17 +46,18 @@ class TronPickBot(PickFaucetBase):
         """
         try:
             # TronPick uses standard pick family selectors for balance
-            selectors = [
+            selectors = [selector] + (fallback_selectors or [
+                ".balance",
                 ".balance",                    # Standard pick family
                 ".navbar-right .balance",      # Navbar variant
                 "#balance",                    # ID variant
                 "span.balance",                # Span element
                 "[data-balance]",              # Data attribute
-            ]
+            ])
             
-            for selector in selectors:
+            for sel in selectors:
                 try:
-                    element = self.page.locator(selector)
+                    element = self.page.locator(sel)
                     if await element.count() > 0 and await element.first.is_visible():
                         balance_text = await element.first.text_content()
                         if balance_text:
@@ -66,7 +67,7 @@ class TronPickBot(PickFaucetBase):
                                 logger.debug(f"[{self.faucet_name}] Balance extracted: {balance} TRX")
                                 return balance
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Selector {selector} failed: {e}")
+                    logger.debug(f"[{self.faucet_name}] Selector {sel} failed: {e}")
                     continue
             
             logger.warning(f"[{self.faucet_name}] Could not extract balance from any selector")
@@ -76,7 +77,7 @@ class TronPickBot(PickFaucetBase):
             logger.error(f"[{self.faucet_name}] Balance extraction error: {e}")
             return "0"
     
-    async def get_timer(self) -> float:
+    async def get_timer(self, selector: str = "#time", fallback_selectors: list = None) -> float:
         """Extract claim timer and convert to minutes.
         
         Returns:
@@ -84,16 +85,17 @@ class TronPickBot(PickFaucetBase):
         """
         try:
             # TronPick timer selectors (pick family standard)
-            selectors = [
+            selectors = [selector] + (fallback_selectors or [
+                "#time",
                 "#time",           # Standard timer ID
                 ".timer",          # Class variant
                 "[data-timer]",    # Data attribute
                 "#claim_timer",    # Alternative ID
-            ]
+            ])
             
-            for selector in selectors:
+            for sel in selectors:
                 try:
-                    element = self.page.locator(selector)
+                    element = self.page.locator(sel)
                     if await element.count() > 0:
                         timer_text = await element.first.text_content()
                         if timer_text and any(c.isdigit() for c in timer_text):
@@ -103,7 +105,7 @@ class TronPickBot(PickFaucetBase):
                                 logger.debug(f"[{self.faucet_name}] Timer: {timer_text} -> {minutes:.2f} min")
                                 return minutes
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Timer selector {selector} failed: {e}")
+                    logger.debug(f"[{self.faucet_name}] Timer selector {sel} failed: {e}")
                     continue
             
             logger.debug(f"[{self.faucet_name}] No active timer found - ready to claim")

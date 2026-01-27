@@ -32,24 +32,25 @@ class UsdPickBot(PickFaucetBase):
         
         logger.info(f"[{self.faucet_name}] Initialized with base URL: {self.base_url}")
     
-    async def get_balance(self) -> str:
+    async def get_balance(self, selector: str = ".balance", fallback_selectors: list = None) -> str:
         """Extract USDT balance from the page.
         
         Returns:
             str: Balance string (e.g., "0.125") or "0" on failure
         """
         try:
-            selectors = [
+            selectors = [selector] + (fallback_selectors or [
+                ".balance",
                 ".balance",
                 ".navbar-right .balance",
                 "#balance",
                 "span.balance",
                 "[data-balance]",
-            ]
+            ])
             
-            for selector in selectors:
+            for sel in selectors:
                 try:
-                    element = self.page.locator(selector)
+                    element = self.page.locator(sel)
                     if await element.count() > 0 and await element.first.is_visible():
                         balance_text = await element.first.text_content()
                         if balance_text:
@@ -58,7 +59,7 @@ class UsdPickBot(PickFaucetBase):
                                 logger.debug(f"[{self.faucet_name}] Balance extracted: {balance} USDT")
                                 return balance
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Selector {selector} failed: {e}")
+                    logger.debug(f"[{self.faucet_name}] Selector {sel} failed: {e}")
                     continue
             
             logger.warning(f"[{self.faucet_name}] Could not extract balance from any selector")
@@ -68,23 +69,24 @@ class UsdPickBot(PickFaucetBase):
             logger.error(f"[{self.faucet_name}] Balance extraction error: {e}")
             return "0"
     
-    async def get_timer(self) -> float:
+    async def get_timer(self, selector: str = "#time", fallback_selectors: list = None) -> float:
         """Extract claim timer and convert to minutes.
         
         Returns:
             float: Remaining time in minutes, or 0.0 if ready to claim
         """
         try:
-            selectors = [
+            selectors = [selector] + (fallback_selectors or [
+                "#time",
                 "#time",
                 ".timer",
                 "[data-timer]",
                 "#claim_timer",
-            ]
+            ])
             
-            for selector in selectors:
+            for sel in selectors:
                 try:
-                    element = self.page.locator(selector)
+                    element = self.page.locator(sel)
                     if await element.count() > 0:
                         timer_text = await element.first.text_content()
                         if timer_text and any(c.isdigit() for c in timer_text):
@@ -93,7 +95,7 @@ class UsdPickBot(PickFaucetBase):
                                 logger.debug(f"[{self.faucet_name}] Timer: {timer_text} -> {minutes:.2f} min")
                                 return minutes
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Timer selector {selector} failed: {e}")
+                    logger.debug(f"[{self.faucet_name}] Timer selector {sel} failed: {e}")
                     continue
             
             logger.debug(f"[{self.faucet_name}] No active timer found - ready to claim")
