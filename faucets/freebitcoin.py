@@ -667,12 +667,29 @@ class FreeBitcoinBot(FaucetBot):
             logger.error("[FreeBitcoin] Credentials missing - set FREEBITCOIN_USERNAME and FREEBITCOIN_PASSWORD")
             return False
 
+        # Extract credentials early for use throughout the method
+        login_id = creds.get("username") or creds.get("email")
+        if not login_id:
+            logger.error("[FreeBitcoin] Credentials missing username/email")
+            return False
+        login_id = self.strip_email_alias(login_id)
+        if not login_id:
+            logger.error("[FreeBitcoin] Invalid username/email after processing")
+            return False
+        password = creds.get("password")
+        if not password:
+            logger.error("[FreeBitcoin] Credentials missing password")
+            return False
+
         try:
+            # Try modern login endpoints first
             login_urls = [
-                f"{self.base_url}/?op=login",
+                self.base_url,  # Main page often has login form
+                f"{self.base_url}/signup-login/",  # Modern endpoint
+                f"{self.base_url}/?op=home",  # Home page with login
+                f"{self.base_url}/?op=login",  # Legacy endpoint
                 f"{self.base_url}/login",
                 f"{self.base_url}/login.php",
-                self.base_url,
             ]
             email_field = None
             password_field = None
@@ -680,36 +697,42 @@ class FreeBitcoinBot(FaucetBot):
             # Try multiple selectors for email/username field
             email_selectors = [
                 "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
+                "input[id='login_form_btc_address']",  # ID variant
+                "input#login_form_btc_address",  # Compact ID
+                "#login_form_btc_address",  # Direct ID
                 "input[name='login_form[btc_address]']",
                 "input[name='login_form[username]']",
-                "input[name='login_form[login]']",
                 "input[name='login_form[email]']",
-                "input[name='login_form[username_or_email]']",
-                "input[name='login']",
                 "input[name='username']",
-                "input[name='login_email_input']",
-                "input[type='email']",
                 "input[name='email']",
+                "input[name='login']",
+                "input[type='email']",  # Standard email input
                 "#email",
-                "#login_form_email",
-                "#login_form_login",
-                "#login_form_username",
-                "#login_form_btc_address",
-                "input#login_form_btc_address",
-                "#login_form_bt_address",  # legacy misspelling seen in older versions
-                "form input[type='text']:first-of-type",
+                "#username",
+                "#login",
+                "#btc_address",
+                ".login-username",  # Class-based
+                ".login-email",
+                "[placeholder*='address' i]",  # Placeholder matching (case insensitive)
+                "[placeholder*='email' i]",
+                "[placeholder*='username' i]",
+                "form input[type='text']:first-of-type",  # Generic fallback
             ]
 
             # Try multiple selectors for password field
             password_selectors = [
                 "input[name='password']",
+                "input[id='login_form_password']",  # ID variant
+                "input#login_form_password",  # Compact ID
+                "#login_form_password",  # Direct ID
+                "#password",
+                "input[type='password']",  # Standard password input
                 "input[name='login_form[password]']",
                 "input[name='login_form[pass]']",
-                "input[name='login_form[password_confirmation]']",
-                "input[name='login_password_input']",
-                "input[type='password']",
-                "#password",
-                "#login_form_password",
+                "input[name='pass']",
+                ".login-password",  # Class-based
+                "[placeholder*='password' i]",  # Placeholder matching
+                "form input[type='password']:first-of-type",  # Generic fallback
             ]
 
             login_trigger_selectors = [
@@ -733,19 +756,33 @@ class FreeBitcoinBot(FaucetBot):
 
             nav_timeout = max(getattr(self.settings, "timeout", 90000), 90000)
             retry_timeout = max(nav_timeout, 120000)
+            last_nav_error = None
 
             for login_url in login_urls:
                 logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
                 # Use shorter timeout and more lenient wait strategy for slow proxies
+                response = None
                 try:
                     response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=nav_timeout)
+                    logger.debug(f"[FreeBitcoin] Navigation successful to {login_url}")
                 except Exception as e:
-                    logger.warning(f"[FreeBitcoin] Initial navigation slow, retrying with commit: {e}")
+                    last_nav_error = e
+                    logger.warning(f"[FreeBitcoin] Initial navigation slow ({type(e).__name__}), retrying with commit: {str(e)[:100]}")
                     try:
                         response = await self.page.goto(login_url, wait_until="commit", timeout=retry_timeout)
+                        logger.debug(f"[FreeBitcoin] Commit navigation successful")
                     except Exception as commit_err:
-                        logger.warning(f"[FreeBitcoin] Commit navigation failed: {commit_err}")
-                        continue
+                        last_nav_error = commit_err
+                        logger.warning(f"[FreeBitcoin] Commit navigation failed ({type(commit_err).__name__}): {str(commit_err)[:100]}")
+                        # Don't continue immediately - try networkidle as last resort
+                        try:
+                            await asyncio.sleep(2)
+                            logger.debug(f"[FreeBitcoin] Trying networkidle wait strategy...")
+                            await self.page.wait_for_load_state("networkidle", timeout=30000)
+                            logger.debug(f"[FreeBitcoin] Networkidle wait successful")
+                        except Exception:
+                            logger.warning(f"[FreeBitcoin] All navigation strategies failed for {login_url}")
+                            continue
                 if response is not None:
                     try:
                         status = response.status
@@ -782,6 +819,7 @@ class FreeBitcoinBot(FaucetBot):
 
                 email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
                 if not email_field:
+                    logger.debug("[FreeBitcoin] Email field not found on initial page load, checking for login trigger...")
                     login_trigger = await self._find_selector_any_frame(login_trigger_selectors, "login trigger", timeout=4000)
                     if login_trigger:
                         logger.debug("[FreeBitcoin] Opening login form/modal...")
@@ -792,40 +830,62 @@ class FreeBitcoinBot(FaucetBot):
                         logger.info("✅ [FreeBitcoin] Session active after login trigger")
                         return True
                 if email_field:
+                    logger.debug("[FreeBitcoin] Email field found, looking for password field...")
                     password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
                     if password_field:
+                        logger.debug("[FreeBitcoin] Both email and password fields found")
                         break
+                    else:
+                        logger.warning(f"[FreeBitcoin] Email field found but password field missing on {login_url}")
 
             if not email_field:
-                logger.error("[FreeBitcoin] Could not find email/username field on login page")
+                if last_nav_error:
+                    try:
+                        self.last_error_type = self.classify_error(last_nav_error, None, None)
+                    except Exception:
+                        pass
+                logger.error("[FreeBitcoin] Could not find email/username field on login page after trying all URLs")
+                logger.error(f"[FreeBitcoin] Current URL: {self.page.url}")
+                # Log page diagnostics
+                await self._log_login_diagnostics("no_email_field")
                 # Take screenshot for debugging
                 try:
-                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_email_field.png")
+                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_email_field.png", full_page=True)
                     logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_email_field.png")
                 except Exception:
                     pass
+                # Try direct login as fallback
+                logger.info("[FreeBitcoin] Attempting direct POST request as fallback...")
+                if await self._submit_login_via_request(login_id, password):
+                    logger.info("✅ [FreeBitcoin] Login successful via direct request (no email field)")
+                    return True
+                logger.error("[FreeBitcoin] Direct POST fallback also failed")
                 return False
 
             if not password_field:
                 logger.error("[FreeBitcoin] Could not find password field on login page")
+                logger.error(f"[FreeBitcoin] Current URL: {self.page.url}")
+                # Log page diagnostics
+                await self._log_login_diagnostics("no_password_field")
                 try:
-                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_password_field.png")
+                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_password_field.png", full_page=True)
                     logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_password_field.png")
                 except Exception:
                     pass
+                logger.info("[FreeBitcoin] Attempting direct POST request as fallback...")
+                if await self._submit_login_via_request(login_id, password):
+                    logger.info("✅ [FreeBitcoin] Login successful via direct request (no password field)")
+                    return True
+                logger.error("[FreeBitcoin] Direct POST fallback also failed")
                 return False
 
             # Fill Login with human-like typing
-            login_id = creds.get("username") or creds.get("email")
-            if not login_id:
-                logger.error("[FreeBitcoin] Credentials missing username/email")
-                return False
-            login_id = self.strip_email_alias(login_id)
+            # login_id and password already extracted at start of method
             username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
             logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
             await self.human_type(email_field, login_id)
             await self.random_delay(0.5, 1.5)
-            await self.human_type(password_field, creds['password'])
+            await self.human_type(password_field, password)
             await self.idle_mouse(1.0)  # Simulate thinking time before submission
             
             # Check for 2FA field
@@ -841,8 +901,8 @@ class FreeBitcoinBot(FaucetBot):
             if twofa_field:
                 logger.warning("[FreeBitcoin] 2FA field present. Proceeding without 2FA unless configured.")
 
-            username = creds.get("username") or creds.get("email") or ""
-            password = creds.get("password") or ""
+            # username and password already extracted at start of method
+            username = login_id
 
             try:
                 has_jquery = await self.page.evaluate("() => typeof window.$ !== 'undefined'")
@@ -1055,7 +1115,7 @@ class FreeBitcoinBot(FaucetBot):
                     return True
 
             logger.debug("[FreeBitcoin] Attempting form-based login fallback...")
-            await self._submit_login_via_form(login_id, creds.get("password", ""), "")
+            await self._submit_login_via_form(login_id, password, "")
             try:
                 await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
             except Exception:
