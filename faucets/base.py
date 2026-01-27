@@ -1018,14 +1018,30 @@ class FaucetBot:
 
         logged_in = await self.login()
         if not logged_in:
+            # Retry once for transient failures (slow proxies, CF challenges, DOM not ready)
             try:
-                page_content = await self.page.content()
+                await self.page.reload()
+                await self.handle_cloudflare(max_wait_seconds=45)
+                await self.close_popups()
             except Exception:
-                page_content = None
-            try:
-                self.last_error_type = self.classify_error(None, page_content, None)
-            except Exception:
-                self.last_error_type = None
+                pass
+
+            retry_failure = await self.check_failure_states()
+            if not retry_failure:
+                try:
+                    logged_in = await self.login()
+                except Exception:
+                    logged_in = False
+
+            if not logged_in:
+                try:
+                    page_content = await self.page.content()
+                except Exception:
+                    page_content = None
+                try:
+                    self.last_error_type = self.classify_error(None, page_content, None)
+                except Exception:
+                    self.last_error_type = None
 
         return logged_in
 

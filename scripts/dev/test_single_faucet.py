@@ -79,7 +79,7 @@ async def check_2captcha_balance(api_key: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def test_faucet(faucet_name: str, action: str = "check", headless: bool = False):
+async def test_faucet(faucet_name: str, action: str = "check", headless: bool = False, use_proxy: bool = True):
     """
     Test a single faucet.
     
@@ -127,16 +127,17 @@ async def test_faucet(faucet_name: str, action: str = "check", headless: bool = 
     
     # Try to get a residential proxy to bypass connection issues
     proxy_str = None
-    try:
-        from core.proxy_manager import ProxyManager
-        proxy_manager = ProxyManager(settings)
-        if await proxy_manager.fetch_proxies(count=5):
-            if proxy_manager.proxies:
-                proxy = proxy_manager.proxies[0]
-                proxy_str = proxy.to_string()
-                logger.info(f"🛡️ Using Residential Proxy: {proxy.ip}:{proxy.port}")
-    except Exception as e:
-        logger.warning(f"Failed to fetch proxies: {e}")
+    if use_proxy:
+        try:
+            from core.proxy_manager import ProxyManager
+            proxy_manager = ProxyManager(settings)
+            if await proxy_manager.fetch_proxies(count=5):
+                if proxy_manager.proxies:
+                    proxy = proxy_manager.proxies[0]
+                    proxy_str = proxy.to_string()
+                    logger.info(f"🛡️ Using Residential Proxy: {proxy.ip}:{proxy.port}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch proxies: {e}")
 
     browser_manager = BrowserManager(
         headless=headless,
@@ -275,9 +276,10 @@ async def main():
         help="What to test"
     )
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+    parser.add_argument("--no-proxy", action="store_true", help="Disable proxy usage for this test")
     args = parser.parse_args()
-    
-    await test_faucet(args.faucet, args.action, args.headless)
+
+    await test_faucet(args.faucet, args.action, args.headless, use_proxy=not args.no_proxy)
 
 
 if __name__ == "__main__":
