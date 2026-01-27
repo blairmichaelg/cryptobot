@@ -12,7 +12,7 @@
 - **Faucet Status**: 7 fully implemented, 11 Pick.io faucets partially implemented (missing login)
 - **Known Issues**: FreeBitcoin bot has 100% login failure rate - needs investigation
 - **Testing Phase**: Most analytics data is test data, limited production usage
-- See PROJECT_STATUS_REPORT.md and AZURE_VM_STATUS.md for complete details
+- See docs/summaries/PROJECT_STATUS_REPORT.md and docs/azure/AZURE_VM_STATUS.md for complete details
 
 ## Architecture Snapshot
 - main.py bootstraps JobScheduler in core/orchestrator.py; jobs carry next_run and requeue themselves—avoid manual event loops or asyncio.sleep in main flows.
@@ -46,7 +46,7 @@
 - **Fix Required**: Either update ~/backend_service code OR reconfigure systemd to use ~/Repositories/cryptobot
 - To deploy updates: Use deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
 - Health check: ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"
-- See AZURE_VM_STATUS.md for critical service failure details and remediation steps
+- See docs/azure/AZURE_VM_STATUS.md for critical service failure details and remediation steps
 
 ## Common Tasks
 - New faucet: create faucets/<name>.py subclassing FaucetBot; wire login/claim/balance/timer via DataExtractor; register in core/registry.py; add env creds and tests in tests/.

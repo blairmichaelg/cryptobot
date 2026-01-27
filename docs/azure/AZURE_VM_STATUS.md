@@ -346,12 +346,12 @@ Currently **NO** monitoring is in place:
 
 After remediation:
 
-1. Update DEPLOYMENT_STATUS.md with:
+1. Update docs/DEPLOYMENT_STATUS.md with:
    - Actual VM details (DevNode01, IP, etc.)
    - Proper deployment procedures
    - Monitoring configuration
 
-2. Update PROJECT_STATUS_REPORT.md:
+2. Update docs/summaries/PROJECT_STATUS_REPORT.md:
    - Remove "no Azure deployment" statement
    - Add VM operational status
    - Document service crash fix

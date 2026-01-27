@@ -146,7 +146,7 @@ watch -n 5 cat /tmp/cryptobot_heartbeat
 ## What Was Changed in This PR
 
 ### Files Modified:
-1. **AZURE_VM_STATUS.md** - Updated with:
+1. **docs/azure/AZURE_VM_STATUS.md** - Updated with:
    - Fix verification section
    - Clear deployment instructions
    - Post-deployment verification checklist

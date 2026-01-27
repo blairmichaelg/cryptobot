@@ -130,4 +130,4 @@ Expected: `Can afford turnstile: True`, Budget shows $5.00 remaining
 
 ---
 
-For full documentation, see [CAPTCHA_BUDGET_MANAGEMENT.md](CAPTCHA_BUDGET_MANAGEMENT.md)
+For full documentation, see [CAPTCHA_BUDGET_MANAGEMENT.md](../operations/CAPTCHA_BUDGET_MANAGEMENT.md)

@@ -287,7 +287,7 @@ If Azure deployment proceeds:
 For deployment issues:
 1. Check logs: logs/production_run.log
 2. Run health check: `python meta.py health`
-3. Review: PROJECT_STATUS_REPORT.md
+3. Review: docs/summaries/PROJECT_STATUS_REPORT.md
 4. Consult: docs/DEVELOPER_GUIDE.md
 
 ---

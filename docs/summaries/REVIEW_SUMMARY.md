@@ -83,7 +83,7 @@ Despite the issues above, core infrastructure is solid:
 
 ### Documentation Updates
 
-1. **Created: PROJECT_STATUS_REPORT.md**
+1. **Created: docs/summaries/PROJECT_STATUS_REPORT.md**
    - Comprehensive 500+ line system audit
    - Complete faucet implementation matrix
    - Deployment reality check
@@ -182,7 +182,7 @@ Despite the issues above, core infrastructure is solid:
 | OPTIMAL_WORKFLOW.md | Only Azure deployment steps | Added local development mode |
 
 **New documents:**
-- PROJECT_STATUS_REPORT.md - Complete system audit
+- docs/summaries/PROJECT_STATUS_REPORT.md - Complete system audit
 - docs/DEPLOYMENT_STATUS.md - Deployment truth and options
 
 ---
@@ -210,7 +210,7 @@ Despite the issues above, core infrastructure is solid:
 2. **Make Deployment Decision** - Azure VM or permanent local operation?
 3. **Complete Pick.io OR Document as Abandoned** - Don't leave partially done
 4. **Run 24-hour Profitability Test** - Get real economics data
-5. **Review PROJECT_STATUS_REPORT.md** - Detailed findings and recommendations
+5. **Review docs/summaries/PROJECT_STATUS_REPORT.md** - Detailed findings and recommendations
 
 ---
 
@@ -220,9 +220,9 @@ Despite the issues above, core infrastructure is solid:
 - ✅ README.md (corrected faucet statuses)
 - ✅ docs/DEVELOPER_GUIDE.md (added troubleshooting, deployment reality)
 - ✅ docs/OPTIMAL_WORKFLOW.md (added local development mode)
-- ✅ PROJECT_STATUS_REPORT.md (NEW - comprehensive audit)
+- ✅ docs/summaries/PROJECT_STATUS_REPORT.md (NEW - comprehensive audit)
 - ✅ docs/DEPLOYMENT_STATUS.md (NEW - deployment documentation)
-- ✅ REVIEW_SUMMARY.md (THIS FILE - review summary)
+- ✅ docs/summaries/REVIEW_SUMMARY.md (THIS FILE - review summary)
 
 ---
 

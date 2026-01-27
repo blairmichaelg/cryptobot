@@ -310,6 +310,6 @@ For issues or questions:
 1. Check logs: `logs/faucet_bot.log`
 2. Review analytics: `earnings_analytics.json`
 3. Run tests: `pytest tests/test_auto_withdrawal.py -v`
-4. Check documentation: `AUTO_WITHDRAWAL_SUMMARY.md`
+4. Check documentation: `docs/summaries/AUTO_WITHDRAWAL_SUMMARY.md`
 
 System is production-ready! 🚀
