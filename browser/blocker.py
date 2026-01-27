@@ -77,6 +77,19 @@ class ResourceBlocker:
 
         # 1. Block by Resource Type
         if self.block_images and resource_type == "image":
+            lower_url = url.lower()
+            captcha_allowlist = (
+                "captcha",
+                "recaptcha",
+                "hcaptcha",
+                "turnstile",
+                "challenge",
+                "challenges.cloudflare.com",
+                "cdn-cgi",
+            )
+            if lower_url.startswith("data:image/") or any(token in lower_url for token in captcha_allowlist):
+                await route.continue_()
+                return
             await route.abort()
             return
         

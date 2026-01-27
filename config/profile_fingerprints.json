@@ -42,5 +42,20 @@
   },
   "different_user@example.com": {
     "human_profile": "normal"
+  },
+  "blazefoley97@gmail.com": {
+    "locale": "en-US",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 663579,
+    "gpu_index": 5,
+    "audio_seed": 278254,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.0
   }
 }
