@@ -34,10 +34,15 @@ FAUCET_URLS = {
 
 def load_faucet_config():
     """Load credentials from faucet_config.json."""
-    config_path = os.path.join(os.path.dirname(__file__), "faucet_config.json")
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            return json.load(f)
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "faucet_config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "config", "faucet_config.json"),
+    ]
+    for config_path in candidates:
+        config_path = os.path.abspath(config_path)
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
     return {}
 
 
