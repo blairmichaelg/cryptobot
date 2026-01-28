@@ -216,6 +216,9 @@ class DutchyBot(FaucetBot):
                     logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
                     await self.page.goto(f"{self.base_url}/login.php", wait_until="commit", timeout=nav_timeout)
                 
+                # Handle Cloudflare challenges that may appear after navigation
+                await self.handle_cloudflare(max_wait_seconds=120)
+                
                 # Check for common failure states
                 failure_state = await self.check_failure_states()
                 if failure_state:

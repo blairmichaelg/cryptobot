@@ -46,19 +46,15 @@ class PickFaucetBase(FaucetBot):
 
         for attempt in range(max_retries):
             try:
-                response = await self.page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
-                if response and response.ok:
+                # Use 'commit' wait strategy to handle Cloudflare challenge pages
+                # which may never reach 'domcontentloaded' until challenge is solved
+                response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
+                if response:
+                    # Even 403/503 responses mean we got the page (might be Cloudflare)
+                    logger.debug(f"[{self.faucet_name}] Navigation returned status {response.status}")
                     return True
-                # Even if response isn't perfect, page may have loaded
                 return True
             except Exception as e:
-                try:
-                    response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
-                    if response and response.ok:
-                        return True
-                    return True
-                except Exception:
-                    pass
                 error_str = str(e)
                 # Check for connection/TLS errors that warrant retry
                 if any(err in error_str for err in [
@@ -250,7 +246,8 @@ class PickFaucetBase(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Navigating to {login_url}")
                 if not await self._navigate_with_retry(login_url):
                     continue
-                await self.handle_cloudflare()
+                # Wait up to 120 seconds for Cloudflare challenges (longer than nav timeout)
+                await self.handle_cloudflare(max_wait_seconds=120)
                 await self.close_popups()
 
                 if await self.is_logged_in():
