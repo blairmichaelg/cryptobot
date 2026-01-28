@@ -58,7 +58,9 @@ class BotSettings(BaseSettings):
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
     azure_proxies_file: str = str(CONFIG_DIR / "azure_proxies.txt")  # Azure VM proxy list
     use_azure_proxies: bool = False  # Set to True to use Azure VM proxies instead of 2Captcha
-    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare, zyte, azure
+    digitalocean_proxies_file: str = str(CONFIG_DIR / "digitalocean_proxies.txt")  # DigitalOcean Droplet proxy list
+    use_digitalocean_proxies: bool = False  # Set to True to use DigitalOcean Droplet proxies
+    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare, zyte, azure, digitalocean
     webshare_api_key: Optional[str] = None
     webshare_page_size: int = 50
     # Proxy validation/health

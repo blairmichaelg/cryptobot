@@ -761,18 +761,24 @@ class ProxyManager:
     def load_proxies_from_file(self) -> int:
         """
         Loads proxies from the configured proxy file.
-        Supports both 2Captcha residential proxies and Azure VM proxies.
+        Supports 2Captcha residential proxies, Azure VM proxies, and DigitalOcean Droplet proxies.
         Expected format per line:
         - http://user:pass@host:port (Standard with auth)
-        - http://host:port (Azure VM proxies without auth)
+        - http://host:port (Azure/DO VM proxies without auth)
         - user:pass@host:port (Short format)
         """
-        # Determine which proxy file to use
+        # Determine which proxy file to use (priority: DigitalOcean > Azure > 2Captcha)
+        use_digitalocean = getattr(self.settings, "use_digitalocean_proxies", False)
         use_azure = getattr(self.settings, "use_azure_proxies", False)
-        file_path = self.settings.azure_proxies_file if use_azure else self.settings.residential_proxies_file
         
-        if use_azure:
+        if use_digitalocean:
+            file_path = self.settings.digitalocean_proxies_file
+            logger.info("[DIGITALOCEAN] Using DigitalOcean Droplet proxies for stealth and Cloudflare bypass")
+        elif use_azure:
+            file_path = self.settings.azure_proxies_file
             logger.info("[AZURE] Using Azure VM proxies for stealth and Cloudflare bypass")
+        else:
+            file_path = self.settings.residential_proxies_file
         
         if not os.path.exists(file_path):
             logger.warning(f"[WARN] Proxy file not found: {file_path}. Creating template.")
