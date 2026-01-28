@@ -112,7 +112,7 @@ class FireFaucetBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login page...")
-            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=30)
