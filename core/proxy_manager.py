@@ -760,12 +760,19 @@ class ProxyManager:
 
     def load_proxies_from_file(self) -> int:
         """
-        Loads proxies from the configured proxy file (default: proxies.txt).
+        Loads proxies from the configured proxy file.
+        Supports both 2Captcha residential proxies and Azure VM proxies.
         Expected format per line:
-        - http://user:pass@host:port (Standard)
-        - user:pass@host:port (Short)
+        - http://user:pass@host:port (Standard with auth)
+        - http://host:port (Azure VM proxies without auth)
+        - user:pass@host:port (Short format)
         """
-        file_path = self.settings.residential_proxies_file
+        # Determine which proxy file to use
+        use_azure = getattr(self.settings, "use_azure_proxies", False)
+        file_path = self.settings.azure_proxies_file if use_azure else self.settings.residential_proxies_file
+        
+        if use_azure:
+            logger.info("[AZURE] Using Azure VM proxies for stealth and Cloudflare bypass")
         
         if not os.path.exists(file_path):
             logger.warning(f"[WARN] Proxy file not found: {file_path}. Creating template.")

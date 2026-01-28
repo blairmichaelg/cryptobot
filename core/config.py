@@ -56,7 +56,9 @@ class BotSettings(BaseSettings):
     
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
-    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare, zyte
+    azure_proxies_file: str = str(CONFIG_DIR / "azure_proxies.txt")  # Azure VM proxy list
+    use_azure_proxies: bool = False  # Set to True to use Azure VM proxies instead of 2Captcha
+    proxy_provider: str = "2captcha"  # Options: 2captcha, webshare, zyte, azure
     webshare_api_key: Optional[str] = None
     webshare_page_size: int = 50
     # Proxy validation/health

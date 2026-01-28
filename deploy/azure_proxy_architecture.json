@@ -1,0 +1,230 @@
+{
+  "architecture": {
+    "design_principles": {
+      "profitability": "Minimize cost with B1s instances (~$5/mo each), maximize uptime",
+      "stealth": "Generic naming, geographic distribution, traffic rotation",
+      "automation": "Cloud-init deployment, zero-touch configuration",
+      "robustness": "Multi-region redundancy, health monitoring, auto-failover"
+    },
+    "resource_groups": {
+      "InfraServicesRG": {
+        "purpose": "Proxy infrastructure (generic name for stealth)",
+        "location": "westus2",
+        "resources": ["edge-gateway VMs", "NSGs", "Public IPs"]
+      },
+      "APPSERVRG": {
+        "purpose": "Application tier (existing)",
+        "location": "westus2",
+        "resources": ["DevNode01 VM"]
+      }
+    },
+    "proxy_vms": {
+      "count": 8,
+      "size": "Standard_B1s",
+      "specs": {
+        "vcpus": 1,
+        "ram_gb": 1,
+        "disk_gb": 30,
+        "cost_per_month_usd": 5.18
+      },
+      "naming_pattern": "edge-gateway-{region_code}-{number}",
+      "os": "Ubuntu2204",
+      "software": "Tinyproxy 1.11+",
+      "distribution": [
+        {
+          "region": "westus2",
+          "region_code": "wu2",
+          "vms": 2,
+          "names": ["edge-gateway-wu2-01", "edge-gateway-wu2-02"],
+          "rationale": "Same region as DevNode01, lowest latency"
+        },
+        {
+          "region": "eastus",
+          "region_code": "eu1",
+          "vms": 2,
+          "names": ["edge-gateway-eu1-01", "edge-gateway-eu1-02"],
+          "rationale": "US East coast coverage, low cost"
+        },
+        {
+          "region": "centralus",
+          "region_code": "cu1",
+          "vms": 1,
+          "names": ["edge-gateway-cu1-01"],
+          "rationale": "Central US for geographic diversity"
+        },
+        {
+          "region": "westeurope",
+          "region_code": "we1",
+          "vms": 2,
+          "names": ["edge-gateway-we1-01", "edge-gateway-we1-02"],
+          "rationale": "Europe coverage, many faucets EU-hosted"
+        },
+        {
+          "region": "southeastasia",
+          "region_code": "sea",
+          "vms": 1,
+          "names": ["edge-gateway-sea-01"],
+          "rationale": "Asia-Pacific coverage for global diversity"
+        }
+      ]
+    },
+    "networking": {
+      "public_ips": {
+        "sku": "Standard",
+        "allocation": "Static",
+        "purpose": "Stable proxy endpoints"
+      },
+      "nsg_rules": {
+        "inbound": [
+          {
+            "name": "AllowDevNode01",
+            "priority": 100,
+            "source": "4.155.230.212/32",
+            "destination_port": "8888",
+            "protocol": "TCP",
+            "access": "Allow",
+            "description": "Allow faucet worker VM"
+          },
+          {
+            "name": "AllowSSH",
+            "priority": 200,
+            "source": "0.0.0.0/0",
+            "destination_port": "22",
+            "protocol": "TCP",
+            "access": "Allow",
+            "description": "SSH management access"
+          }
+        ],
+        "outbound": [
+          {
+            "name": "AllowInternet",
+            "priority": 100,
+            "destination": "Internet",
+            "access": "Allow",
+            "description": "Allow proxy traffic to internet"
+          }
+        ]
+      }
+    },
+    "proxy_configuration": {
+      "software": "Tinyproxy",
+      "port": 8888,
+      "features": {
+        "header_hiding": true,
+        "via_header_disabled": true,
+        "forwarded_for_deleted": true,
+        "connection_pooling": true,
+        "timeout_seconds": 600
+      },
+      "access_control": [
+        "127.0.0.1",
+        "4.155.230.212"
+      ],
+      "stealth_settings": {
+        "disable_via_header": "Yes",
+        "stat_file_disabled": true,
+        "anonymous_mode": true
+      }
+    },
+    "integration": {
+      "proxy_manager_updates": {
+        "load_azure_proxies": true,
+        "fallback_to_2captcha": false,
+        "health_check_interval_seconds": 300,
+        "rotation_strategy": "round-robin-with-health-check"
+      },
+      "configuration_files": {
+        "proxy_list": "config/azure_proxies.txt",
+        "env_update": "USE_AZURE_PROXIES=true"
+      }
+    },
+    "cost_analysis": {
+      "monthly_cost_usd": 41.44,
+      "azure_credit_available": 1000,
+      "months_of_runtime": 24.1,
+      "daily_cost_usd": 1.38,
+      "cost_per_successful_claim": "< $0.001",
+      "roi_improvement": "Eliminates 2Captcha proxy costs ($15-50/mo)"
+    },
+    "deployment_automation": {
+      "method": "cloud-init",
+      "deployment_time_minutes": 15,
+      "zero_touch": true,
+      "cloud_init_features": [
+        "Automatic Tinyproxy installation",
+        "Configuration file generation",
+        "Firewall setup (ufw)",
+        "Service enablement",
+        "Health monitoring setup"
+      ]
+    },
+    "monitoring": {
+      "health_checks": {
+        "interval_seconds": 300,
+        "endpoint": "http://{proxy_ip}:8888",
+        "timeout_seconds": 10,
+        "failure_threshold": 3
+      },
+      "metrics": [
+        "Response time",
+        "Success rate",
+        "Connection failures",
+        "Cloudflare blocks"
+      ]
+    },
+    "decommission_plan": {
+      "2captcha_proxies": {
+        "action": "Disable via USE_2CAPTCHA_PROXIES=false",
+        "keep_api_key": true,
+        "reason": "Still needed for captcha solving (not proxies)"
+      },
+      "cleanup_files": [
+        "config/proxy_health.json (old 2Captcha proxy health)"
+      ]
+    }
+  },
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "name": "Infrastructure Deployment",
+      "duration_minutes": 10,
+      "tasks": [
+        "Create InfraServicesRG",
+        "Deploy 8 VMs with cloud-init",
+        "Create NSGs and public IPs"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Code Integration",
+      "duration_minutes": 10,
+      "tasks": [
+        "Update ProxyManager for Azure proxies",
+        "Create azure_proxies.txt loader",
+        "Add health check logic",
+        "Implement round-robin rotation"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Deployment & Testing",
+      "duration_minutes": 15,
+      "tasks": [
+        "Deploy code to DevNode01",
+        "Restart service",
+        "Test Cloudflare bypass",
+        "Monitor for 30 minutes"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Cleanup & Documentation",
+      "duration_minutes": 5,
+      "tasks": [
+        "Disable 2Captcha proxies",
+        "Clean proxy_health.json",
+        "Update deployment docs"
+      ]
+    }
+  ]
+}
