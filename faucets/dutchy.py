@@ -105,7 +105,7 @@ class DutchyBot(FaucetBot):
             else:
                 page = self.page
             
-            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
                 await page.goto(f"{self.base_url}/shortlinks.php", wait_until="domcontentloaded", timeout=nav_timeout)
             except Exception as e:
@@ -209,7 +209,7 @@ class DutchyBot(FaucetBot):
         for attempt in range(1, self.max_retries + 1):
             try:
                 logger.info(f"[{self.faucet_name}] Login attempt {attempt}/{self.max_retries}")
-                nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                nav_timeout = getattr(self.settings, "timeout", 180000)
                 try:
                     await self.page.goto(f"{self.base_url}/login.php", wait_until="domcontentloaded", timeout=nav_timeout)
                 except Exception as e:
@@ -369,7 +369,7 @@ class DutchyBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Checking {roll_name}...")
-            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
                 await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="domcontentloaded", timeout=nav_timeout)
             except Exception as e:
@@ -460,7 +460,7 @@ class DutchyBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
-            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
                 await self.page.goto(f"{self.base_url}/balance.php", wait_until="domcontentloaded", timeout=nav_timeout)
             except Exception as e:

@@ -42,7 +42,7 @@ class PickFaucetBase(FaucetBot):
         Returns:
             True if navigation succeeded, False if all retries exhausted
         """
-        nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+        nav_timeout = getattr(self.settings, "timeout", 180000)
 
         for attempt in range(max_retries):
             try:

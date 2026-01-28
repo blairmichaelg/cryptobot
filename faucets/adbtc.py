@@ -54,7 +54,7 @@ class AdBTCBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login...")
-            await self.page.goto(f"{self.base_url}/index/enter", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{self.base_url}/index/enter", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=30)
@@ -152,7 +152,7 @@ class AdBTCBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Starting claim cycle...")
             
             # Navigate to surf page to verify login and extract balance
-            await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=20)
@@ -278,7 +278,7 @@ class AdBTCBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Starting Surf Ads...")
-            await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=20)
@@ -407,7 +407,7 @@ class AdBTCBot(FaucetBot):
         """
         try:
             logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
-            await self.page.goto(f"{self.base_url}/index/withdraw", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{self.base_url}/index/withdraw", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=20)

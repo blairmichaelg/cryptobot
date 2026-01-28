@@ -1279,7 +1279,7 @@ class FreeBitcoinBot(FaucetBot):
         logger.info("[DEBUG] FreeBitcoin claim() method started")
         
         max_retries = 3
-        nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+        nav_timeout = getattr(self.settings, "timeout", 180000)
         for attempt in range(max_retries):
             try:
                 logger.info(f"[DEBUG] Attempt {attempt + 1}/{max_retries}: Navigating to {self.base_url}/")
