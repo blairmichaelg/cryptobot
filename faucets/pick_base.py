@@ -182,14 +182,13 @@ class PickFaucetBase(FaucetBot):
             logger.error("Base URL not set for PickFaucetBase subclass")
             return False
 
-        login_url = f"{self.base_url}/login.php"
-        logger.info(f"[{self.faucet_name}] Logging in at {login_url}")
-        
-        if not await self._navigate_with_retry(login_url):
-            logger.error(f"[{self.faucet_name}] Failed to navigate to login page")
-            return False
-        await self.handle_cloudflare()
-        await self.close_popups()
+        login_urls = [
+            f"{self.base_url}/login.php",
+            f"{self.base_url}/login",
+            f"{self.base_url}/?op=login",
+            self.base_url,
+        ]
+        logger.info(f"[{self.faucet_name}] Logging in (candidate URLs: {len(login_urls)})")
 
         creds = self.get_credentials(self.faucet_name.lower())
         if not creds:
@@ -203,31 +202,81 @@ class PickFaucetBase(FaucetBot):
         login_id = self.strip_email_alias(login_id)
 
         try:
-            # Fill credentials - Using researched selectors
-            email_field = self.page.locator('input[type="email"], input[name="email"], input#email, input[name="username"], input[name="login"]')
-            pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
+            async def _first_visible(selectors: list[str]):
+                for selector in selectors:
+                    try:
+                        locator = self.page.locator(selector)
+                        if await locator.count() > 0:
+                            target = locator.first
+                            if await target.is_visible():
+                                return target
+                    except Exception:
+                        continue
+                return None
 
-            if await email_field.count() == 0 or await pass_field.count() == 0:
+            email_selectors = [
+                'input[type="email"]',
+                'input[name="email"]',
+                'input#email',
+                'input[name="username"]',
+                'input[name="login"]',
+                'input[name="user"]',
+                'input[name="user_name"]',
+                'input[placeholder*="email" i]',
+                'input[placeholder*="username" i]',
+                'form input[type="text"]',
+            ]
+            password_selectors = [
+                'input[type="password"]',
+                'input[name="password"]',
+                'input#password',
+                'input[name="pass"]',
+                'input[placeholder*="password" i]',
+            ]
+            login_trigger_selectors = [
+                'a:has-text("Login")',
+                'a:has-text("Log in")',
+                'button:has-text("Login")',
+                'button:has-text("Log in")',
+                'a[href*="login"]',
+                'button#login',
+                '.login-btn',
+                '.login-button',
+            ]
+
+            email_target = None
+            pass_target = None
+            for login_url in login_urls:
+                logger.info(f"[{self.faucet_name}] Navigating to {login_url}")
+                if not await self._navigate_with_retry(login_url):
+                    continue
+                await self.handle_cloudflare()
+                await self.close_popups()
+
+                if await self.is_logged_in():
+                    logger.info(f"[{self.faucet_name}] Already logged in")
+                    return True
+
+                email_target = await _first_visible(email_selectors)
+                pass_target = await _first_visible(password_selectors)
+                if not email_target or not pass_target:
+                    login_trigger = await _first_visible(login_trigger_selectors)
+                    if login_trigger:
+                        await self.human_like_click(login_trigger)
+                        await self.random_delay(1.0, 2.0)
+                        email_target = await _first_visible(email_selectors)
+                        pass_target = await _first_visible(password_selectors)
+
+                if email_target and pass_target:
+                    break
+
+            if not email_target or not pass_target:
                 logger.error(f"[{self.faucet_name}] Login fields not found on page")
                 return False
 
-            try:
-                from unittest.mock import AsyncMock, MagicMock
-            except Exception:  # pragma: no cover - fallback for environments without unittest.mock
-                AsyncMock = MagicMock = ()
-
-            if isinstance(email_field, (AsyncMock, MagicMock)):
-                email_target = email_field
-            else:
-                email_target = getattr(email_field, "first", email_field)
-
-            if isinstance(pass_field, (AsyncMock, MagicMock)):
-                pass_target = pass_field
-            else:
-                pass_target = getattr(pass_field, "first", pass_field)
-
-            await email_target.fill(login_id)
-            await pass_target.fill(creds['password'])
+            await self.human_type(email_target, login_id)
+            await self.random_delay(0.4, 0.9)
+            await self.human_type(pass_target, creds['password'])
             
             # Check for hCaptcha or Turnstile
             captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
@@ -253,17 +302,46 @@ class PickFaucetBase(FaucetBot):
                     logger.error(f"[{self.faucet_name}] Captcha solve failed on login")
                     return False
 
-            login_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Login"), button:has-text("Log in")')
+            login_btn = self.page.locator(
+                'button.btn, button.process_btn, button:has-text("Login"), '
+                'button:has-text("Log in"), button[type="submit"], input[type="submit"], '
+                '#login_button, .login-btn, .login-button'
+            )
             await self.human_like_click(login_btn)
-            
-            await self.page.wait_for_load_state("domcontentloaded", timeout=30000)
-            
+
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+
+            failure = await self.check_failure_states()
+            if failure:
+                logger.error(f"[{self.faucet_name}] Failure state detected after login: {failure}")
+                return False
+
             if await self.is_logged_in():
                 logger.info(f"[{self.faucet_name}] Login successful")
                 return True
-            else:
-                logger.warning(f"[{self.faucet_name}] Login did not result in dashboard")
-                return False
+
+            error_selectors = [
+                ".alert-danger",
+                ".alert",
+                ".error",
+                ".text-danger",
+                "[class*='error']",
+            ]
+            for selector in error_selectors:
+                try:
+                    err_loc = self.page.locator(selector)
+                    if await err_loc.count() > 0 and await err_loc.first.is_visible():
+                        err_text = await err_loc.first.text_content()
+                        logger.warning(f"[{self.faucet_name}] Login error: {err_text}")
+                        break
+                except Exception:
+                    continue
+
+            logger.warning(f"[{self.faucet_name}] Login did not result in dashboard")
+            return False
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Login error: {e}")
             return False

@@ -161,11 +161,49 @@ class CoinPayUBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Filling credentials...")
                 # CoinPayU blocks email aliases with '+', use base email
                 base_email = self.strip_email_alias(creds['username'])
-                
+
+                email_selectors = [
+                    'input[placeholder="Email"]',
+                    'input[type="email"]',
+                    'input[name="email"]',
+                    'input#email',
+                    'input[name="login"]',
+                ]
+                password_selectors = [
+                    'input[placeholder="Password"]',
+                    'input[type="password"]',
+                    'input[name="password"]',
+                    'input#password',
+                ]
+
+                email_field = None
+                for selector in email_selectors:
+                    try:
+                        loc = self.page.locator(selector)
+                        if await loc.count() > 0 and await loc.first.is_visible():
+                            email_field = loc.first
+                            break
+                    except Exception:
+                        continue
+
+                password_field = None
+                for selector in password_selectors:
+                    try:
+                        loc = self.page.locator(selector)
+                        if await loc.count() > 0 and await loc.first.is_visible():
+                            password_field = loc.first
+                            break
+                    except Exception:
+                        continue
+
+                if not email_field or not password_field:
+                    logger.warning(f"[{self.faucet_name}] Login fields not found")
+                    continue
+
                 # Use human_type for stealth instead of fill
-                await self.human_type('input[placeholder="Email"]', base_email, delay_min=80, delay_max=150)
+                await self.human_type(email_field, base_email, delay_min=80, delay_max=150)
                 await self.random_delay(0.5, 1.0)
-                await self.human_type('input[placeholder="Password"]', creds['password'], delay_min=80, delay_max=150)
+                await self.human_type(password_field, creds['password'], delay_min=80, delay_max=150)
                 
                 # Small human-like pause
                 await self.random_delay(1.0, 2.0)

@@ -104,6 +104,43 @@ class FreeBitcoinBot(FaucetBot):
         logger.warning(f"[FreeBitcoin] Could not find {element_name} in any frame. Tried selectors: {selectors}")
         return None
 
+    async def _is_signup_form_field(self, locator) -> bool:
+        """
+        Detect whether a locator belongs to a signup/registration form.
+
+        Returns:
+            bool: True if the field appears to be part of a signup form.
+        """
+        if not locator:
+            return False
+        try:
+            info = await locator.evaluate(
+                """
+                (el) => {
+                    const form = el.closest('form');
+                    return {
+                        id: el.id || '',
+                        name: el.name || '',
+                        formId: form ? (form.id || '') : '',
+                        formName: form ? (form.name || '') : '',
+                        formAction: form ? (form.action || '') : ''
+                    };
+                }
+                """
+            )
+            haystack = " ".join(
+                [
+                    str(info.get("id", "")),
+                    str(info.get("name", "")),
+                    str(info.get("formId", "")),
+                    str(info.get("formName", "")),
+                    str(info.get("formAction", "")),
+                ]
+            ).lower()
+            return any(token in haystack for token in ["signup", "register", "registration"])
+        except Exception:
+            return False
+
     async def _wait_for_captcha_token(self, timeout: int = 15000) -> bool:
         """Wait for a captcha token to be injected into the page."""
         try:
@@ -743,8 +780,14 @@ class FreeBitcoinBot(FaucetBot):
                 "button:has-text('Sign in')",
                 "a:has-text('Login')",
                 "a:has-text('Log In')",
+                "a:has-text('Sign in')",
+                "a:has-text('Already')",
+                "a:has-text('Have an account')",
+                "#login_button",
                 "#login_link",
                 ".login-link",
+                "[data-target*='login']",
+                "[data-toggle*='login']",
             ]
 
             login_form_selectors = [
@@ -833,6 +876,19 @@ class FreeBitcoinBot(FaucetBot):
                     logger.debug("[FreeBitcoin] Email field found, looking for password field...")
                     password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
                     if password_field:
+                        if await self._is_signup_form_field(email_field) or await self._is_signup_form_field(password_field):
+                            logger.info("[FreeBitcoin] Signup form detected; attempting to switch to login form.")
+                            login_trigger = await self._find_selector_any_frame(login_trigger_selectors, "login trigger", timeout=4000)
+                            if login_trigger:
+                                await self.human_like_click(login_trigger)
+                                await self.random_delay(1.0, 2.0)
+                                email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
+                                password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
+                            if not email_field or not password_field or await self._is_signup_form_field(email_field):
+                                logger.warning("[FreeBitcoin] Still on signup form; continuing login URL attempts.")
+                                email_field = None
+                                password_field = None
+                                continue
                         logger.debug("[FreeBitcoin] Both email and password fields found")
                         break
                     else:
@@ -1326,13 +1382,36 @@ class FreeBitcoinBot(FaucetBot):
                             won = await result.text_content()
                             # Use DataExtractor for consistent parsing
                             clean_amount = DataExtractor.extract_balance(won)
-                            logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
+
+                            # Confirm claim by checking timer and/or balance update
+                            new_balance = await self.get_balance(
+                                "#balance",
+                                fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
+                            )
+                            timer_after = await self.get_timer(
+                                "#time_remaining",
+                                fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]
+                            )
+                            balance_changed = new_balance != balance and new_balance != "0"
+                            confirmed = bool(clean_amount and clean_amount != "0") and (timer_after > 0 or balance_changed)
+
+                            if confirmed:
+                                logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
+                                return ClaimResult(
+                                    success=True,
+                                    status="Claimed",
+                                    next_claim_minutes=60,
+                                    amount=clean_amount,
+                                    balance=new_balance
+                                )
+
+                            logger.warning("[FreeBitcoin] Claim result found but not confirmed by timer/balance.")
                             return ClaimResult(
-                                success=True,
-                                status="Claimed",
-                                next_claim_minutes=60,
+                                success=False,
+                                status="Claim Unconfirmed",
+                                next_claim_minutes=10,
                                 amount=clean_amount,
-                                balance=balance
+                                balance=new_balance or balance
                             )
                     else:
                         logger.warning(

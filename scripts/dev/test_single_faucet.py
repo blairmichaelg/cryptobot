@@ -147,7 +147,17 @@ async def test_faucet(faucet_name: str, action: str = "check", headless: bool = 
     
     try:
         await browser_manager.launch()
-        context = await browser_manager.create_context(proxy=proxy_str, profile_name=f"test_{faucet_name}")
+        profile_name = f"test_{faucet_name}"
+        if not proxy_str:
+            try:
+                await browser_manager.remove_proxy_binding(profile_name)
+            except Exception:
+                pass
+        context = await browser_manager.create_context(
+            proxy=proxy_str,
+            profile_name=profile_name,
+            allow_sticky_proxy=bool(proxy_str),
+        )
         page = await browser_manager.new_page(context)
         
         # Navigate and observe

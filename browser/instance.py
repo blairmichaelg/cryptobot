@@ -157,11 +157,28 @@ class BrowserManager:
             kwargs["screen"] = Screen(max_width=1920, max_height=1080)
 
         # We keep the camoufox instance wrapper
-        self.camoufox = AsyncCamoufox(**kwargs)
-        
-        # Start the context
-        self.browser = await self.camoufox.__aenter__()
-        return self
+        try:
+            self.camoufox = AsyncCamoufox(**kwargs)
+            self.browser = await self.camoufox.__aenter__()
+            return self
+        except Exception as e:
+            try:
+                from maxminddb.errors import InvalidDatabaseError
+            except Exception:  # pragma: no cover - optional dependency import
+                InvalidDatabaseError = None
+
+            if (
+                (InvalidDatabaseError and isinstance(e, InvalidDatabaseError))
+                or "GeoLite2-City.mmdb" in str(e)
+            ):
+                logger.warning(
+                    "GeoIP database invalid or missing. Retrying launch with geoip disabled."
+                )
+                kwargs["geoip"] = False
+                self.camoufox = AsyncCamoufox(**kwargs)
+                self.browser = await self.camoufox.__aenter__()
+                return self
+            raise
 
     async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True, block_images_override: Optional[bool] = None, block_media_override: Optional[bool] = None) -> BrowserContext:
         """
