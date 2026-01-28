@@ -106,7 +106,7 @@ class CointiplyBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Starting login process")
-            nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+            nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
                 await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
             except Exception as e:
@@ -158,7 +158,7 @@ class CointiplyBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
                 
-                nav_timeout = max(getattr(self.settings, "timeout", 60000), 60000)
+                nav_timeout = getattr(self.settings, "timeout", 180000)
                 try:
                     await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
                 except Exception as e:
