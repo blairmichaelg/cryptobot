@@ -76,9 +76,20 @@ async def main():
     )
     
     proxy_manager = None
-    if settings.use_2captcha_proxies:
+    # Create ProxyManager if any proxy source is enabled
+    use_any_proxies = (
+        settings.use_2captcha_proxies or 
+        getattr(settings, 'use_azure_proxies', False) or 
+        getattr(settings, 'use_digitalocean_proxies', False)
+    )
+    if use_any_proxies:
         from core.proxy_manager import ProxyManager
-        logger.info("🔒 2Captcha Proxies Enabled. Initializing Manager...")
+        if settings.use_digitalocean_proxies:
+            logger.info("🌐 DigitalOcean Proxies Enabled. Initializing Manager...")
+        elif getattr(settings, 'use_azure_proxies', False):
+            logger.info("☁️ Azure VM Proxies Enabled. Initializing Manager...")
+        else:
+            logger.info("🔒 2Captcha Proxies Enabled. Initializing Manager...")
         proxy_manager = ProxyManager(settings)
     
     scheduler = JobScheduler(settings, browser_manager, proxy_manager)
