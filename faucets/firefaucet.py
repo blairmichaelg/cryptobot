@@ -409,24 +409,39 @@ class FireFaucetBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
             await self.page.goto(f"{self.base_url}/faucet")
             
-            # Extract balance with fallback selectors
+            # Extract balance with fallback selectors (updated 2026-01-30)
             balance_selectors = [
-                ".user-balance",
-                ".balance-text",
-                "[class*='balance']",
-                "#balance",
-                ".navbar .balance"
+                ".user-balance",           # Primary FireFaucet balance class
+                ".balance",                # Generic balance class
+                "#user-balance",          # ID variant
+                ".balance-text",          # Text wrapper
+                "span.user-balance",      # Span element
+                ".navbar .balance",       # Navbar location
+                "[data-balance]",         # Data attribute
+                ".account-balance",       # Alternative naming
+                "#balance",               # Simple ID
+                "[class*='balance']",     # Wildcard class match
+                ".wallet-balance",        # Wallet section
+                "span[class*='balance']:visible",  # Any visible balance span
             ]
             balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
             logger.info(f"[{self.faucet_name}] Current balance: {balance}")
             
-            # Extract timer with fallback selectors
+            # Extract timer with fallback selectors (updated 2026-01-30)
             timer_selectors = [
-                ".fa-clock + span",
-                "#claim_timer",
-                ".timer",
-                "[class*='timer']",
-                "[class*='countdown']"
+                ".fa-clock + span",        # Icon + timer span
+                "#claim_timer",            # Timer ID
+                "#time",                   # Common timer ID
+                ".timer",                  # Generic timer class
+                ".countdown",              # Countdown class
+                "[data-timer]",            # Data attribute
+                "[data-countdown]",        # Countdown data attr
+                ".time-remaining",         # Descriptive class
+                "[class*='timer']",        # Wildcard timer class
+                "[class*='countdown']",    # Wildcard countdown class
+                "[id*='timer']",           # Wildcard timer ID
+                "span.timer:visible",      # Any visible timer span
+                ".claim-timer",            # Claim-specific timer
             ]
             wait = await self.get_timer(timer_selectors[0], fallback_selectors=timer_selectors[1:])
             logger.info(f"[{self.faucet_name}] Timer status: {wait} minutes")
@@ -537,16 +552,58 @@ class FireFaucetBot(FaucetBot):
                 # Debug: Log available buttons on the page
                 logger.warning(f"[{self.faucet_name}] Faucet button not found with any selector")
                 try:
+                    # Enhanced debugging
+                    page_url = self.page.url
+                    logger.error(f"[{self.faucet_name}] Current URL: {page_url}")
+                    
+                    # Check if we're actually on the faucet page
+                    if "/faucet" not in page_url:
+                        logger.error(f"[{self.faucet_name}] ⚠️ Not on faucet page! Redirected to: {page_url}")
+                    
                     all_buttons = await self.page.locator("button, input[type='submit']").all()
-                    logger.info(f"[{self.faucet_name}] 🔍 DEBUG: Found {len(all_buttons)} buttons on page")
-                    for idx, btn in enumerate(all_buttons[:5]):  # Log first 5 buttons
-                        btn_text = await btn.text_content() or ""
-                        btn_id = await btn.get_attribute("id") or ""
-                        btn_class = await btn.get_attribute("class") or ""
-                        logger.info(f"[{self.faucet_name}] Button {idx+1}: text='{btn_text.strip()}' id='{btn_id}' class='{btn_class}'")
+                    logger.error(f"[{self.faucet_name}] 🔍 DEBUG: Found {len(all_buttons)} buttons/inputs on page")
+                    for idx, btn in enumerate(all_buttons[:10]):  # Log first 10 buttons
+                        try:
+                            btn_text = await btn.text_content() or ""
+                            btn_id = await btn.get_attribute("id") or ""
+                            btn_class = await btn.get_attribute("class") or ""
+                            btn_type = await btn.get_attribute("type") or ""
+                            btn_value = await btn.get_attribute("value") or ""
+                            is_visible = await btn.is_visible()
+                            logger.error(f"[{self.faucet_name}]   [{idx+1}] text='{btn_text.strip()[:50]}' id='{btn_id}' class='{btn_class}' type='{btn_type}' value='{btn_value}' visible={is_visible}")
+                        except Exception as btn_err:
+                            logger.debug(f"[{self.faucet_name}] Could not read button {idx+1}: {btn_err}")
+                    
+                    # Also check for links that might be styled as buttons
+                    all_links = await self.page.locator("a.btn, a[class*='button']").all()
+                    if all_links:
+                        logger.error(f"[{self.faucet_name}] 🔍 DEBUG: Found {len(all_links)} link-buttons on page")
+                        for idx, link in enumerate(all_links[:5]):
+                            try:
+                                link_text = await link.text_content() or ""
+                                link_href = await link.get_attribute("href") or ""
+                                link_class = await link.get_attribute("class") or ""
+                                is_visible = await link.is_visible()
+                                logger.error(f"[{self.faucet_name}]   Link[{idx+1}] text='{link_text.strip()[:50]}' href='{link_href}' class='{link_class}' visible={is_visible}")
+                            except Exception as link_err:
+                                logger.debug(f"[{self.faucet_name}] Could not read link {idx+1}: {link_err}")
+                    
+                    # Check for any error/warning messages on the page
+                    error_msgs = await self.page.locator(".alert, .error, .warning, [class*='error'], [class*='alert']").all()
+                    if error_msgs:
+                        logger.error(f"[{self.faucet_name}] ⚠️ Found {len(error_msgs)} error/alert elements:")
+                        for idx, msg in enumerate(error_msgs[:3]):
+                            try:
+                                msg_text = await msg.text_content() or ""
+                                logger.error(f"[{self.faucet_name}]   Alert[{idx+1}]: {msg_text.strip()[:100]}")
+                            except Exception:
+                                pass
+                                
                 except Exception as debug_err:
-                    logger.debug(f"[{self.faucet_name}] Could not enumerate buttons: {debug_err}")
+                    logger.error(f"[{self.faucet_name}] Could not enumerate page elements: {debug_err}")
+                    
                 await self.page.screenshot(path=f"claim_btn_missing_{self.faucet_name}.png", full_page=True)
+                logger.error(f"[{self.faucet_name}] Screenshot saved to claim_btn_missing_{self.faucet_name}.png")
                 
             return ClaimResult(success=False, status="Faucet Ready but Failed", next_claim_minutes=5, balance=balance)
             
