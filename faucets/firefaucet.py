@@ -450,21 +450,55 @@ class FireFaucetBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
             await self.idle_mouse(duration=random.uniform(0.5, 1.5))
             
-            # Faucet Claim Button with fallback selectors
+            # Wait for page to be fully loaded and interactive
+            await self.page.wait_for_load_state("networkidle", timeout=10000)
+            await asyncio.sleep(2)  # Additional wait for JavaScript to render buttons
+            
+            # Faucet Claim Button with fallback selectors (updated 2026-01-30)
             faucet_btn_selectors = [
-                "#get_reward_button",
-                "#faucet_btn", 
+                "button:has-text('Get reward')",  # Primary FireFaucet button text
+                "button:has-text('Get Reward')",
                 "button:has-text('Claim')",
-                "button[type='submit']",
-                ".claim-button"
+                "button:has-text('claim')",
+                "button:text('Get reward')",
+                "button:text('Get Reward')",
+                "#get_reward_button",
+                "#claim-button",
+                "#faucet_btn",
+                "button.btn.btn-primary:visible",
+                "button.btn:visible",
+                "button[type='submit']:visible",
+                ".btn.btn-primary:visible",
+                ".claim-button",
+                "form button[type='submit']:visible",
+                "button.btn:has-text('reward')",
+                "button:visible",  # Last resort: any visible button
+                "input[type='submit'][value*='Claim']",
+                "input[type='submit'][value*='reward']",
+                "input[type='submit']:visible"
             ]
             faucet_btn = None
             for selector in faucet_btn_selectors:
-                btn = self.page.locator(selector)
-                if await btn.count() > 0:
-                    faucet_btn = btn
-                    logger.debug(f"[{self.faucet_name}] Found claim button with selector: {selector}")
-                    break
+                try:
+                    btn = self.page.locator(selector)
+                    count = await btn.count()
+                    logger.debug(f"[{self.faucet_name}] Testing selector '{selector}': found {count} elements")
+                    if count > 0:
+                        # Additional check: ensure button is visible and enabled
+                        try:
+                            is_visible = await btn.first.is_visible(timeout=2000)
+                            if is_visible:
+                                faucet_btn = btn
+                                logger.info(f"[{self.faucet_name}] ✅ Found claim button with selector: {selector}")
+                                break
+                            else:
+                                logger.debug(f"[{self.faucet_name}] Button found but not visible: {selector}")
+                        except Exception as vis_err:
+                            logger.debug(f"[{self.faucet_name}] Visibility check failed for {selector}: {vis_err}")
+                            continue
+                except Exception as sel_err:
+                    logger.debug(f"[{self.faucet_name}] Selector '{selector}' failed: {sel_err}")
+                    continue
             
             if faucet_btn and await faucet_btn.count() > 0:
                 logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
@@ -500,7 +534,18 @@ class FireFaucetBot(FaucetBot):
                 logger.warning(f"[{self.faucet_name}] Claim verification failed - no success message found")
                 await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)
             else:
+                # Debug: Log available buttons on the page
                 logger.warning(f"[{self.faucet_name}] Faucet button not found with any selector")
+                try:
+                    all_buttons = await self.page.locator("button, input[type='submit']").all()
+                    logger.info(f"[{self.faucet_name}] 🔍 DEBUG: Found {len(all_buttons)} buttons on page")
+                    for idx, btn in enumerate(all_buttons[:5]):  # Log first 5 buttons
+                        btn_text = await btn.text_content() or ""
+                        btn_id = await btn.get_attribute("id") or ""
+                        btn_class = await btn.get_attribute("class") or ""
+                        logger.info(f"[{self.faucet_name}] Button {idx+1}: text='{btn_text.strip()}' id='{btn_id}' class='{btn_class}'")
+                except Exception as debug_err:
+                    logger.debug(f"[{self.faucet_name}] Could not enumerate buttons: {debug_err}")
                 await self.page.screenshot(path=f"claim_btn_missing_{self.faucet_name}.png", full_page=True)
                 
             return ClaimResult(success=False, status="Faucet Ready but Failed", next_claim_minutes=5, balance=balance)
