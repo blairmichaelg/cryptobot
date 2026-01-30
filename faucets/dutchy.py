@@ -192,6 +192,8 @@ class DutchyBot(FaucetBot):
         Uses human_type() for credentials, implements retry logic for network errors,
         and validates login state with comprehensive checks.
         
+        ⚠️ DutchyCorp requires residential proxies - datacenter IPs are detected immediately.
+        
         Returns:
             True if login successful, False otherwise
         """
@@ -205,6 +207,14 @@ class DutchyBot(FaucetBot):
             logger.error(f"[{self.faucet_name}] No credentials found")
             return False
 
+        # DutchyCorp REQUIRES residential proxies - check proxy type
+        if hasattr(self, 'profile') and self.profile:
+            if not getattr(self.profile, 'residential_proxy', False):
+                logger.error(f"[{self.faucet_name}] ⚠️ DATACENTER PROXY DETECTED - DutchyCorp requires residential proxies!")
+                logger.error(f"[{self.faucet_name}] Set 'residential_proxy: true' in faucet_config.json or use 2Captcha residential proxies")
+                logger.error(f"[{self.faucet_name}] Proxy info: {getattr(self.profile, 'proxy', 'N/A')}")
+                # Continue anyway but warn - operator should fix this
+        
         # Retry loop for network resilience
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -219,10 +229,13 @@ class DutchyBot(FaucetBot):
                 # Handle Cloudflare challenges that may appear after navigation
                 await self.handle_cloudflare(max_wait_seconds=120)
                 
-                # Check for common failure states
+                # Check for common failure states (including proxy detection)
                 failure_state = await self.check_failure_states()
                 if failure_state:
-                    logger.error(f"[{self.faucet_name}] {failure_state} detected")
+                    if "Proxy Detected" in failure_state:
+                        logger.error(f"[{self.faucet_name}] {failure_state} - DutchyCorp blocks datacenter IPs. Use residential proxies!")
+                    else:
+                        logger.error(f"[{self.faucet_name}] {failure_state} detected")
                     return False
                 
                 # Check if already logged in

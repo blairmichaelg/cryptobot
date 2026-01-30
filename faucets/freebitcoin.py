@@ -732,44 +732,34 @@ class FreeBitcoinBot(FaucetBot):
             password_field = None
 
             # Try multiple selectors for email/username field
+            # ⚠️ Order matters - most specific first to avoid signup form fields
             email_selectors = [
-                "input[name='btc_address']",  # FreeBitcoin uses BTC address as login
+                "#login_form input[name='btc_address']",  # FreeBitcoin uses BTC address - scoped to login form
                 "input[id='login_form_btc_address']",  # ID variant
                 "input#login_form_btc_address",  # Compact ID
                 "#login_form_btc_address",  # Direct ID
-                "input[name='login_form[btc_address]']",
+                "#login_form input[name='login_form[btc_address]']",  # Form-scoped
+                "input[name='btc_address']",  # Fallback without form scope
+                "#login_form input[name='username']",  # Generic username in login form
+                "#login_form input[name='email']",  # Generic email in login form
                 "input[name='login_form[username]']",
                 "input[name='login_form[email]']",
-                "input[name='username']",
-                "input[name='email']",
-                "input[name='login']",
-                "input[type='email']",  # Standard email input
-                "#email",
-                "#username",
-                "#login",
                 "#btc_address",
-                ".login-username",  # Class-based
-                ".login-email",
-                "[placeholder*='address' i]",  # Placeholder matching (case insensitive)
-                "[placeholder*='email' i]",
-                "[placeholder*='username' i]",
-                "form input[type='text']:first-of-type",  # Generic fallback
+                "#username",
+                "#email",
             ]
 
             # Try multiple selectors for password field
+            # ⚠️ Scoped to login form to avoid signup password fields
             password_selectors = [
-                "input[name='password']",
+                "#login_form input[name='password']",  # Login form scoped
                 "input[id='login_form_password']",  # ID variant
                 "input#login_form_password",  # Compact ID
                 "#login_form_password",  # Direct ID
-                "#password",
-                "input[type='password']",  # Standard password input
+                "#login_form input[type='password']",  # Type-based in login form
                 "input[name='login_form[password]']",
-                "input[name='login_form[pass]']",
-                "input[name='pass']",
-                ".login-password",  # Class-based
-                "[placeholder*='password' i]",  # Placeholder matching
-                "form input[type='password']:first-of-type",  # Generic fallback
+                "input[name='password']",  # Fallback
+                "#password",
             ]
 
             login_trigger_selectors = [
