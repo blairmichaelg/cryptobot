@@ -1,3 +1,3 @@
-# DigitalOcean Droplet Proxy List
-# Automatically populated by deploy_digitalocean_proxies.sh
-# Format: http://IP:8888 (one per line, no authentication required)
+http://142.93.66.75:8888
+http://165.227.70.6:8888
+http://167.99.207.160:8888

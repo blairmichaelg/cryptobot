@@ -30,16 +30,12 @@ DROPLET_IMAGE="ubuntu-22-04-x64"
 PROXY_PORT="8888"
 DEVNODE_IP="4.155.230.212"  # Azure VM that needs access
 
-# Droplet names (stealth naming)
+# Droplet names (stealth naming) - Limited to 4 due to new account restrictions
 declare -A DROPLETS=(
     ["edge-node-ny1"]="$REGION_1"
     ["edge-node-ny2"]="$REGION_1"
     ["edge-node-sf1"]="$REGION_2"
-    ["edge-node-sf2"]="$REGION_2"
     ["edge-node-lon1"]="$REGION_3"
-    ["edge-node-lon2"]="$REGION_3"
-    ["edge-node-fra1"]="$REGION_4"
-    ["edge-node-sgp1"]="$REGION_5"
 )
 
 # Cloud-init script to configure Tinyproxy
@@ -84,11 +80,11 @@ ConnectPort 563
 TINYPROXY_EOF
 
 # Replace placeholder with actual IP
-sed -i "s/DEVNODE_IP_ACTUAL/$DEVNODE_IP/g" /etc/tinyproxy/tinyproxy.conf
+sed -i "s/DEVNODE_IP_ACTUAL/DEVNODE_IP_PLACEHOLDER/g" /etc/tinyproxy/tinyproxy.conf
 
 # Configure UFW firewall
 ufw --force enable
-ufw allow from $DEVNODE_IP to any port 8888
+ufw allow from DEVNODE_IP_PLACEHOLDER to any port 8888
 ufw allow ssh
 
 # Restart Tinyproxy
@@ -102,17 +98,22 @@ echo "Proxy setup complete on port 8888"
 EOF
 
 # Replace placeholder in cloud-init
-CLOUD_INIT="${CLOUD_INIT//\$DEVNODE_IP/$DEVNODE_IP}"
+CLOUD_INIT="${CLOUD_INIT//DEVNODE_IP_PLACEHOLDER/$DEVNODE_IP}"
 
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║   DigitalOcean Proxy Infrastructure Deployment               ║${NC}"
-echo -e "${GREEN}║   8 Droplets across 5 regions | $200 Student credit        ║${NC}"
+echo -e "${GREEN}║   4 Droplets across 3 regions | \$200 Student credit        ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Check if doctl is installed
 echo -e "${YELLOW}[1/6] Checking doctl CLI installation...${NC}"
-if ! command -v doctl &> /dev/null; then
+DOCTL_CMD=""
+if command -v doctl &> /dev/null; then
+    DOCTL_CMD="doctl"
+elif command -v /snap/bin/doctl &> /dev/null; then
+    DOCTL_CMD="/snap/bin/doctl"
+else
     echo -e "${RED}ERROR: doctl CLI not found${NC}"
     echo "Install with: snap install doctl"
     echo "Then authenticate: doctl auth init"
@@ -121,37 +122,38 @@ fi
 
 # Check authentication
 echo -e "${YELLOW}[2/6] Checking DigitalOcean authentication...${NC}"
-if ! doctl account get &>/dev/null; then
+if ! $DOCTL_CMD account get &>/dev/null; then
     echo -e "${RED}ERROR: Not authenticated to DigitalOcean${NC}"
-    echo "Run: doctl auth init"
+    echo "Run: $DOCTL_CMD auth init"
     exit 1
 fi
 
-ACCOUNT_EMAIL=$(doctl account get --format Email --no-header)
+ACCOUNT_EMAIL=$($DOCTL_CMD account get --format Email --no-header)
 echo -e "${GREEN}✓ Authenticated as: $ACCOUNT_EMAIL${NC}"
 
 # Create SSH key if needed
 echo -e "${YELLOW}[3/6] Setting up SSH keys...${NC}"
 SSH_KEY_NAME="cryptobot-proxy-key"
-if ! doctl compute ssh-key list --format Name --no-header | grep -q "^${SSH_KEY_NAME}$"; then
+if ! $DOCTL_CMD compute ssh-key list --format Name --no-header | grep -q "^${SSH_KEY_NAME}$"; then
     if [ ! -f ~/.ssh/id_rsa.pub ]; then
         ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
     fi
-    doctl compute ssh-key import "$SSH_KEY_NAME" --public-key-file ~/.ssh/id_rsa.pub
+    $DOCTL_CMD compute ssh-key import "$SSH_KEY_NAME" --public-key-file ~/.ssh/id_rsa.pub
     echo -e "${GREEN}✓ SSH key uploaded${NC}"
 else
     echo -e "${GREEN}✓ SSH key already exists${NC}"
 fi
 
-SSH_KEY_ID=$(doctl compute ssh-key list --format ID,Name --no-header | grep "$SSH_KEY_NAME" | awk '{print $1}')
+SSH_KEY_ID=$($DOCTL_CMD compute ssh-key list --format ID,Name --no-header | grep "$SSH_KEY_NAME" | awk '{print $1}')
 
 # Deploy droplets
-echo -e "${YELLOW}[4/6] Deploying 8 proxy droplets (~3 minutes)...${NC}"
-echo -e "  Regions: NYC (2), SFO (2), LON (2), FRA (1), SGP (1)"
+echo -e "${YELLOW}[4/6] Deploying 4 proxy droplets (~3 minutes)...${NC}"
+echo -e "  Regions: NYC (2), SFO (1), LON (1)"
 echo ""
 
 # Write cloud-init to temp file
-CLOUD_INIT_FILE="/tmp/digitalocean-cloud-init.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_INIT_FILE="$SCRIPT_DIR/.digitalocean-cloud-init.sh"
 echo "$CLOUD_INIT" > "$CLOUD_INIT_FILE"
 
 DROPLET_IDS=()
@@ -161,7 +163,7 @@ for DROPLET_NAME in "${!DROPLETS[@]}"; do
     
     echo -e "  ${YELLOW}→${NC} Creating $DROPLET_NAME in $REGION..."
     
-    DROPLET_ID=$(doctl compute droplet create "$DROPLET_NAME" \
+    DROPLET_ID=$($DOCTL_CMD compute droplet create "$DROPLET_NAME" \
         --region "$REGION" \
         --size "$DROPLET_SIZE" \
         --image "$DROPLET_IMAGE" \
@@ -190,8 +192,8 @@ echo -e "${YELLOW}[6/6] Collecting proxy IPs...${NC}"
 echo ""
 
 for DROPLET_ID in "${DROPLET_IDS[@]}"; do
-    IP=$(doctl compute droplet get "$DROPLET_ID" --format PublicIPv4 --no-header)
-    NAME=$(doctl compute droplet get "$DROPLET_ID" --format Name --no-header)
+    IP=$($DOCTL_CMD compute droplet get "$DROPLET_ID" --format PublicIPv4 --no-header)
+    NAME=$($DOCTL_CMD compute droplet get "$DROPLET_ID" --format Name --no-header)
     
     echo "http://${IP}:${PROXY_PORT}" >> "$PROXY_FILE"
     echo -e "  ${GREEN}✓${NC} $NAME: http://${IP}:${PROXY_PORT}"
