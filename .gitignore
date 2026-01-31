@@ -103,7 +103,17 @@ setup_*.ps1
 *.bak
 *.backup
 *_backup.*
+*.backup.*
 proxies.txt
 verify_solver_proxy.py
 config/price_cache.json
 config/cookies_encrypted/
+
+# Temporary and output files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+azure_deploy_output.log
+deployment_*.log
