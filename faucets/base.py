@@ -25,6 +25,52 @@ class ClaimResult:
     amount: str = "0"
     balance: str = "0"
     error_type: Optional['ErrorType'] = None  # Add error type classification
+    
+    def validate(self, faucet_name: str = "Unknown") -> 'ClaimResult':
+        """
+        Validate and sanitize ClaimResult fields.
+        
+        Ensures amount and balance are valid strings that can be parsed as numbers.
+        Logs warnings for suspicious values.
+        
+        Args:
+            faucet_name: Name of faucet for logging context
+            
+        Returns:
+            Self (for chaining)
+        """
+        # Validate amount
+        if self.amount is None:
+            logger.warning(f"[{faucet_name}] ClaimResult has None amount, setting to '0'")
+            self.amount = "0"
+        elif not isinstance(self.amount, str):
+            # Try to convert to string
+            try:
+                self.amount = str(self.amount)
+            except Exception as e:
+                logger.warning(f"[{faucet_name}] Failed to convert amount to string: {e}")
+                self.amount = "0"
+        
+        # Validate balance
+        if self.balance is None:
+            logger.warning(f"[{faucet_name}] ClaimResult has None balance, setting to '0'")
+            self.balance = "0"
+        elif not isinstance(self.balance, str):
+            # Try to convert to string
+            try:
+                self.balance = str(self.balance)
+            except Exception as e:
+                logger.warning(f"[{faucet_name}] Failed to convert balance to string: {e}")
+                self.balance = "0"
+        
+        # Log warning if successful but no amount
+        if self.success and (not self.amount or self.amount == "0"):
+            logger.warning(
+                f"[{faucet_name}] ⚠️ Successful ClaimResult has 0 amount - "
+                f"possible extraction failure. Status: {self.status}"
+            )
+        
+        return self
 
 class FaucetBot:
     """Base class for Faucet Bots."""
@@ -236,6 +282,14 @@ class FaucetBot:
         # Check exception type and message
         if exception:
             error_msg = str(exception).lower()
+            
+            # Browser context closed errors - treat as transient (browser can be restarted)
+            if any(term in error_msg for term in [
+                "target.*closed", "context.*closed", "browser.*closed",
+                "connection.*closed", "session.*closed"
+            ]):
+                logger.debug(f"[{self.faucet_name}] Classified as TRANSIENT (closed context/browser)")
+                return ErrorType.TRANSIENT
             
             # Captcha failures - check before timeout since captcha timeouts are specific
             if "captcha" in error_msg and any(term in error_msg for term in ["failed", "timeout", "error"]):
@@ -1285,7 +1339,7 @@ class FaucetBot:
                     status="Login/Access Failed", 
                     next_claim_minutes=30,
                     error_type=error_type
-                )
+                ).validate(self.faucet_name)
             
             await self.think_pause("pre_claim")
             result = await self.claim()
@@ -1293,6 +1347,9 @@ class FaucetBot:
             # Handle cases where claim() might return a boolean (legacy)
             if isinstance(result, bool):
                 result = ClaimResult(success=result, status="Claimed" if result else "Failed")
+            
+            # Validate ClaimResult before proceeding
+            result.validate(self.faucet_name)
             
             # If claim failed, try to classify the error
             if not result.success and not hasattr(result, 'error_type'):
@@ -1335,34 +1392,59 @@ class FaucetBot:
         return ClaimResult(success=True, status="PTC Done", next_claim_minutes=self.settings.exploration_frequency_minutes)
 
     async def _record_analytics(self, result: ClaimResult):
-        """Helper to record analytics for a result."""
+        """Helper to record analytics for a result with enhanced validation."""
         try:
             tracker = get_tracker()
+            
+            # Extract amount from ClaimResult
             raw_amount = result.amount or ""
-            amount_str = DataExtractor.extract_balance(raw_amount)
+            amount_str = DataExtractor.extract_balance(str(raw_amount))
+            
+            # Fallback: try extracting from status message if amount is empty
             if (not amount_str or amount_str == "0") and result.status:
                 amount_str = DataExtractor.extract_balance(result.status)
-
+            
+            # Convert to float with validation
             amount_val = 0.0
             try:
                 amount_val = float(amount_str) if amount_str else 0.0
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[{self.faucet_name}] Failed to parse amount '{amount_str}': {e}")
                 amount_val = 0.0
 
+            # Determine currency
             currency = getattr(self, 'coin', None) or self._get_cryptocurrency_for_faucet()
             if not currency or currency == "UNKNOWN":
                 detected = self._detect_currency_from_text(f"{raw_amount} {result.status or ''} {result.balance or ''}")
                 if detected:
                     currency = detected
 
+            # Normalize amount to smallest unit (satoshi, wei, etc.)
             amount = self._normalize_claim_amount(amount_val, raw_amount, currency)
 
+            # Extract balance_after from ClaimResult
             raw_balance = result.balance or ""
-            balance_str = DataExtractor.extract_balance(raw_balance)
+            balance_str = DataExtractor.extract_balance(str(raw_balance))
+            
+            # Convert to float with validation
+            balance_after = 0.0
             try:
                 balance_after = float(balance_str) if balance_str else 0.0
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[{self.faucet_name}] Failed to parse balance '{balance_str}': {e}")
                 balance_after = 0.0
+            
+            # Normalize balance to smallest unit
+            balance_after = self._normalize_claim_amount(balance_after, raw_balance, currency)
+            
+            # Log extracted values for debugging
+            logger.debug(
+                f"[{self.faucet_name}] Analytics: "
+                f"raw_amount='{raw_amount}' -> {amount} {currency}, "
+                f"raw_balance='{raw_balance}' -> {balance_after}"
+            )
+            
+            # Record to analytics
             tracker.record_claim(
                 faucet=self.faucet_name,
                 success=result.success,
@@ -1371,7 +1453,7 @@ class FaucetBot:
                 balance_after=balance_after
             )
         except Exception as analytics_err:
-            logger.warning(f"Analytics tracking failed: {analytics_err}")
+            logger.warning(f"[{self.faucet_name}] Analytics tracking failed: {analytics_err}", exc_info=True)
 
     def _normalize_claim_amount(self, amount: float, raw_amount: str, currency: str) -> float:
         """Normalize claim amount into smallest units for analytics.

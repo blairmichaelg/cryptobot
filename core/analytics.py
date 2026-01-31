@@ -296,13 +296,45 @@ class EarningsTracker:
             logger.debug(f"Skipping analytics for test faucet: {faucet}")
             return
         
+        # Validate and sanitize inputs
+        try:
+            # Ensure amount is a valid number
+            if amount is None or not isinstance(amount, (int, float)):
+                logger.warning(f"Invalid amount type for {faucet}: {type(amount)} = {amount}")
+                amount = 0.0
+            elif not (0 <= amount < 1e12):  # Sanity check: 0 to 1 trillion units
+                logger.warning(f"Suspicious amount for {faucet}: {amount}, setting to 0")
+                amount = 0.0
+            
+            # Ensure balance_after is a valid number
+            if balance_after is None or not isinstance(balance_after, (int, float)):
+                logger.warning(f"Invalid balance_after type for {faucet}: {type(balance_after)} = {balance_after}")
+                balance_after = 0.0
+            elif not (0 <= balance_after < 1e12):  # Sanity check
+                logger.warning(f"Suspicious balance_after for {faucet}: {balance_after}, setting to 0")
+                balance_after = 0.0
+                
+            # Validate currency
+            if not currency or not isinstance(currency, str):
+                logger.warning(f"Invalid currency for {faucet}: {currency}, setting to 'unknown'")
+                currency = "unknown"
+            
+            # Log warning if successful claim has zero amount
+            if success and amount == 0.0:
+                logger.warning(f"⚠️ Successful claim for {faucet} recorded with 0 amount - possible extraction failure")
+                
+        except Exception as e:
+            logger.error(f"Validation error in record_claim for {faucet}: {e}")
+            amount = 0.0
+            balance_after = 0.0
+        
         record = ClaimRecord(
             timestamp=time.time(),
             faucet=faucet,
             success=success,
-            amount=amount,
-            currency=currency,
-            balance_after=balance_after
+            amount=float(amount),
+            currency=str(currency),
+            balance_after=float(balance_after)
         )
         self.claims.append(asdict(record))
         logger.info(f"📈 Recorded: {faucet} {'✓' if success else '✗'} {amount} {currency}")

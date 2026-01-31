@@ -104,6 +104,13 @@ class DataExtractor:
         """
         Extracts numeric balance from text like "Balance: 1,234.56 BTC" -> "1234.56"
         
+        Handles:
+        - Standard decimal: "1234.56" -> "1234.56"
+        - Comma separators: "1,234.56" -> "1234.56"
+        - Scientific notation: "3.8e-07" -> "0.00000038"
+        - Leading zeros: "0.00012345" -> "0.00012345"
+        - Embedded in text: "Balance: 100 BTC" -> "100"
+        
         Args:
             text: The balance text to extract from
             
@@ -113,6 +120,8 @@ class DataExtractor:
         Examples:
             >>> DataExtractor.extract_balance("Balance: 1,234.56 BTC")
             '1234.56'
+            >>> DataExtractor.extract_balance("3.8e-07")
+            '0.00000038'
             >>> DataExtractor.extract_balance("0.00012345")
             '0.00012345'
         """
@@ -120,16 +129,44 @@ class DataExtractor:
             logger.debug("Empty balance text provided")
             return "0"
         
-        # Remove commas
-        text = text.replace(",", "")
-        # Find first number (including decimal)
+        original_text = text
+        text = text.strip()
+        
+        # Remove common non-numeric characters but keep decimal point, minus sign, and 'e' for scientific notation
+        text = text.replace(",", "").replace("$", "").replace("₿", "").replace("฿", "")
+        
+        # Try to find scientific notation first (e.g., 3.8e-07, 1.2E+05)
+        sci_match = re.search(r'([+-]?\d+\.?\d*[eE][+-]?\d+)', text)
+        if sci_match:
+            try:
+                sci_value = float(sci_match.group(1))
+                # Convert to string without scientific notation
+                if sci_value == 0:
+                    result = "0"
+                elif abs(sci_value) < 1e-8:
+                    result = f"{sci_value:.10f}".rstrip('0').rstrip('.')
+                elif abs(sci_value) < 1:
+                    result = f"{sci_value:.8f}".rstrip('0').rstrip('.')
+                else:
+                    result = str(sci_value)
+                logger.debug(f"Extracted scientific notation: {result} from '{original_text}'")
+                return result
+            except (ValueError, OverflowError) as e:
+                logger.warning(f"Failed to parse scientific notation '{sci_match.group(1)}': {e}")
+        
+        # Find standard decimal number (including decimals)
         match = re.search(r'(\d+\.?\d*)', text)
         if match:
             result = match.group(1)
-            logger.debug(f"Extracted balance: {result} from '{text}'")
+            # Remove trailing zeros and decimal point if unnecessary
+            if '.' in result:
+                result = result.rstrip('0').rstrip('.')
+            if result == "":
+                result = "0"
+            logger.debug(f"Extracted balance: {result} from '{original_text}'")
             return result
         
-        logger.warning(f"Failed to extract balance from: '{text}'")
+        logger.warning(f"Failed to extract balance from: '{original_text}'")
         return "0"
 
     @staticmethod

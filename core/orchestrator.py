@@ -1201,10 +1201,19 @@ class JobScheduler:
         finally:
             if context:
                 try:
-                    await self.browser_manager.save_cookies(context, profile.username)
-                    await context.close()
+                    # Check if context is still alive before operations
+                    is_alive = await self.browser_manager.check_context_alive(context)
+                    if is_alive:
+                        await self.browser_manager.save_cookies(context, profile.username)
+                        await context.close()
+                    else:
+                        logger.debug(f"Context already closed for {profile.username} - skipping cleanup")
                 except Exception as cleanup_error:
-                    logger.warning(f"Context cleanup failed: {cleanup_error}")
+                    # Don't log closed context errors as warnings - they're expected
+                    if "Target.*closed" in str(cleanup_error) or "Connection.*closed" in str(cleanup_error):
+                        logger.debug(f"Context cleanup on already-closed context: {cleanup_error}")
+                    else:
+                        logger.warning(f"Context cleanup failed: {cleanup_error}")
 
     def add_job(self, job: Job):
         """
@@ -1464,20 +1473,38 @@ class JobScheduler:
             # Get proxy using rotation logic
             current_proxy = self.get_next_proxy(job.profile, faucet_type=job.faucet_type)
             
-            # Create isolated context for the job
+            # Create isolated context for the job with retry on failure
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
             # Sticky Session: Pass profile_name
             locale_hint, timezone_hint = await self._get_proxy_locale_timezone(current_proxy)
-            context = await self.browser_manager.create_context(
-                proxy=current_proxy,
-                user_agent=ua,
-                profile_name=username,
-                locale_override=locale_hint,
-                timezone_override=timezone_hint,
-                allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type),
-                block_images_override=False if self._should_disable_image_block(job.faucet_type) else None
-            )
-            page = await self.browser_manager.new_page(context=context)
+            
+            context_creation_attempts = 0
+            max_context_attempts = 3
+            while context_creation_attempts < max_context_attempts:
+                try:
+                    context = await self.browser_manager.create_context(
+                        proxy=current_proxy,
+                        user_agent=ua,
+                        profile_name=username,
+                        locale_override=locale_hint,
+                        timezone_override=timezone_hint,
+                        allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type),
+                        block_images_override=False if self._should_disable_image_block(job.faucet_type) else None
+                    )
+                    page = await self.browser_manager.new_page(context=context)
+                    break  # Success - exit retry loop
+                except Exception as ctx_error:
+                    context_creation_attempts += 1
+                    if context_creation_attempts >= max_context_attempts:
+                        logger.error(f"Failed to create context after {max_context_attempts} attempts: {ctx_error}")
+                        raise
+                    logger.warning(f"Context creation failed (attempt {context_creation_attempts}/{max_context_attempts}): {ctx_error}")
+                    # Check if browser is still healthy
+                    browser_healthy = await self.browser_manager.check_health()
+                    if not browser_healthy:
+                        logger.warning("Browser appears unhealthy - restarting before retry")
+                        await self.browser_manager.restart()
+                    await asyncio.sleep(2 * context_creation_attempts)  # Exponential backoff
             
             # Check for legacy/test jobs BEFORE attempting to instantiate
             if job.faucet_type.lower() == "test":
@@ -1517,20 +1544,24 @@ class JobScheduler:
                 method = getattr(bot, job.job_type)
                 result = await asyncio.wait_for(method(page), timeout=job_timeout)
             
-            # Post-execution status check
-            status_info = await self.browser_manager.check_page_status(page)
-            if status_info["blocked"]:
-                logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
-                if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=True, status_code=status_info.get("status", 0))
-                    if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
-                        self.proxy_manager.record_soft_signal(current_proxy, signal_type="blocked")
-            elif status_info["network_error"]:
-                logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
-                if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=False, status_code=status_info.get("status", 0))
-                    if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
-                        self.proxy_manager.record_soft_signal(current_proxy, signal_type="network_error")
+            # Post-execution status check - only if page is still alive
+            page_alive = await self.browser_manager.check_page_alive(page)
+            if page_alive:
+                status_info = await self.browser_manager.check_page_status(page)
+                if status_info["blocked"]:
+                    logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
+                    if current_proxy:
+                        self.record_proxy_failure(current_proxy, detected=True, status_code=status_info.get("status", 0))
+                        if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
+                            self.proxy_manager.record_soft_signal(current_proxy, signal_type="blocked")
+                elif status_info["network_error"]:
+                    logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
+                    if current_proxy:
+                        self.record_proxy_failure(current_proxy, detected=False, status_code=status_info.get("status", 0))
+                        if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
+                            self.proxy_manager.record_soft_signal(current_proxy, signal_type="network_error")
+            else:
+                logger.debug(f"Page already closed for {job.name} - skipping status check")
 
             duration = time.time() - start_time
             logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
@@ -1755,12 +1786,21 @@ class JobScheduler:
                 logger.debug(f"Runtime cost tracking failed: {cost_error}")
             try:
                 if context:
-                    # Save cookies before closing if it was a successful or partially successful run
-                    if "withdraw" not in job.job_type: # Skip cookie save for withdrawal-only roles if needed
-                        await self.browser_manager.save_cookies(context, username)
-                    await context.close()
+                    # Check if context is still alive before cleanup operations
+                    is_alive = await self.browser_manager.check_context_alive(context)
+                    if is_alive:
+                        # Save cookies before closing if it was a successful or partially successful run
+                        if "withdraw" not in job.job_type: # Skip cookie save for withdrawal-only roles if needed
+                            await self.browser_manager.save_cookies(context, username)
+                        await context.close()
+                    else:
+                        logger.debug(f"Context already closed for {job.name} - skipping cleanup")
             except Exception as cleanup_error:
-                logger.warning(f"Context cleanup failed for {job.name}: {cleanup_error}")
+                # Don't log closed context errors as warnings - they're expected in some error paths
+                if "Target.*closed" in str(cleanup_error) or "Connection.*closed" in str(cleanup_error):
+                    logger.debug(f"Cleanup on closed context for {job.name}: {cleanup_error}")
+                else:
+                    logger.warning(f"Context cleanup failed for {job.name}: {cleanup_error}")
             self.profile_concurrency[username] -= 1
             job_key = f"{username}:{job.name}"
             if job_key in self.running_jobs:

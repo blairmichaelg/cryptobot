@@ -693,12 +693,46 @@ class BrowserManager:
             logger.warning(f"Browser health check failed: {e}")
             return False
 
+    async def check_context_alive(self, context: BrowserContext) -> bool:
+        """Check if a browser context is still alive and usable."""
+        try:
+            if not context:
+                return False
+            # Try a lightweight operation that will fail if context is closed
+            # Creating a new page is reliable but we close it immediately
+            test_page = await context.new_page()
+            await test_page.close()
+            return True
+        except Exception as e:
+            logger.debug(f"Context health check failed: {e}")
+            return False
+    
+    async def check_page_alive(self, page: Page) -> bool:
+        """Check if a page is still alive and usable."""
+        try:
+            if not page:
+                return False
+            # Check if page is closed
+            if page.is_closed():
+                return False
+            # Try a lightweight operation to verify page is responsive
+            await page.evaluate("1 + 1")
+            return True
+        except Exception as e:
+            logger.debug(f"Page health check failed: {e}")
+            return False
+
     async def check_page_status(self, page: Page) -> Dict[str, Any]:
         """
         Check the page for common failure status codes or network errors.
         Returns a dict with 'blocked', 'network_error', and 'status'.
         """
         try:
+            # First verify page is still alive
+            if not await self.check_page_alive(page):
+                logger.warning("Page is closed - cannot check status")
+                return {"blocked": False, "network_error": True, "status": -1}
+            
             # We don't need listeners for the primary status, 
             # we can just use the page.url and a lightweight eval
             status = await page.evaluate("async () => { try { return (await fetch(window.location.href, {method: 'HEAD'})).status; } catch(e) { return 0; } }")

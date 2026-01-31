@@ -45,7 +45,7 @@
   },
   "blazefoley97@gmail.com": {
     "locale": "en-US",
-    "timezone_id": "Europe/London",
+    "timezone_id": "America/Chicago",
     "canvas_seed": 663579,
     "gpu_index": 5,
     "audio_seed": 278254,
@@ -57,7 +57,7 @@
     "viewport_width": 1536,
     "viewport_height": 864,
     "device_scale_factor": 1.0,
-    "human_profile": "normal"
+    "human_profile": "cautious"
   },
   "test_freebitcoin": {
     "locale": "en-AU",
@@ -72,6 +72,21 @@
     "platform": "MacIntel",
     "viewport_width": 1536,
     "viewport_height": 864,
+    "device_scale_factor": 1.5
+  },
+  "test_health": {
+    "locale": "en-GB",
+    "timezone_id": "America/Los_Angeles",
+    "canvas_seed": 941597,
+    "gpu_index": 11,
+    "audio_seed": 190328,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1366,
+    "viewport_height": 768,
     "device_scale_factor": 1.5
   }
 }

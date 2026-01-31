@@ -1166,15 +1166,44 @@ class ProxyManager:
         """
         Assigns proxies to profiles 1:1.
         If we have proxies, we overwrite the profile.proxy field.
+        Filters out dead and cooldown proxies during assignment.
         """
         if not self.proxies:
             logger.warning("No proxies loaded for provider '%s'. Creating fallback assignments from config.", self.proxy_provider)
             return
 
-        session_proxies = [p for p in self.proxies if "-session-" in (p.username or "")]
-        assignable = session_proxies if session_proxies else list(self.proxies)
+        # Filter out dead proxies and those in cooldown
+        now = time.time()
+        healthy_proxies = []
+        for p in self.proxies:
+            proxy_key = self._proxy_key(p)
+            host_port = self._proxy_host_port(p)
+            
+            # Skip if dead
+            if proxy_key in self.dead_proxies or (host_port and host_port in self.dead_proxies):
+                logger.debug(f"Skipping dead proxy during assignment: {self._mask_proxy_key(proxy_key)}")
+                continue
+            
+            # Skip if in cooldown
+            if proxy_key in self.proxy_cooldowns and self.proxy_cooldowns[proxy_key] > now:
+                logger.debug(f"Skipping proxy in cooldown during assignment: {self._mask_proxy_key(proxy_key)}")
+                continue
+            if host_port and host_port in self.proxy_cooldowns and self.proxy_cooldowns[host_port] > now:
+                logger.debug(f"Skipping proxy with host in cooldown during assignment: {self._mask_proxy_key(proxy_key)}")
+                continue
+            
+            healthy_proxies.append(p)
+        
+        if not healthy_proxies:
+            logger.error("⚠️ ALL PROXIES ARE DEAD OR IN COOLDOWN! Cannot assign proxies to profiles.")
+            logger.error(f"   Dead: {len(self.dead_proxies)}, In cooldown: {len(self.proxy_cooldowns)}")
+            return
 
-        logger.info(f"Assigning {len(assignable)} proxies to {len(profiles)} profiles (Sticky Strategy, provider={self.proxy_provider})...")
+        session_proxies = [p for p in healthy_proxies if "-session-" in (p.username or "")]
+        assignable = session_proxies if session_proxies else list(healthy_proxies)
+
+        logger.info(f"Assigning {len(assignable)} healthy proxies to {len(profiles)} profiles (Sticky Strategy, provider={self.proxy_provider})...")
+        logger.info(f"   Filtered out {len(self.proxies) - len(healthy_proxies)} dead/cooldown proxies")
 
         def _normalize(name: str) -> str:
             return str(name).lower().replace("_", "").replace(" ", "")
@@ -1252,22 +1281,52 @@ class ProxyManager:
             or (current_score is not None and current_score < getattr(self.settings, "proxy_reputation_min_score", 20.0))
         ):
             if not self.proxies:
-                # Check if we can fetch more
+                logger.error(f"⚠️ No proxies available to rotate for {profile.username}")
                 profile.proxy = None
                 return None
                 
             # Filter out dead ones and low reputation if enabled
-            healthy = [
-                p for p in self.proxies
-                if self._proxy_key(p) not in self.dead_proxies
-                and self.proxy_cooldowns.get(self._proxy_key(p), 0) <= now
-            ]
-            if getattr(self.settings, "proxy_reputation_enabled", True):
+            healthy = []
+            for p in self.proxies:
+                proxy_key = self._proxy_key(p)
+                proxy_host = self._proxy_host_port(p)
+                
+                # Skip dead proxies
+                if proxy_key in self.dead_proxies:
+                    continue
+                if proxy_host and proxy_host in self.dead_proxies:
+                    continue
+                    
+                # Skip cooldown proxies
+                if self.proxy_cooldowns.get(proxy_key, 0) > now:
+                    continue
+                if proxy_host and self.proxy_cooldowns.get(proxy_host, 0) > now:
+                    continue
+                    
+                healthy.append(p)
+            
+            # Apply reputation filter if enabled
+            if healthy and getattr(self.settings, "proxy_reputation_enabled", True):
                 min_score = getattr(self.settings, "proxy_reputation_min_score", 20.0)
+                before_filter = len(healthy)
                 healthy = [p for p in healthy if self.get_proxy_reputation(p.to_string()) >= min_score]
+                if len(healthy) < before_filter:
+                    logger.debug(f"Filtered out {before_filter - len(healthy)} low-reputation proxies (min score: {min_score})")
+            
             if not healthy:
-                logger.warning(f"No healthy proxies left for {profile.username}. Trying to replenish pool...")
-                # We return None but the orchestrator might trigger a retry or replenishment
+                logger.error(f"⚠️ NO HEALTHY PROXIES AVAILABLE for {profile.username}")
+                logger.error(f"   Total proxies: {len(self.proxies)}")
+                logger.error(f"   Dead proxies: {len(self.dead_proxies)}")
+                logger.error(f"   In cooldown: {len([k for k, v in self.proxy_cooldowns.items() if v > now])}")
+                
+                # Try to salvage: find the proxy with the shortest cooldown remaining
+                cooldown_proxies = [(p, self.proxy_cooldowns.get(self._proxy_key(p), 0)) for p in self.proxies if self._proxy_key(p) in self.proxy_cooldowns]
+                if cooldown_proxies:
+                    best = min(cooldown_proxies, key=lambda x: x[1])
+                    if best[1] > now:  # Still in cooldown
+                        wait_time = int(best[1] - now)
+                        logger.warning(f"   Best available proxy has {wait_time}s cooldown remaining")
+                
                 profile.proxy = None
                 return None
 

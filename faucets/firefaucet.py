@@ -11,6 +11,149 @@ class FireFaucetBot(FaucetBot):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FireFaucet"
         self.base_url = "https://firefaucet.win"
+        self.cloudflare_retry_count = 0
+        self.max_cloudflare_retries = 3
+
+    async def detect_cloudflare_block(self) -> bool:
+        """
+        Enhanced Cloudflare detection for FireFaucet.
+        
+        Checks for:
+        - Cloudflare challenge pages ("Just a moment", "Checking your browser")
+        - Turnstile captcha iframes
+        - Maintenance/security pages
+        - Bot detection blocks
+        
+        Returns:
+            bool: True if Cloudflare protection is active
+        """
+        try:
+            # Check page title
+            title = (await self.page.title()).lower()
+            if any(indicator in title for indicator in ["just a moment", "cloudflare", "security check", "ddos protection", "attention required"]):
+                logger.warning(f"[{self.faucet_name}] 🛡️ Cloudflare detected in title: {title}")
+                return True
+            
+            # Check page content
+            body_text = await self.page.evaluate("() => document.body.innerText.toLowerCase()")
+            cloudflare_patterns = [
+                "cloudflare",
+                "checking your browser",
+                "please wait",
+                "enable javascript",
+                "ddos protection",
+                "security check",
+                "just a moment",
+                "verify you are human",
+                "ray id"
+            ]
+            
+            if any(pattern in body_text for pattern in cloudflare_patterns):
+                logger.warning(f"[{self.faucet_name}] 🛡️ Cloudflare pattern detected in page content")
+                return True
+            
+            # Check for Turnstile iframes
+            turnstile_frame = await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com']")
+            if turnstile_frame:
+                logger.info(f"[{self.faucet_name}] 🔒 Cloudflare Turnstile iframe detected")
+                return True
+            
+            # Check for Cloudflare challenge elements
+            cf_elements = await self.page.query_selector("#cf-challenge-running, .cf-browser-verification, [id*='cf-turnstile']")
+            if cf_elements:
+                logger.info(f"[{self.faucet_name}] 🔒 Cloudflare challenge elements detected")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Error in Cloudflare detection: {e}")
+            return False
+
+    async def bypass_cloudflare_with_retry(self) -> bool:
+        """
+        Attempt to bypass Cloudflare with progressive stealth escalation.
+        
+        Strategy:
+        1. Wait for automatic challenge resolution (human-like behavior)
+        2. Detect and solve Turnstile if present
+        3. If retry needed, increase stealth measures:
+           - Longer idle times
+           - More mouse movements
+           - Extended waiting periods
+        
+        Returns:
+            bool: True if bypass succeeded, False if all retries exhausted
+        """
+        for attempt in range(1, self.max_cloudflare_retries + 1):
+            try:
+                logger.info(f"[{self.faucet_name}] Cloudflare bypass attempt {attempt}/{self.max_cloudflare_retries}")
+                
+                # Progressive stealth: increase delays with each retry
+                base_wait = 10 + (attempt * 5)  # 15s, 20s, 25s
+                
+                # Simulate human-like waiting behavior
+                logger.info(f"[{self.faucet_name}] ⏳ Waiting {base_wait}s for automatic challenge resolution...")
+                await self.idle_mouse(duration=random.uniform(2.0, 4.0))
+                await asyncio.sleep(base_wait)
+                
+                # Check for Turnstile and solve if present
+                turnstile_detected = await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [data-sitekey]")
+                if turnstile_detected:
+                    logger.info(f"[{self.faucet_name}] 🎯 Turnstile CAPTCHA detected, solving...")
+                    
+                    # Add extra stealth before solving
+                    await self.idle_mouse(duration=random.uniform(1.5, 3.0))
+                    await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+                    
+                    # Solve Turnstile
+                    turnstile_solved = await self.solver.solve_captcha(self.page, timeout=120)
+                    if turnstile_solved:
+                        logger.info(f"[{self.faucet_name}] ✅ Turnstile solved successfully")
+                        await asyncio.sleep(random.uniform(2.0, 4.0))  # Wait for token submission
+                    else:
+                        logger.warning(f"[{self.faucet_name}] ⚠️ Turnstile solving failed")
+                        if attempt < self.max_cloudflare_retries:
+                            # Retry with page refresh
+                            logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
+                            await self.page.reload(wait_until="domcontentloaded")
+                            await asyncio.sleep(3)
+                            continue
+                
+                # Enhanced wait with human-like activity
+                logger.debug(f"[{self.faucet_name}] Performing human-like activity during challenge...")
+                for _ in range(attempt * 2):  # More activity with each retry
+                    if random.random() < 0.6:
+                        await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+                    else:
+                        await self.simulate_reading(duration=random.uniform(1.0, 2.5))
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                
+                # Check if Cloudflare is still blocking
+                still_blocked = await self.detect_cloudflare_block()
+                if not still_blocked:
+                    logger.info(f"[{self.faucet_name}] ✅ Cloudflare bypass successful on attempt {attempt}")
+                    self.cloudflare_retry_count = 0  # Reset counter on success
+                    return True
+                
+                logger.warning(f"[{self.faucet_name}] Still blocked after attempt {attempt}, retrying...")
+                
+                # If not last attempt, refresh page with enhanced stealth
+                if attempt < self.max_cloudflare_retries:
+                    await asyncio.sleep(random.uniform(3.0, 6.0))  # Longer delay between retries
+                    logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
+                    await self.page.reload(wait_until="domcontentloaded")
+                    await asyncio.sleep(random.uniform(4.0, 7.0))
+                    
+            except Exception as e:
+                logger.error(f"[{self.faucet_name}] Error during Cloudflare bypass attempt {attempt}: {e}")
+                if attempt < self.max_cloudflare_retries:
+                    await asyncio.sleep(random.uniform(5.0, 10.0))
+                    continue
+        
+        logger.error(f"[{self.faucet_name}] ❌ Cloudflare bypass failed after {self.max_cloudflare_retries} attempts")
+        self.cloudflare_retry_count += 1
+        return False
 
     async def view_ptc_ads(self):
         """
@@ -114,8 +257,17 @@ class FireFaucetBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Navigating to login page...")
             await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
-            # Handle Cloudflare if present
-            await self.handle_cloudflare(max_wait_seconds=30)
+            # Enhanced Cloudflare bypass with retry escalation
+            cf_blocked = await self.detect_cloudflare_block()
+            if cf_blocked:
+                logger.warning(f"[{self.faucet_name}] Cloudflare protection detected, attempting bypass...")
+                bypass_success = await self.bypass_cloudflare_with_retry()
+                if not bypass_success:
+                    logger.error(f"[{self.faucet_name}] ❌ Failed to bypass Cloudflare after {self.max_cloudflare_retries} attempts")
+                    return False
+            else:
+                # Still do basic check for race conditions
+                await self.handle_cloudflare(max_wait_seconds=20)
             
             # Wait for login form to appear
             await self.page.wait_for_selector('#username', timeout=15000)
@@ -384,6 +536,15 @@ class FireFaucetBot(FaucetBot):
             # First, check Daily Bonus
             await self.page.goto(f"{self.base_url}/daily")
             
+            # Check for Cloudflare on daily page
+            cf_blocked = await self.detect_cloudflare_block()
+            if cf_blocked:
+                logger.warning(f"[{self.faucet_name}] Cloudflare detected on daily page, attempting bypass...")
+                bypass_success = await self.bypass_cloudflare_with_retry()
+                if not bypass_success:
+                    logger.error(f"[{self.faucet_name}] Failed to bypass Cloudflare on daily page")
+                    return ClaimResult(success=False, status="Cloudflare Block", next_claim_minutes=15)
+            
             # Check for "Unlock" button
             unlock = self.page.locator("body > div.row > div.col.s12.m12.l6 > div > center > a > button")
             if await unlock.count() > 0 and await unlock.is_visible():
@@ -408,6 +569,15 @@ class FireFaucetBot(FaucetBot):
             # Now, Faucet Claim
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
             await self.page.goto(f"{self.base_url}/faucet")
+            
+            # Check for Cloudflare on faucet page
+            cf_blocked = await self.detect_cloudflare_block()
+            if cf_blocked:
+                logger.warning(f"[{self.faucet_name}] Cloudflare detected on faucet page, attempting bypass...")
+                bypass_success = await self.bypass_cloudflare_with_retry()
+                if not bypass_success:
+                    logger.error(f"[{self.faucet_name}] Failed to bypass Cloudflare on faucet page")
+                    return ClaimResult(success=False, status="Cloudflare Block", next_claim_minutes=15)
             
             # Extract balance with fallback selectors (updated 2026-01-30)
             balance_selectors = [
