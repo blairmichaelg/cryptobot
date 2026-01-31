@@ -161,6 +161,51 @@ class FaucetBot:
         """Pass the proxy string to the underlying solver."""
         if self.solver:
             self.solver.set_proxy(proxy_string)
+    
+    def create_error_result(self, status: str, next_claim_minutes: float = 60, 
+                           exception: Optional[Exception] = None, 
+                           page_content: Optional[str] = None,
+                           status_code: Optional[int] = None,
+                           force_error_type: Optional['ErrorType'] = None) -> ClaimResult:
+        """
+        Create a ClaimResult for an error with automatic error type classification.
+        
+        Args:
+            status: Error status message
+            next_claim_minutes: Minutes until next retry attempt
+            exception: The exception that occurred (if any)
+            page_content: HTML content for classification
+            status_code: HTTP status code
+            force_error_type: Override automatic classification
+            
+        Returns:
+            ClaimResult with appropriate error_type set
+        """
+        from core.orchestrator import ErrorType
+        
+        # Use forced type or auto-classify
+        if force_error_type:
+            error_type = force_error_type
+        else:
+            # Auto-classify based on status message and other signals
+            status_lower = status.lower()
+            if any(config in status_lower for config in ["hcaptcha", "recaptcha", "turnstile", "captcha config", "solver config", "api key"]):
+                error_type = ErrorType.CONFIG_ERROR
+            elif any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
+                error_type = ErrorType.PERMANENT
+            elif exception or page_content or status_code:
+                error_type = self.classify_error(exception, page_content, status_code)
+            else:
+                error_type = ErrorType.UNKNOWN
+        
+        logger.debug(f"[{self.faucet_name}] Creating error result: {status} (type: {error_type.value})")
+        
+        return ClaimResult(
+            success=False,
+            status=status,
+            next_claim_minutes=next_claim_minutes,
+            error_type=error_type
+        )
 
     def classify_error(self, exception: Optional[Exception] = None, page_content: Optional[str] = None, status_code: Optional[int] = None) -> 'ErrorType':
         """

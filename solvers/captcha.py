@@ -275,10 +275,20 @@ class CaptchaSolver:
             self.session = aiohttp.ClientSession()
         return self.session
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+        return False
+
     async def close(self):
         """Close the underlying aiohttp session."""
-        if self.session:
+        if self.session and not self.session.closed:
             await self.session.close()
+            self.session = None
 
     async def solve_with_fallback(self, page, captcha_type: str, sitekey: str, url: str, proxy_context: dict = None) -> Optional[str]:
         """Try primary provider, fallback to secondary if needed.

@@ -179,8 +179,10 @@ class BotSettings(BaseSettings):
     exploration_frequency_minutes: int = 30
 
     # Degraded operation modes
-    low_proxy_threshold: int = 10
-    low_proxy_max_concurrent_bots: int = 1
+    # LOW_PROXY mode triggers when healthy proxies fall below this threshold
+    # Current setup: 3 DigitalOcean droplets = LOW_PROXY mode (increase DO limit or add Azure VMs to scale)
+    low_proxy_threshold: int = 10  # Healthy proxies needed for NORMAL mode
+    low_proxy_max_concurrent_bots: int = 2  # Reduced concurrency in LOW_PROXY mode (was 1, increased to 2 for 3-proxy setup)
     degraded_failure_threshold: int = 3
     degraded_slow_delay_multiplier: float = 2.0
     performance_alert_slow_threshold: int = 2

@@ -27,6 +27,7 @@ class ErrorType(Enum):
     PERMANENT = "permanent"  # Auth failed, account banned
     FAUCET_DOWN = "faucet_down"  # 500/503 server errors
     CAPTCHA_FAILED = "captcha_failed"  # Captcha solve timeout
+    CONFIG_ERROR = "config_error"  # Configuration issue (hCaptcha, solver settings)
     UNKNOWN = "unknown"
 
 # Constants for magic numbers (Code Quality: extracted from hardcoded values)
@@ -133,6 +134,9 @@ class JobScheduler:
         self.CIRCUIT_BREAKER_THRESHOLD = 5
         self.CIRCUIT_BREAKER_COOLDOWN = 14400 # 4 hours
         self.RETRYABLE_COOLDOWN = 600  # 10 minutes for temporary failures
+        
+        # Account usage tracking for multi-account support
+        self.account_usage: Dict[str, Dict[str, Any]] = {}  # Key: username, Value: {faucet, last_active, status}
         
         # Failure classification (legacy - replaced by ErrorType enum)
         self.PERMANENT_FAILURES = ["auth_failed", "account_banned", "account_disabled", "invalid_credentials"]
@@ -294,8 +298,12 @@ class JobScheduler:
     def _write_heartbeat(self):
         """Write heartbeat file for external monitoring."""
         try:
+            active_accounts = [f"{acc['faucet']}:{username}" for username, acc in self.account_usage.items() if acc.get('status') == 'active']
             with open(self.heartbeat_file, "w") as f:
-                f.write(f"{time.time()}\n{len(self.queue)} jobs\n{len(self.running_jobs)} running")
+                f.write(f"{time.time()}\n")
+                f.write(f"{len(self.queue)} jobs\n")
+                f.write(f"{len(self.running_jobs)} running\n")
+                f.write(f"Accounts: {', '.join(active_accounts) if active_accounts else 'None'}\n")
         except Exception as e:
             logger.debug(f"Heartbeat write failed: {e}")
 
@@ -334,6 +342,7 @@ class JobScheduler:
             ErrorType.PROXY_ISSUE: 300,
             ErrorType.CAPTCHA_FAILED: 900,
             ErrorType.FAUCET_DOWN: 3600,
+            ErrorType.CONFIG_ERROR: 1800,  # 30 minutes - retryable config issue
             ErrorType.UNKNOWN: 300,
             ErrorType.PERMANENT: float('inf')  # Don't retry permanent failures
         }
@@ -1370,9 +1379,9 @@ class JobScheduler:
         """Determine if circuit breaker should trip based on error type.
         
         Only count PERMANENT and repeated PROXY_ISSUE errors toward circuit breaker.
-        TRANSIENT errors don't trip the breaker.
+        TRANSIENT and CONFIG_ERROR errors don't trip the breaker.
         """
-        if error_type == ErrorType.TRANSIENT:
+        if error_type in (ErrorType.TRANSIENT, ErrorType.CONFIG_ERROR):
             return False
         
         if error_type == ErrorType.PERMANENT:
@@ -1415,6 +1424,9 @@ class JobScheduler:
             # Don't requeue - will be handled by caller
             return float('inf'), "Permanent failure - account disabled"
         
+        elif error_type == ErrorType.CONFIG_ERROR:
+            return 1800, "Config error (hCaptcha/solver) - requeue +30min"
+        
         elif error_type == ErrorType.FAUCET_DOWN:
             return 14400, "Faucet down - skip 4 hours"
         
@@ -1436,6 +1448,14 @@ class JobScheduler:
         start_time = time.time()
         try:
             self.profile_concurrency[username] = self.profile_concurrency.get(username, 0) + 1
+            
+            # Track account usage for monitoring
+            self.account_usage[username] = {
+                "faucet": job.faucet_type,
+                "last_active": time.time(),
+                "status": "active",
+                "proxy": current_proxy
+            }
             
             # Get proxy using rotation logic
             current_proxy = self.get_next_proxy(job.profile, faucet_type=job.faucet_type)
@@ -1536,6 +1556,13 @@ class JobScheduler:
                         self.faucet_backoff[job.faucet_type] = {'consecutive_failures': 0, 'next_allowed_time': 0}
                     # Record success for health monitoring
                     self.health_monitor.record_faucet_attempt(job.faucet_type, success=True)
+                    
+                    # Log CAPTCHA cost details for profitability tracking
+                    if hasattr(bot, 'solver') and bot.solver:
+                        solver_stats = bot.solver.provider_stats.get(bot.solver.provider, {})
+                        if solver_stats.get('cost', 0) > 0:
+                            logger.info(f"💰 CAPTCHA Cost for {job.faucet_type}: ${solver_stats['cost']:.4f} | "
+                                      f"Earned: {result.amount} | Balance: {result.balance}")
                 else:
                     # Record failure for health monitoring
                     self.health_monitor.record_faucet_attempt(job.faucet_type, success=False)
@@ -1547,7 +1574,10 @@ class JobScheduler:
                     else:
                         # Fallback classification based on status message
                         status_lower = result.status.lower()
-                        if any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
+                        # Check for configuration errors first (more specific than permanent)
+                        if any(config in status_lower for config in ["hcaptcha", "recaptcha", "turnstile", "captcha config", "solver config", "api key"]):
+                            error_type = ErrorType.CONFIG_ERROR
+                        elif any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
                             error_type = ErrorType.PERMANENT
                         elif any(rate in status_lower for rate in ["too many requests", "slow down", "rate limit"]):
                             error_type = ErrorType.RATE_LIMIT
@@ -2029,3 +2059,13 @@ class JobScheduler:
         self._persist_session()
         self._stop_event.set()
 
+    async def cleanup(self):
+        """Cleanup resources on shutdown."""
+        try:
+            # Close wallet daemon session if initialized
+            if hasattr(self, 'auto_withdrawal') and self.auto_withdrawal:
+                if hasattr(self.auto_withdrawal, 'wallet'):
+                    await self.auto_withdrawal.wallet.close()
+                    logger.info("✅ WalletDaemon session closed")
+        except Exception as e:
+            logger.warning(f"Cleanup error: {e}")

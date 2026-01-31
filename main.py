@@ -241,6 +241,8 @@ async def main():
         scheduler.stop()
         # Wait briefly for running jobs to acknowledge stop
         await asyncio.sleep(2)
+        # Cleanup scheduler resources (close WalletDaemon session)
+        await scheduler.cleanup()
         await browser_manager.close()
 
 if __name__ == "__main__":

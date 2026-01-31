@@ -68,9 +68,20 @@ class WalletDaemon:
         """Get confirmed and unconfirmed balance for a specific coin."""
         return await self._rpc_call(coin, "getbalance")
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+        return False
+
     async def close(self):
-        if self._session:
+        """Close the aiohttp session."""
+        if self._session and not self._session.closed:
             await self._session.close()
+            self._session = None
 
     async def get_unused_address(self, coin: str = "BTC") -> Optional[str]:
         """Generate a new receiving address."""
