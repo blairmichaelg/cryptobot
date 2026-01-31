@@ -20,11 +20,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class ErrorType(Enum):
-    """Classification of error types for intelligent recovery."""
+    """Classification of error types for intelligent recovery.
+    
+    Error Categories:
+    - TRANSIENT: Network timeouts, temporary connection issues (retryable, short delay)
+    - RATE_LIMIT: Rate limiting, Cloudflare challenges, security checks, maintenance (retryable, medium delay)
+    - PROXY_ISSUE: Proxy/VPN detection, IP blocks (retryable with proxy rotation)
+    - CAPTCHA_FAILED: CAPTCHA solve failures or timeouts (retryable, medium delay)
+    - CONFIG_ERROR: Configuration problems like invalid API keys (retryable after fix)
+    - FAUCET_DOWN: Server errors 500/503 (retryable, long delay)
+    - PERMANENT: Account banned, invalid credentials, auth failures (NOT retryable)
+    - UNKNOWN: Unclassified errors (retryable with caution)
+    
+    Note: Security challenges (Cloudflare, DDoS protection) are classified as RATE_LIMIT,
+    not PERMANENT, to allow retry with backoff before permanent disable.
+    """
     TRANSIENT = "transient"  # Network timeout, temporary unavailable
-    RATE_LIMIT = "rate_limit"  # 429, cloudflare challenge
+    RATE_LIMIT = "rate_limit"  # 429, cloudflare challenge, security checks, maintenance
     PROXY_ISSUE = "proxy_issue"  # Proxy detection, IP blocked
-    PERMANENT = "permanent"  # Auth failed, account banned
+    PERMANENT = "permanent"  # Auth failed, account banned (only true permanent failures)
     FAUCET_DOWN = "faucet_down"  # 500/503 server errors
     CAPTCHA_FAILED = "captcha_failed"  # Captcha solve timeout
     CONFIG_ERROR = "config_error"  # Configuration issue (hCaptcha, solver settings)
@@ -95,6 +109,12 @@ class JobScheduler:
         self.proxy_manager = proxy_manager
         self.queue: List[Job] = []
         self.running_jobs: Dict[str, asyncio.Task] = {}  # Key: profile.username + job.name
+        
+        # Security challenge retry tracking (prevents permanent disable on first challenge)
+        # Format: {"faucet_type:username": {"security_retries": count, "last_retry_time": timestamp}}
+        self.security_challenge_retries: Dict[str, Dict[str, Any]] = {}
+        self.max_security_retries = 5  # Allow up to 5 security challenge retries before permanent disable
+        self.security_retry_reset_hours = 24  # Reset retry counter after 24 hours of no challenges
         
         # Auto-withdrawal management
         self.auto_withdrawal = None  # Will be initialized if wallet daemon is available
@@ -294,6 +314,80 @@ class JobScheduler:
     def persist_session(self):
         """Public wrapper for persisting session state."""
         self._persist_session()
+
+    def reset_security_retries(self, faucet_type: Optional[str] = None, username: Optional[str] = None):
+        """
+        Manually reset security challenge retry counters to re-enable accounts.
+        
+        This allows recovering from temporary security challenges (Cloudflare, maintenance)
+        that may have exceeded the retry limit.
+        
+        Args:
+            faucet_type: Reset counters for specific faucet (e.g., "fire_faucet"). If None, resets all.
+            username: Reset counters for specific username. If None, resets all.
+            
+        Examples:
+            scheduler.reset_security_retries()  # Reset all
+            scheduler.reset_security_retries("fire_faucet")  # Reset all FireFaucet accounts
+            scheduler.reset_security_retries("fire_faucet", "user@example.com")  # Reset specific account
+        """
+        if not self.security_challenge_retries:
+            logger.info("No security retry counters to reset")
+            return
+        
+        reset_count = 0
+        keys_to_reset = []
+        
+        for retry_key in self.security_challenge_retries.keys():
+            # retry_key format: "faucet_type:username"
+            key_faucet, key_username = retry_key.split(":", 1)
+            
+            # Check if this key matches the filter
+            if faucet_type and key_faucet != faucet_type:
+                continue
+            if username and key_username != username:
+                continue
+                
+            keys_to_reset.append(retry_key)
+        
+        for retry_key in keys_to_reset:
+            old_count = self.security_challenge_retries[retry_key].get("security_retries", 0)
+            self.security_challenge_retries[retry_key] = {
+                "security_retries": 0,
+                "last_retry_time": time.time()
+            }
+            reset_count += 1
+            logger.info(f"✅ Reset security retry counter for {retry_key} (was {old_count}/{self.max_security_retries})")
+        
+        if reset_count > 0:
+            logger.info(f"🔄 Reset {reset_count} security retry counter(s). Accounts can now retry.")
+        else:
+            logger.info(f"No matching accounts found for reset (faucet: {faucet_type}, username: {username})")
+    
+    def get_security_retry_status(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get current status of all security challenge retry counters.
+        
+        Returns:
+            Dictionary mapping "faucet:username" to retry state including count and last retry time.
+        """
+        status = {}
+        current_time = time.time()
+        
+        for retry_key, retry_state in self.security_challenge_retries.items():
+            count = retry_state.get("security_retries", 0)
+            last_time = retry_state.get("last_retry_time", 0)
+            hours_since = (current_time - last_time) / 3600 if last_time > 0 else 0
+            
+            status[retry_key] = {
+                "retries": count,
+                "max_retries": self.max_security_retries,
+                "status": "DISABLED" if count >= self.max_security_retries else "ACTIVE",
+                "hours_since_last_retry": round(hours_since, 2),
+                "will_reset_in_hours": max(0, self.security_retry_reset_hours - hours_since) if count > 0 else 0
+            }
+        
+        return status
 
     def _write_heartbeat(self):
         """Write heartbeat file for external monitoring."""
@@ -1612,6 +1706,9 @@ class JobScheduler:
                         # Check for configuration errors first (more specific than permanent)
                         if any(config in status_lower for config in ["hcaptcha", "recaptcha", "turnstile", "captcha config", "solver config", "api key"]):
                             error_type = ErrorType.CONFIG_ERROR
+                        # Security/Cloudflare challenges should be retryable, not permanent
+                        elif any(security in status_lower for security in ["cloudflare", "security check", "maintenance", "ddos protection", "blocked", "challenge"]):
+                            error_type = ErrorType.RATE_LIMIT
                         elif any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
                             error_type = ErrorType.PERMANENT
                         elif any(rate in status_lower for rate in ["too many requests", "slow down", "rate limit"]):
@@ -1660,12 +1757,55 @@ class JobScheduler:
                             self.add_job(job)
                             return
                     else:
-                        # Handle PERMANENT errors - disable account
+                        # Handle PERMANENT errors - disable account (with retry logic for security challenges)
                         if error_type == ErrorType.PERMANENT:
-                            logger.error(f"❌ PERMANENT FAILURE: {job.name} - {result.status}")
-                            logger.error(f"🚫 Disabling account: {job.profile.username} for {job.faucet_type}")
-                            # Don't requeue permanent failures
-                            return
+                            # Check if this is a misclassified security challenge (should have been caught by fallback)
+                            status_lower = result.status.lower()
+                            is_security_challenge = any(security in status_lower for security in 
+                                ["cloudflare", "security check", "maintenance", "ddos protection", "blocked", "challenge"])
+                            
+                            if is_security_challenge:
+                                # Treat as RATE_LIMIT instead
+                                logger.warning(f"⚠️ Reclassifying security challenge as RATE_LIMIT instead of PERMANENT for {job.name}")
+                                error_type = ErrorType.RATE_LIMIT
+                            else:
+                                # True permanent failure (banned, invalid credentials, etc.)
+                                logger.error(f"❌ PERMANENT FAILURE: {job.name} - {result.status}")
+                                logger.error(f"🚫 Disabling account: {job.profile.username} for {job.faucet_type}")
+                                # Don't requeue permanent failures
+                                return
+                        
+                        # Track security challenge retries (for RATE_LIMIT errors that might be challenges)
+                        if error_type == ErrorType.RATE_LIMIT:
+                            retry_key = f"{job.faucet_type}:{job.profile.username}"
+                            current_time = time.time()
+                            
+                            if retry_key not in self.security_challenge_retries:
+                                self.security_challenge_retries[retry_key] = {
+                                    "security_retries": 0,
+                                    "last_retry_time": current_time
+                                }
+                            
+                            retry_state = self.security_challenge_retries[retry_key]
+                            
+                            # Reset counter if last retry was more than 24 hours ago
+                            if current_time - retry_state["last_retry_time"] > (self.security_retry_reset_hours * 3600):
+                                logger.info(f"🔄 Resetting security retry counter for {retry_key} (last retry was {(current_time - retry_state['last_retry_time'])/3600:.1f}h ago)")
+                                retry_state["security_retries"] = 0
+                            
+                            retry_state["security_retries"] += 1
+                            retry_state["last_retry_time"] = current_time
+                            
+                            # Check if we've exceeded max security retries
+                            if retry_state["security_retries"] >= self.max_security_retries:
+                                logger.error(f"❌ Security challenge retry limit exceeded ({self.max_security_retries}) for {job.name}")
+                                logger.error(f"🚫 Temporarily disabling account: {job.profile.username} for {job.faucet_type}")
+                                logger.info(f"💡 TIP: Retry counter will reset after {self.security_retry_reset_hours}h of no challenges")
+                                logger.info(f"💡 To manually re-enable, restart the bot or use reset_security_retries()")
+                                # Don't requeue if retry limit exceeded
+                                return
+                            else:
+                                logger.info(f"⚠️ Security challenge retry {retry_state['security_retries']}/{self.max_security_retries} for {job.name}")
                         
                         # Update backoff state - increment consecutive failures
                         if job.faucet_type not in self.faucet_backoff:
