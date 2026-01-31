@@ -760,64 +760,68 @@ class ProxyManager:
 
     def load_proxies_from_file(self) -> int:
         """
-        Loads proxies from the configured proxy file.
+        Loads proxies from the configured proxy file(s).
         Supports 2Captcha residential proxies, Azure VM proxies, and DigitalOcean Droplet proxies.
+        Can load from multiple sources if enabled.
         Expected format per line:
         - http://user:pass@host:port (Standard with auth)
         - http://host:port (Azure/DO VM proxies without auth)
         - user:pass@host:port (Short format)
         """
-        # Determine which proxy file to use (priority: DigitalOcean > Azure > 2Captcha)
         use_digitalocean = getattr(self.settings, "use_digitalocean_proxies", False)
         use_azure = getattr(self.settings, "use_azure_proxies", False)
         
+        proxy_files = []
+        
+        # Build list of proxy files to load (can load multiple)
         if use_digitalocean:
-            file_path = self.settings.digitalocean_proxies_file
-            logger.info("[DIGITALOCEAN] Using DigitalOcean Droplet proxies for stealth and Cloudflare bypass")
-        elif use_azure:
-            file_path = self.settings.azure_proxies_file
-            logger.info("[AZURE] Using Azure VM proxies for stealth and Cloudflare bypass")
-        else:
-            file_path = self.settings.residential_proxies_file
+            proxy_files.append(("DIGITALOCEAN", self.settings.digitalocean_proxies_file))
+        if use_azure:
+            proxy_files.append(("AZURE", self.settings.azure_proxies_file))
+        if not proxy_files:  # Fallback to 2Captcha
+            proxy_files.append(("2CAPTCHA", self.settings.residential_proxies_file))
         
-        if not os.path.exists(file_path):
-            logger.warning(f"[WARN] Proxy file not found: {file_path}. Creating template.")
-            try:
-                with open(file_path, "w") as f:
-                    f.write("# Add your proxies here, one per line\n")
-                    f.write("# Format: user:pass@host:port\n")
-                    f.write("# Example: user123:pass456@192.168.1.1:8080\n")
-            except Exception as e:
-                logger.error(f"[ERROR] Could not create proxy template: {e}")
-            return 0
-
-        logger.info(f"[LOAD] Loading proxies from {file_path}...")
-        count = 0
         new_proxies = []
+        total_count = 0
         
-        try:
-            with open(file_path, "r") as f:
-                lines = f.readlines()
+        for source_name, file_path in proxy_files:
+            if not os.path.exists(file_path):
+                logger.warning(f"[{source_name}] Proxy file not found: {file_path}")
+                continue
                 
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
+            logger.info(f"[{source_name}] Loading proxies from {file_path}...")
+            
+            try:
+                with open(file_path, "r") as f:
+                    lines = f.readlines()
+                
+                source_count = 0
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
                     
-                proxy = self._parse_proxy_string(line)
-                if proxy:
-                    new_proxies.append(proxy)
-                    count += 1
-            
-            self.all_proxies = new_proxies
-            self.proxies = list(new_proxies)
-            self._prune_health_data_for_active_proxies(new_proxies)
-            logger.info(f"[OK] Loaded {count} proxies from file.")
-            return count
-            
-        except Exception as e:
-            logger.error(f"[ERROR] Error loading proxies from file: {e}")
+                    proxy = self._parse_proxy_string(line)
+                    if proxy:
+                        new_proxies.append(proxy)
+                        source_count += 1
+                
+                if source_count > 0:
+                    logger.info(f"[{source_name}] ✓ Loaded {source_count} proxies")
+                    total_count += source_count
+                    
+            except Exception as e:
+                logger.error(f"[{source_name}] Error loading proxies: {e}")
+        
+        if total_count == 0:
+            logger.warning("[WARN] No proxies loaded from any source")
             return 0
+        
+        self.all_proxies = new_proxies
+        self.proxies = list(new_proxies)
+        self._prune_health_data_for_active_proxies(new_proxies)
+        logger.info(f"[OK] Total proxies loaded: {total_count}")
+        return total_count
 
     def _parse_proxy_string(self, proxy_str: str) -> Optional[Proxy]:
         """Parses a proxy string into a Proxy object."""
