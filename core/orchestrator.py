@@ -962,8 +962,12 @@ class JobScheduler:
             except Exception:
                 healthy_proxies = len(self.proxy_manager.proxies)
 
+            logger.info(f"🔍 Mode check: healthy_proxies={healthy_proxies}, threshold={self.settings.low_proxy_threshold}, comparison={healthy_proxies < self.settings.low_proxy_threshold}")
             if healthy_proxies < self.settings.low_proxy_threshold:
+                logger.warning(f"Entering LOW_PROXY mode: {healthy_proxies} < {self.settings.low_proxy_threshold}")
                 return OperationMode.LOW_PROXY
+            else:
+                logger.info(f"✓ Proxy check passed: {healthy_proxies} >= {self.settings.low_proxy_threshold}")
         
         # Check captcha budget (estimate from recent usage)
         try:
