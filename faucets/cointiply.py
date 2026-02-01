@@ -1,6 +1,7 @@
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -114,13 +115,63 @@ class CointiplyBot(FaucetBot):
                 await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
             await self.handle_cloudflare()
             
-            # Use human_type for stealth
-            email_input = self.page.locator('input[name="email"]')
+            # Verify page is still alive before proceeding (Task 2 integration)
+            if not await self.check_page_health():
+                logger.error(f"[{self.faucet_name}] Page became unresponsive after Cloudflare check")
+                return False
+            
+            # Use human_type for stealth - enhanced selectors with HTML5 autocomplete
+            email_selectors = [
+                'input[autocomplete="email"]:not([form*="signup"]):not([form*="register"])',
+                'input[autocomplete="username"]:not([form*="signup"]):not([form*="register"])',
+                'input[name="email"]:not([form*="signup"])',
+                'input[type="email"]:not([form*="signup"])',
+                'input[id*="email" i]:not([form*="signup"])',
+                'input[name="username"]',
+                'input[placeholder*="email" i]',
+                'input[placeholder*="username" i]'
+            ]
+            email_input = None
+            for selector in email_selectors:
+                locator = self.page.locator(selector)
+                if await locator.count() > 0:
+                    email_input = locator.first
+                    break
+
+            if not email_input:
+                logger.error(f"[{self.faucet_name}] Email input not found on login page")
+                return False
+
+            # Type with human behavior, fallback to direct fill if needed
             await self.human_type(email_input, creds['username'])
+            # Fallback: verify input has value, fill directly if not
+            if not await email_input.input_value():
+                await email_input.fill(creds['username'])
             await self.random_delay(0.5, 1.5)
             
-            password_input = self.page.locator('input[name="password"]')
+            password_selectors = [
+                'input[autocomplete="current-password"]:not([form*="signup"]):not([form*="register"])',
+                'input[type="password"]:not([form*="signup"]):not([form*="register"])',
+                'input[name="password"]:not([form*="signup"])',
+                'input[id*="password" i]:not([form*="signup"])',
+                'input[placeholder*="password" i]'
+            ]
+            password_input = None
+            for selector in password_selectors:
+                locator = self.page.locator(selector)
+                if await locator.count() > 0:
+                    password_input = locator.first
+                    break
+
+            if not password_input:
+                logger.error(f"[{self.faucet_name}] Password input not found on login page")
+                return False
+
+            # Type with human behavior, fallback to direct fill if needed
             await self.human_type(password_input, creds['password'])
+            # Fallback: verify input has value, fill directly if not
+            if not await password_input.input_value():
+                await password_input.fill(creds['password'])
             await self.random_delay(0.5, 1.5)
             
             # Solve CAPTCHA if present
@@ -132,13 +183,47 @@ class CointiplyBot(FaucetBot):
             # Simulate human behavior before submitting
             await self.idle_mouse(1.0)
             
-            submit = self.page.locator('button:has-text("Login")')
-            await self.human_like_click(submit)
+            submit_selectors = [
+                'form button[type="submit"]',
+                'form input[type="submit"]',
+                'button:has-text("Login")',
+                'button:has-text("Log in")',
+                'button:has-text("Sign In")',
+                'button:has-text("Sign in")',
+                'button.btn-primary',
+                'button[type="submit"]'
+            ]
+            submit = None
+            for selector in submit_selectors:
+                locator = self.page.locator(selector)
+                if await locator.count() > 0:
+                    submit = locator.first
+                    break
+
+            if not submit:
+                logger.error(f"[{self.faucet_name}] Login submit button not found")
+                return False
+
+            # Use safe click to prevent 'Target closed' errors (Task 2 integration)
+            click_success = await self.safe_click(submit)
+            if not click_success:
+                logger.warning(f"[{self.faucet_name}] Safe click failed, trying direct click")
+                await self.human_like_click(submit)
             
             # Wait for navigation with timeout
-            await self.page.wait_for_url("**/home", timeout=30000)
-            logger.info(f"[{self.faucet_name}] ✅ Login successful")
-            return True
+            try:
+                await self.page.wait_for_url(
+                    re.compile(r".*/(home|dashboard|account).*"),
+                    timeout=30000
+                )
+                logger.info(f"[{self.faucet_name}] ✅ Login successful")
+                return True
+            except Exception:
+                if await self.is_logged_in():
+                    logger.info(f"[{self.faucet_name}] ✅ Login successful (session detected)")
+                    return True
+                logger.warning(f"[{self.faucet_name}] Login did not navigate to dashboard")
+                return False
             
         except Exception as e:
             logger.error(f"[{self.faucet_name}] ❌ Login failed: {e}")
@@ -159,12 +244,23 @@ class CointiplyBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
                 
                 nav_timeout = getattr(self.settings, "timeout", 180000)
-                try:
-                    await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
-                except Exception as e:
-                    logger.warning(f"[{self.faucet_name}] Faucet navigation retry with commit: {e}")
-                    await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
+                # Use safe_goto to prevent 'Target closed' errors (Task 2 integration)
+                goto_success = await self.safe_goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
+                if not goto_success:
+                    logger.warning(f"[{self.faucet_name}] Safe goto failed, trying with commit")
+                    try:
+                        await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
+                    except Exception as e:
+                        logger.error(f"[{self.faucet_name}] Navigation failed: {e}")
+                        retry_count += 1
+                        continue
                 await self.handle_cloudflare()
+                
+                # Verify page health before proceeding
+                if not await self.check_page_health():
+                    logger.warning(f"[{self.faucet_name}] Page unresponsive after navigation")
+                    retry_count += 1
+                    continue
                 
                 # Extract current balance
                 balance = await self.get_current_balance()
@@ -210,9 +306,12 @@ class CointiplyBot(FaucetBot):
                             await asyncio.sleep(5)
                             continue
                         
-                        # Click roll button with human-like behavior
+                        # Click roll button with human-like behavior (safe click for Task 2 crash prevention)
                         await self.random_delay(0.5, 1.5)
-                        await self.human_like_click(roll)
+                        click_success = await self.safe_click(roll)
+                        if not click_success:
+                            logger.warning(f"[{self.faucet_name}] Safe click on roll button failed, trying direct")
+                            await self.human_like_click(roll)
                         
                         # Wait for result
                         await asyncio.sleep(3)
