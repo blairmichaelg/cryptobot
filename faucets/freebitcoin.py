@@ -739,14 +739,18 @@ class FreeBitcoinBot(FaucetBot):
                 "input#login_form_btc_address",  # Compact ID
                 "#login_form_btc_address",  # Direct ID
                 "#login_form input[name='login_form[btc_address]']",  # Form-scoped
-                "input[name='btc_address']",  # Fallback without form scope
+                "input[name='btc_address']:not([form*='signup']):not([form*='register'])",  # Exclude signup forms
                 "#login_form input[name='username']",  # Generic username in login form
                 "#login_form input[name='email']",  # Generic email in login form
                 "input[name='login_form[username]']",
                 "input[name='login_form[email]']",
+                "input[autocomplete='username']:visible",  # HTML5 autocomplete hint
+                "input[autocomplete='email']:visible",  # HTML5 autocomplete for email
+                "input[type='email']:not([form*='signup'])",  # Email type, exclude signup
                 "#btc_address",
                 "#username",
                 "#email",
+                "input[name='username']:not([form*='signup'])",  # Generic username, exclude signup
             ]
 
             # Try multiple selectors for password field
@@ -758,7 +762,9 @@ class FreeBitcoinBot(FaucetBot):
                 "#login_form_password",  # Direct ID
                 "#login_form input[type='password']",  # Type-based in login form
                 "input[name='login_form[password]']",
-                "input[name='password']",  # Fallback
+                "input[autocomplete='current-password']:visible",  # HTML5 autocomplete for login
+                "input[type='password']:not([autocomplete='new-password']):visible",  # Exclude new password fields
+                "input[name='password']:not([form*='signup'])",  # Exclude signup forms
                 "#password",
             ]
 
@@ -832,11 +838,21 @@ class FreeBitcoinBot(FaucetBot):
                         pass
                 await self.random_delay(2, 4)
 
-                # Handle Cloudflare if present
-                await self.handle_cloudflare(max_wait_seconds=90)
+                # Handle Cloudflare if present (extended wait for login page)
+                try:
+                    await self.handle_cloudflare(max_wait_seconds=120)
+                except Exception as cf_err:
+                    logger.debug(f"[FreeBitcoin] Cloudflare handling: {cf_err}")
+                    # Check if we got through anyway
+                    if await self.is_logged_in():
+                        logger.info("✅ [FreeBitcoin] Logged in after Cloudflare")
+                        return True
 
                 # Close cookie banner if present
                 await self.close_popups()
+                
+                # Additional wait for dynamic content to load
+                await asyncio.sleep(1.5)
 
                 # Log current page state for debugging
                 logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
@@ -925,14 +941,31 @@ class FreeBitcoinBot(FaucetBot):
                 logger.error("[FreeBitcoin] Direct POST fallback also failed")
                 return False
 
-            # Fill Login with human-like typing
+            # Fill Login with human-like typing (using safe operations)
             # login_id and password already extracted at start of method
             username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
             logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
-            await self.human_type(email_field, login_id)
-            await self.random_delay(0.5, 1.5)
-            await self.human_type(password_field, password)
-            await self.idle_mouse(1.0)  # Simulate thinking time before submission
+            
+            # Check page health before operations
+            if not await self.check_page_health():
+                logger.error("[FreeBitcoin] Page closed before credential entry")
+                return False
+            
+            try:
+                await self.human_type(email_field, login_id)
+                await self.random_delay(0.5, 1.5)
+                await self.human_type(password_field, password)
+                await self.idle_mouse(1.0)  # Simulate thinking time before submission
+            except Exception as type_err:
+                logger.error(f"[FreeBitcoin] Error filling credentials: {type_err}")
+                # Fallback to direct fill
+                try:
+                    await email_field.fill(login_id)
+                    await self.random_delay(0.3, 0.8)
+                    await password_field.fill(password)
+                except Exception:
+                    logger.error("[FreeBitcoin] Direct fill also failed")
+                    return False
             
             # Check for 2FA field
             twofa_selectors = [
