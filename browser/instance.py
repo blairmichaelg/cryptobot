@@ -44,6 +44,9 @@ class BrowserManager:
         self.playwright = None
         self.camoufox: Optional[AsyncCamoufox] = None
         
+        # Track closed contexts to prevent double-close errors
+        self._closed_contexts: set = set()
+        
         # Cookie storage - encrypted by default
         # NOTE: Requires that load_dotenv() has been called BEFORE this __init__
         # Otherwise os.environ.get('CRYPTOBOT_COOKIE_KEY') will be None
@@ -661,6 +664,9 @@ class BrowserManager:
             await self.launch()
 
         if context:
+            # Verify context is still alive before attempting to create page
+            if not await self.check_context_alive(context):
+                raise RuntimeError("Cannot create page: context is closed or unresponsive")
             page = await context.new_page()
         else:
             # Global context page
@@ -670,6 +676,23 @@ class BrowserManager:
             page.resource_blocker = blocker
             
         return page
+    
+    async def safe_new_page(self, context: BrowserContext) -> Optional[Page]:
+        """
+        Safely create a new page with health checks.
+        Returns None if context is closed or operation fails.
+        """
+        try:
+            if not await self.check_context_alive(context):
+                logger.warning("Cannot create page: context is not alive")
+                return None
+            return await context.new_page()
+        except Exception as e:
+            if "Target.*closed" in str(e) or "Connection.*closed" in str(e):
+                logger.debug(f"Context closed during page creation: {e}")
+            else:
+                logger.warning(f"Failed to create page: {e}")
+            return None
 
     async def restart(self):
         """Restarts the browser instance to clear memory and hung processes."""
@@ -698,13 +721,29 @@ class BrowserManager:
         try:
             if not context:
                 return False
+            
+            # Check if context is in our closed set
+            context_id = id(context)
+            if context_id in self._closed_contexts:
+                logger.debug(f"Context {context_id} is in closed set")
+                return False
+            
             # Try a lightweight operation that will fail if context is closed
             # Creating a new page is reliable but we close it immediately
-            test_page = await context.new_page()
+            test_page = await asyncio.wait_for(context.new_page(), timeout=5.0)
             await test_page.close()
             return True
+        except asyncio.TimeoutError:
+            logger.debug("Context health check timed out - context likely frozen")
+            if context:
+                self._closed_contexts.add(id(context))
+            return False
         except Exception as e:
-            logger.debug(f"Context health check failed: {e}")
+            # Don't log closed context errors as warnings - they're expected
+            if "Target.*closed" not in str(e) and "Connection.*closed" not in str(e):
+                logger.debug(f"Context health check failed: {e}")
+            if context:
+                self._closed_contexts.add(id(context))
             return False
     
     async def check_page_alive(self, page: Page) -> bool:
@@ -716,12 +755,80 @@ class BrowserManager:
             if page.is_closed():
                 return False
             # Try a lightweight operation to verify page is responsive
-            await page.evaluate("1 + 1")
+            # Add timeout to prevent hanging on frozen pages
+            await asyncio.wait_for(page.evaluate("1 + 1"), timeout=3.0)
             return True
+        except asyncio.TimeoutError:
+            logger.debug("Page health check timed out - page likely frozen")
+            return False
         except Exception as e:
-            logger.debug(f"Page health check failed: {e}")
+            # Don't log closed page errors as warnings - they're expected
+            if "Target.*closed" not in str(e) and "Connection.*closed" not in str(e):
+                logger.debug(f"Page health check failed: {e}")
             return False
 
+    async def safe_close_context(self, context: BrowserContext, profile_name: Optional[str] = None) -> bool:
+        """
+        Safely close a browser context with health checks and cookie saving.
+        Tracks closed contexts to prevent double-close errors.
+        
+        Args:
+            context: The context to close
+            profile_name: Optional profile name for cookie saving
+            
+        Returns:
+            True if successfully closed, False if already closed or error
+        """
+        if not context:
+            return False
+        
+        context_id = id(context)
+        
+        # Check if already closed
+        if context_id in self._closed_contexts:
+            logger.debug(f"Context {context_id} already marked as closed")
+            return False
+        
+        try:
+            # Check if context is still alive
+            is_alive = await self.check_context_alive(context)
+            
+            if is_alive and profile_name:
+                # Try to save cookies before closing
+                try:
+                    await asyncio.wait_for(
+                        self.save_cookies(context, profile_name),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Cookie save timed out for {profile_name}")
+                except Exception as e:
+                    logger.debug(f"Cookie save failed for {profile_name}: {e}")
+            
+            if is_alive:
+                # Close the context with timeout
+                await asyncio.wait_for(context.close(), timeout=5.0)
+                logger.debug(f"Successfully closed context {context_id}")
+            else:
+                logger.debug(f"Context {context_id} was already closed - skipping close()")
+            
+            # Mark as closed
+            self._closed_contexts.add(context_id)
+            return True
+            
+        except asyncio.TimeoutError:
+            logger.warning(f"Context close timed out for {context_id}")
+            self._closed_contexts.add(context_id)
+            return False
+        except Exception as e:
+            # Don't log closed context errors as warnings
+            if "Target.*closed" in str(e) or "Connection.*closed" in str(e):
+                logger.debug(f"Context close on already-closed context: {e}")
+            else:
+                logger.warning(f"Context close failed: {e}")
+            self._closed_contexts.add(context_id)
+            return False
+    
     async def check_page_status(self, page: Page) -> Dict[str, Any]:
         """
         Check the page for common failure status codes or network errors.
@@ -757,6 +864,8 @@ class BrowserManager:
             except Exception as e:
                 logger.debug(f"Error during browser exit: {e}")
             self.browser = None
+            # Clear closed contexts tracking
+            self._closed_contexts.clear()
             logger.info("Browser closed.")
 
 async def create_stealth_browser(headless: bool = True, proxy: Optional[str] = None):

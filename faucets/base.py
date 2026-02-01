@@ -635,6 +635,101 @@ class FaucetBot:
             delay_ms = self._behavior_rng.randint(delay_min, delay_max)
             await locator.type(text, delay=delay_ms)
 
+    async def check_page_health(self) -> bool:
+        """
+        Check if the page is still alive and responsive.
+        Returns False if page is closed or unresponsive.
+        """
+        try:
+            if not self.page:
+                logger.debug(f"[{self.faucet_name}] Page health check: no page object")
+                return False
+            
+            # Check if page is closed
+            if self.page.is_closed():
+                logger.debug(f"[{self.faucet_name}] Page health check: page is closed")
+                return False
+            
+            # Try a lightweight operation to verify page is responsive
+            await asyncio.wait_for(self.page.evaluate("1 + 1"), timeout=3.0)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(f"[{self.faucet_name}] Page health check timed out - page likely frozen")
+            return False
+        except Exception as e:
+            # Don't log closed page errors as warnings
+            if "Target.*closed" not in str(e) and "Connection.*closed" not in str(e):
+                logger.debug(f"[{self.faucet_name}] Page health check failed: {e}")
+            return False
+    
+    async def safe_page_operation(self, operation_name: str, operation_func, *args, **kwargs):
+        """
+        Safely execute a page operation with health checks.
+        Returns None if page is closed or operation fails.
+        
+        Args:
+            operation_name: Name of the operation for logging
+            operation_func: Async function to execute
+            *args, **kwargs: Arguments to pass to operation_func
+            
+        Returns:
+            Result of operation_func or None if failed
+        """
+        try:
+            # Check page health before operation
+            if not await self.check_page_health():
+                logger.warning(f"[{self.faucet_name}] Cannot execute {operation_name}: page is not alive")
+                return None
+            
+            # Execute the operation
+            return await operation_func(*args, **kwargs)
+        except Exception as e:
+            if "Target.*closed" in str(e) or "Connection.*closed" in str(e):
+                logger.debug(f"[{self.faucet_name}] {operation_name} failed: page/context closed")
+            else:
+                logger.warning(f"[{self.faucet_name}] {operation_name} failed: {e}")
+            return None
+    
+    async def safe_click(self, selector: Union[str, Locator], **kwargs) -> bool:
+        """
+        Safely click an element with health checks.
+        Returns False if operation fails.
+        """
+        locator = self.page.locator(selector) if isinstance(selector, str) else selector
+        result = await self.safe_page_operation(
+            f"click({selector})",
+            locator.click,
+            **kwargs
+        )
+        return result is not None
+    
+    async def safe_fill(self, selector: Union[str, Locator], text: str, **kwargs) -> bool:
+        """
+        Safely fill an input field with health checks.
+        Returns False if operation fails.
+        """
+        locator = self.page.locator(selector) if isinstance(selector, str) else selector
+        result = await self.safe_page_operation(
+            f"fill({selector})",
+            locator.fill,
+            text,
+            **kwargs
+        )
+        return result is not None
+    
+    async def safe_goto(self, url: str, **kwargs) -> bool:
+        """
+        Safely navigate to a URL with health checks.
+        Returns False if operation fails.
+        """
+        result = await self.safe_page_operation(
+            f"goto({url})",
+            self.page.goto,
+            url,
+            **kwargs
+        )
+        return result is not None
+
     async def idle_mouse(self, duration: Optional[float] = None):
         """
         Move mouse randomly to simulate user reading/thinking.

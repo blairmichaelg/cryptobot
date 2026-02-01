@@ -1295,19 +1295,10 @@ class JobScheduler:
         finally:
             if context:
                 try:
-                    # Check if context is still alive before operations
-                    is_alive = await self.browser_manager.check_context_alive(context)
-                    if is_alive:
-                        await self.browser_manager.save_cookies(context, profile.username)
-                        await context.close()
-                    else:
-                        logger.debug(f"Context already closed for {profile.username} - skipping cleanup")
+                    # Use safe context closure
+                    await self.browser_manager.safe_close_context(context, profile_name=profile.username)
                 except Exception as cleanup_error:
-                    # Don't log closed context errors as warnings - they're expected
-                    if "Target.*closed" in str(cleanup_error) or "Connection.*closed" in str(cleanup_error):
-                        logger.debug(f"Context cleanup on already-closed context: {cleanup_error}")
-                    else:
-                        logger.warning(f"Context cleanup failed: {cleanup_error}")
+                    logger.debug(f"Final cleanup exception for {faucet_name}: {cleanup_error}")
 
     def add_job(self, job: Job):
         """
@@ -1926,21 +1917,14 @@ class JobScheduler:
                 logger.debug(f"Runtime cost tracking failed: {cost_error}")
             try:
                 if context:
-                    # Check if context is still alive before cleanup operations
-                    is_alive = await self.browser_manager.check_context_alive(context)
-                    if is_alive:
-                        # Save cookies before closing if it was a successful or partially successful run
-                        if "withdraw" not in job.job_type: # Skip cookie save for withdrawal-only roles if needed
-                            await self.browser_manager.save_cookies(context, username)
-                        await context.close()
-                    else:
-                        logger.debug(f"Context already closed for {job.name} - skipping cleanup")
+                    # Use safe context closure with automatic health checks and cookie saving
+                    await self.browser_manager.safe_close_context(
+                        context,
+                        profile_name=username if "withdraw" not in job.job_type else None
+                    )
             except Exception as cleanup_error:
-                # Don't log closed context errors as warnings - they're expected in some error paths
-                if "Target.*closed" in str(cleanup_error) or "Connection.*closed" in str(cleanup_error):
-                    logger.debug(f"Cleanup on closed context for {job.name}: {cleanup_error}")
-                else:
-                    logger.warning(f"Context cleanup failed for {job.name}: {cleanup_error}")
+                # Additional safety net - shouldn't normally reach here with safe_close_context
+                logger.debug(f"Final cleanup exception for {job.name}: {cleanup_error}")
             self.profile_concurrency[username] -= 1
             job_key = f"{username}:{job.name}"
             if job_key in self.running_jobs:
