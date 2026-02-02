@@ -2,7 +2,13 @@
 
 **Professional-Grade Autonomous Harvesting Infrastructure**
 
-This project is a sophisticated, modular automation system designed to harvest high-value crypto faucets (FireFaucet, Cointiply, FreeBitco.in, DutchyCorp, CoinPayU) using advanced stealth technology (`Camoufox`) and automated CAPTCHA solving (`2Captcha`).
+[![Production Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](PRODUCTION_STATUS.md)
+[![Azure VM](https://img.shields.io/badge/Azure%20VM-RUNNING-blue)](docs/azure/AZURE_VM_STATUS.md)
+[![Week 1 Fixes](https://img.shields.io/badge/Week%201%20Fixes-COMPLETE-success)](AGENT_TASKS.md)
+
+This project is a sophisticated, modular automation system designed to harvest high-value crypto faucets using advanced stealth technology (`Camoufox`) and automated CAPTCHA solving (`2Captcha`). **Production deployed and running 24/7 on Azure VM.**
+
+**Latest Update (Feb 1, 2026)**: All Week 1 critical fixes complete! Browser crash prevention, Cloudflare bypass, enhanced selectors, and claim tracking all operational. See [PRODUCTION_STATUS.md](PRODUCTION_STATUS.md) for details.
 
 ---
 
@@ -16,12 +22,14 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **🔗 Smart Shortlink Traverser**: Generic solver with timer detection, captcha handling, and popup management
 - **📺 PTC Support**: Automated ad-watching with active focus management for high-yield faucets
 - **⚡ Job-Based Scheduler**: High-concurrency orchestrator eliminates idle time and maximizes crypto extraction
+- **🩹 Crash Prevention**: Safe browser context management with health checks (Task 2 - Feb 2026)
+- **☁️ Cloudflare Bypass**: Progressive retry with automatic Turnstile solving (Task 3 - Jan 2026)
 
 ### Architecture
 
 - **`core/`**: Configuration, wallet logic, data extraction, and job orchestration
-- **`browser/`**: Stealth context management with Camoufox
-- **`faucets/`**: Individual bot modules with standardized base class
+- **`browser/`**: Stealth context management with Camoufox + crash prevention
+- **`faucets/`**: Individual bot modules with standardized base class + safe operations
 - **`solvers/`**: Unified captcha and shortlink solving interfaces
 - **`config/`**: Centralized configuration, state, and session management
 - **`deploy/`**: Systemd service files (`faucet_worker.service`) and deployment configurations
@@ -33,7 +41,9 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **🏦 Wallet Daemon**: (Optional) Ready for **Electrum** JSON-RPC integration
 - **🎯 Zero Idle Time**: Job-based scheduler runs multiple earning methods simultaneously
 - **🔍 Robust Error Handling**: Failure state detection, proxy detection, and automatic retries
-- **🩺 Health Monitoring**: New suite of health check utilities for enterprise-grade uptime
+- **🩺 Health Monitoring**: Enterprise-grade uptime monitoring with alerting
+- **📊 Real-Time Monitoring Dashboard**: Track per-faucet health, success rates, and profitability
+- **🚀 Azure Deployment**: Production-ready systemd service running 24/7
 
 ---
 
@@ -41,12 +51,13 @@ This project is a sophisticated, modular automation system designed to harvest h
 
 | Faucet | Status | Features | Notes |
 | :--- | :--- | :--- | :--- |
-| **FireFaucet** | ✅ Active | Auto-claims, PTC, Daily Bonus, Shortlinks | Turnstile selection, custom PTC captcha |
-| **Cointiply** | ✅ Active | Hourly Roll, PTC Ads | Active focus required for PTC, unique image captcha |
-| **FreeBitcoin** | ⚠️ Issues | "Golden Tier" Hourly Roll | Currently experiencing login failures - under investigation |
+| **FireFaucet** | ✅ Active | Auto-claims, PTC, Daily Bonus, Shortlinks, Cloudflare Bypass | Turnstile selection, custom PTC captcha |
+| **Cointiply** | ✅ Enhanced | Hourly Roll, PTC Ads, Safe Operations | Task 7 improvements: enhanced selectors + crash prevention |
+| **FreeBitcoin** | ✅ Enhanced | "Golden Tier" Hourly Roll | Task 1 improvements: HTML5 selectors + Cloudflare timeout |
 | **DutchyCorp** | ⚠️ Limited | Auto-Rolls, Shortlinks, PTC | Proxy detection may block cloud IPs |
 | **FaucetCrypto** | ✅ Active | Faucet claims, PTC | Standardized extraction |
 | **CoinPayU** | ⚠️ Limited | Multi-coin faucet, Surf Ads | Proxy detection may block cloud IPs |
+| **Pick.io Family** | ✅ Ready | 11 faucets (LTC, TRX, DOGE, SOL, etc.) | Code complete, needs credentials |
 | **AdBTC** | ⚠️ Limited | Surf Ads, Math captcha | Proxy detection may block cloud IPs |
 | **Pick.io Family** | ⚠️ Partial | TronPick fully working; 10 others need implementation | TronPick is reference implementation |
 
@@ -149,6 +160,26 @@ Do one round of claims and stop:
 ```bash
 python main.py --once
 ```
+
+### Monitor Farm Health
+
+View real-time dashboard with faucet health metrics:
+
+```bash
+# Show 24-hour metrics
+python monitor.py
+
+# Live auto-refreshing dashboard
+python monitor.py --live
+
+# Check active alerts only
+python monitor.py --alerts-only
+
+# Show 7-day metrics
+python monitor.py --period 168
+```
+
+See [docs/MONITORING.md](docs/MONITORING.md) for complete monitoring documentation.
 
 ### Register New Accounts (Pick.io Family)
 
