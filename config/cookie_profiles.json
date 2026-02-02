@@ -10,5 +10,73 @@
   "test_health": {
     "created_at": 1767455102.800554,
     "cookie_count": 17
+  },
+  "test_closed": {
+    "created_at": 1768752766.0360863,
+    "cookie_count": 15
+  },
+  "test_cleanup": {
+    "created_at": 1767629573.6555233,
+    "cookie_count": 13
+  },
+  "test_cleanup2": {
+    "created_at": 1767975177.268489,
+    "cookie_count": 8
+  },
+  "test_multi_0": {
+    "created_at": 1768579984.8515894,
+    "cookie_count": 17
+  },
+  "test_multi_1": {
+    "created_at": 1768234384.9337137,
+    "cookie_count": 10
+  },
+  "test_multi_2": {
+    "created_at": 1767283984.9742613,
+    "cookie_count": 20
+  },
+  "test_restart": {
+    "created_at": 1767802396.530455,
+    "cookie_count": 10
+  },
+  "test_restart_new": {
+    "created_at": 1768061605.2957528,
+    "cookie_count": 18
+  },
+  "test_safe_close": {
+    "created_at": 1767825161.3786595,
+    "cookie_count": 19
+  },
+  "test_page_health": {
+    "created_at": 1768861969.4469655,
+    "cookie_count": 13
+  },
+  "test_safe_page": {
+    "created_at": 1767911585.2844129,
+    "cookie_count": 8
+  },
+  "test_faucet_bot": {
+    "created_at": 1767825196.724753,
+    "cookie_count": 9
+  },
+  "test_tracking_0": {
+    "created_at": 1767738893.7510974,
+    "cookie_count": 13
+  },
+  "test_tracking_1": {
+    "created_at": 1768602893.8276865,
+    "cookie_count": 12
+  },
+  "test_tracking_2": {
+    "created_at": 1767652493.8704677,
+    "cookie_count": 9
+  },
+  "freebitcoin_diagnostic": {
+    "created_at": 1768084749.230538,
+    "cookie_count": 14
+  },
+  "blazefoley97": {
+    "created_at": 1768603780.9756362,
+    "cookie_count": 19
   }
 }

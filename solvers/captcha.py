@@ -316,6 +316,9 @@ class CaptchaSolver:
         for provider in provider_order:
             try:
                 logger.info(f"🔑 Trying provider: {provider}")
+                # Structured logging: captcha_solve_start
+                logger.info(f"[LIFECYCLE] captcha_solve_start | type={captcha_type} | provider={provider} | timestamp={time.time():.0f}")
+                start_time = time.time()
                 providers_tried.append(provider)
 
                 api_key = self.api_key
@@ -327,15 +330,23 @@ class CaptchaSolver:
                 else:
                     code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=api_key)
 
+                duration = time.time() - start_time
                 if code:
                     logger.info(f"✅ {provider.title()} succeeded")
+                    # Structured logging: captcha_solve_success
+                    logger.info(f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=true | timestamp={time.time():.0f}")
                     self._record_provider_result(provider, captcha_type, success=True)
                     return code
                 logger.warning(f"❌ {provider.title()} failed to return a solution")
+                # Structured logging: captcha_solve_failed
+                logger.warning(f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=false | timestamp={time.time():.0f}")
                 self._record_provider_result(provider, captcha_type, success=False)
             except Exception as e:
+                duration = time.time() - start_time if 'start_time' in locals() else 0
                 error_msg = str(e)
                 logger.error(f"❌ {provider.title()} error: {e}")
+                # Structured logging: captcha_solve_error
+                logger.error(f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=false | error={str(e)[:50]} | timestamp={time.time():.0f}")
                 self._record_provider_result(provider, captcha_type, success=False)
 
                 # If not fallback-worthy, propagate

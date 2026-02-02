@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real-Time Monitoring Dashboard**: Comprehensive monitoring system for tracking faucet health and performance
+  - Per-faucet metrics: success rate (24h/7d/30d), average claim time, failure breakdown, last successful claim
+  - Automated alerting for prolonged failures (>24h), low success rates (<40%), and negative ROI
+  - Rich CLI dashboard with live auto-refresh mode (`python monitor.py --live`)
+  - Enhanced analytics to track claim timing and failure reasons
+  - Complete documentation in `docs/MONITORING.md`
 - **Proxy Sticky Sessions**: Implemented logic to keep using the same proxy session for an account until it dies, reducing ban rates.
 - **2Captcha Proxy Integration**: Added support for fetching and rotating residential proxies directly via 2Captcha API.
 - **Win/Loss Analytics**: New `earnings_analytics.json` execution path to track every claim attempt.

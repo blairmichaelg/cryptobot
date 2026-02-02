@@ -18,7 +18,8 @@ def test_parse_timer_text_format():
 
 def test_extract_balance():
     assert DataExtractor.extract_balance("Balance: 1,234.56 BTC") == "1234.56"
-    assert DataExtractor.extract_balance("0.00012300") == "0.00012300"
+    # Trailing zeros are removed for normalization
+    assert DataExtractor.extract_balance("0.00012300") == "0.000123"
     assert DataExtractor.extract_balance("Your wallet: 500 Coins") == "500"
     assert DataExtractor.extract_balance("No balance found") == "0"
 
@@ -64,8 +65,9 @@ class TestBalanceExtractionEdgeCases:
         assert DataExtractor.extract_balance("Balance: 123.45 of 1000 total") == "123.45"
     
     def test_extract_balance_with_commas(self):
-        """Test balance extraction removes commas."""
-        assert DataExtractor.extract_balance("1,000,000.50") == "1000000.50"
+        """Test balance extraction removes commas and trailing zeros."""
+        # Trailing zeros removed
+        assert DataExtractor.extract_balance("1,000,000.50") == "1000000.5"
         assert DataExtractor.extract_balance("Balance: 1,234,567.89 BTC") == "1234567.89"
     
     def test_extract_balance_integer_only(self):

@@ -57,7 +57,7 @@
     "viewport_width": 1536,
     "viewport_height": 864,
     "device_scale_factor": 1.0,
-    "human_profile": "cautious"
+    "human_profile": "normal"
   },
   "test_freebitcoin": {
     "locale": "en-AU",
@@ -88,5 +88,261 @@
     "viewport_width": 1366,
     "viewport_height": 768,
     "device_scale_factor": 1.5
+  },
+  "test_closed": {
+    "locale": "en-AU",
+    "timezone_id": "America/Los_Angeles",
+    "canvas_seed": 679879,
+    "gpu_index": 5,
+    "audio_seed": 957155,
+    "languages": [
+      "en-AU",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1440,
+    "viewport_height": 900,
+    "device_scale_factor": 1.0
+  },
+  "test_cleanup": {
+    "locale": "en-US",
+    "timezone_id": "Europe/Paris",
+    "canvas_seed": 487579,
+    "gpu_index": 2,
+    "audio_seed": 903589,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.0
+  },
+  "test_cleanup2": {
+    "locale": "en-GB",
+    "timezone_id": "America/New_York",
+    "canvas_seed": 41817,
+    "gpu_index": 12,
+    "audio_seed": 56471,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.25
+  },
+  "test_multi_0": {
+    "locale": "en-GB",
+    "timezone_id": "America/Los_Angeles",
+    "canvas_seed": 509109,
+    "gpu_index": 7,
+    "audio_seed": 670236,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1366,
+    "viewport_height": 768,
+    "device_scale_factor": 1.25
+  },
+  "test_multi_1": {
+    "locale": "en-US",
+    "timezone_id": "America/New_York",
+    "canvas_seed": 891424,
+    "gpu_index": 7,
+    "audio_seed": 413411,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1366,
+    "viewport_height": 768,
+    "device_scale_factor": 1.5
+  },
+  "test_multi_2": {
+    "locale": "en-CA",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 825604,
+    "gpu_index": 8,
+    "audio_seed": 284056,
+    "languages": [
+      "en-CA",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.5
+  },
+  "test_restart": {
+    "locale": "en-US",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 585793,
+    "gpu_index": 10,
+    "audio_seed": 756619,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.25
+  },
+  "test_restart_new": {
+    "locale": "en-CA",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 323377,
+    "gpu_index": 12,
+    "audio_seed": 219338,
+    "languages": [
+      "en-CA",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.0
+  },
+  "test_safe_close": {
+    "locale": "en-US",
+    "timezone_id": "Europe/Paris",
+    "canvas_seed": 598422,
+    "gpu_index": 1,
+    "audio_seed": 60047,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.0
+  },
+  "test_page_health": {
+    "locale": "en-US",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 94960,
+    "gpu_index": 2,
+    "audio_seed": 344819,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.25
+  },
+  "test_safe_page": {
+    "locale": "en-US",
+    "timezone_id": "America/Los_Angeles",
+    "canvas_seed": 487190,
+    "gpu_index": 2,
+    "audio_seed": 115931,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1440,
+    "viewport_height": 900,
+    "device_scale_factor": 1.25
+  },
+  "test_faucet_bot": {
+    "locale": "en-US",
+    "timezone_id": "America/New_York",
+    "canvas_seed": 102503,
+    "gpu_index": 3,
+    "audio_seed": 548816,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.25
+  },
+  "test_tracking_0": {
+    "locale": "en-CA",
+    "timezone_id": "Australia/Sydney",
+    "canvas_seed": 111542,
+    "gpu_index": 8,
+    "audio_seed": 414732,
+    "languages": [
+      "en-CA",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.25
+  },
+  "test_tracking_1": {
+    "locale": "en-CA",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 676059,
+    "gpu_index": 1,
+    "audio_seed": 959694,
+    "languages": [
+      "en-CA",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.5
+  },
+  "test_tracking_2": {
+    "locale": "en-GB",
+    "timezone_id": "Europe/London",
+    "canvas_seed": 805431,
+    "gpu_index": 11,
+    "audio_seed": 736121,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": 1536,
+    "viewport_height": 864,
+    "device_scale_factor": 1.0
+  },
+  "freebitcoin_diagnostic": {
+    "locale": "en-GB",
+    "timezone_id": "America/Chicago",
+    "canvas_seed": 32162,
+    "gpu_index": 7,
+    "audio_seed": 664681,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.25
+  },
+  "blazefoley97": {
+    "locale": "en-US",
+    "timezone_id": "Australia/Sydney",
+    "canvas_seed": 646633,
+    "gpu_index": 8,
+    "audio_seed": 41749,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "MacIntel",
+    "viewport_width": 1366,
+    "viewport_height": 768,
+    "device_scale_factor": 1.5,
+    "human_profile": "fast"
   }
 }

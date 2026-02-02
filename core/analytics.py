@@ -182,6 +182,8 @@ class ClaimRecord:
     amount: float = 0.0
     currency: str = "unknown"
     balance_after: float = 0.0
+    claim_time: Optional[float] = None  # Time taken for claim in seconds
+    failure_reason: Optional[str] = None  # Reason for failure if unsuccessful
 
 @dataclass
 class CostRecord:
@@ -279,7 +281,8 @@ class EarningsTracker:
     
     def record_claim(self, faucet: str, success: bool, amount: float = 0.0, 
                      currency: str = "unknown", balance_after: float = 0.0,
-                     allow_test: bool = False):
+                     allow_test: bool = False, claim_time: Optional[float] = None,
+                     failure_reason: Optional[str] = None):
         """
         Record a claim attempt.
         
@@ -290,6 +293,8 @@ class EarningsTracker:
             currency: Currency code (BTC, LTC, DOGE, etc.)
             balance_after: Balance after the claim
             allow_test: Whether to allow test faucets (defaults to False)
+            claim_time: Time taken for claim in seconds
+            failure_reason: Reason for failure if unsuccessful
         """
         # Filter out test faucets from production analytics unless explicitly allowed
         if not allow_test and (faucet == "test_faucet" or faucet.startswith("test_")):
@@ -334,10 +339,19 @@ class EarningsTracker:
             success=success,
             amount=float(amount),
             currency=str(currency),
-            balance_after=float(balance_after)
+            balance_after=float(balance_after),
+            claim_time=claim_time,
+            failure_reason=failure_reason
         )
         self.claims.append(asdict(record))
-        logger.info(f"📈 Recorded: {faucet} {'✓' if success else '✗'} {amount} {currency}")
+        
+        # Enhanced logging with claim time and failure reason
+        log_msg = f"📈 Recorded: {faucet} {'✓' if success else '✗'} {amount} {currency}"
+        if claim_time:
+            log_msg += f" ({claim_time:.1f}s)"
+        if failure_reason:
+            log_msg += f" - {failure_reason}"
+        logger.info(log_msg)
         
         # Auto-flush if interval exceeded (5 minutes)
         if time.time() - self.last_flush_time > self.AUTO_FLUSH_INTERVAL:
