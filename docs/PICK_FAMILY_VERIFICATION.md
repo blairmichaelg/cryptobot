@@ -120,13 +120,13 @@ All faucets:
 
 ### Created Files
 
-1. **tests/test_pick_family.py** (583 lines)
+1. **tests/test_pick_family.py** (242 lines)
    - Comprehensive test suite for all 11 Pick faucets
    - Parametrized tests for all faucets
    - Registry, inheritance, and method verification
    - 91 total tests
 
-2. **docs/pick_family_notes.md** (358 lines)
+2. **docs/pick_family_notes.md** (341 lines)
    - Complete documentation of Pick family architecture
    - Faucet status and configuration
    - Testing guidelines
