@@ -251,8 +251,8 @@ class PickFaucetBase(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Navigating to {login_url}")
                 if not await self._navigate_with_retry(login_url):
                     continue
-                # Wait up to 120 seconds for Cloudflare challenges (longer than nav timeout)
-                await self.handle_cloudflare(max_wait_seconds=120)
+                # Wait up to 30 seconds for Cloudflare challenges (sufficient for most CF)
+                await self.handle_cloudflare(max_wait_seconds=30)
                 await self.close_popups()
 
                 if await self.is_logged_in():

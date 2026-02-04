@@ -17,8 +17,7 @@ class CompressedRotatingFileHandler(RotatingFileHandler):
 
 def setup_logging(log_level: str = "INFO"):
     # Force UTF-8 encoding for console output on Windows
-    # Alternatively, use a StreamHandler and hope for the best, 
-    # but wrapping stdout is more reliable for emojis.
+    # Use errors='replace' to avoid crashing on emoji characters
     
     level = getattr(logging, log_level.upper(), logging.INFO)
     
@@ -32,15 +31,18 @@ def setup_logging(log_level: str = "INFO"):
         encoding='utf-8'
     )
     
-    # StreamHandler doesn't take encoding directly in older Python, 
-    # but in 3.7+ it can be set via sys.stdout.reconfigure or just let it fail.
-    # We will use a custom handler or try to reconfigure.
+    # For Windows console, use errors='replace' to handle emoji gracefully
     if sys.platform == "win32":
         try:
             import io
+            # Try to reconfigure stdout to UTF-8, but with error handling for emoji
             if hasattr(sys.stdout, 'reconfigure'):
-                sys.stdout.reconfigure(encoding='utf-8')
-        except:
+                sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            else:
+                # Fallback: wrap stdout with UTF-8 and replace errors
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        except Exception as e:
+            # If all else fails, just continue - logging will replace invalid chars
             pass
 
     stream_handler = logging.StreamHandler(sys.stdout)

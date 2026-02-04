@@ -558,7 +558,7 @@ class FreeBitcoinBot(FaucetBot):
                         continue
                 
                 if not email_field:
-                    logger.warning(f"[FreeBitcoin] Email field not found on {login_url}")
+                    logger.warning(f"[FreeBitcoin] Email field not found on {current_url}")
                     # Log visible form fields
                     try:
                         visible_inputs = await self.page.evaluate(
@@ -589,7 +589,7 @@ class FreeBitcoinBot(FaucetBot):
                         continue
                 
                 if not password_field:
-                    logger.warning(f"[FreeBitcoin] Password field not found on {login_url}")
+                    logger.warning(f"[FreeBitcoin] Password field not found on {current_url}")
                     continue
                 
                 # Fill credentials
@@ -723,7 +723,6 @@ class FreeBitcoinBot(FaucetBot):
         
         Implements:
         - Retry logic for network failures
-                    email_field = await self._find_selector(email_selectors, "email/username field", timeout=8000)
         - Human-like behavior patterns
         - Comprehensive error logging
         

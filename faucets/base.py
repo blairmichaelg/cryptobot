@@ -856,6 +856,7 @@ class FaucetBot:
         
         start_time = time.time()
         checks = 0
+        consecutive_no_cf = 0  # Track consecutive checks with no CF detected
         
         while (time.time() - start_time) < max_wait_seconds:
             checks += 1
@@ -897,6 +898,15 @@ class FaucetBot:
                             break
                     except Exception:
                         continue
+                
+                # Early exit if no CF detected for multiple consecutive checks
+                if not title_detected and not element_detected:
+                    consecutive_no_cf += 1
+                    if consecutive_no_cf >= 3:  # 3 checks * 2s sleep = 6s of no CF
+                        logger.debug(f"[{self.faucet_name}] No Cloudflare detected for 6s, proceeding")
+                        return True
+                else:
+                    consecutive_no_cf = 0  # Reset counter if CF found
                 
                 if title_detected or element_detected:
                     if checks == 1:
