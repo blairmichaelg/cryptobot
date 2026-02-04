@@ -1,0 +1,119 @@
+2026-02-04 16:46:12,897 - __main__ - INFO - ================================================================================
+2026-02-04 16:46:12,897 - __main__ - INFO - \U0001f525 FIREFAUCET MINIMAL LOGIN TEST
+2026-02-04 16:46:12,897 - __main__ - INFO - ================================================================================
+2026-02-04 16:46:12,993 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:12,996 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:12,998 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,001 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,003 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,006 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,010 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,015 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,020 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,024 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,027 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,029 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,032 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,034 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,037 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,040 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,042 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,044 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,047 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,049 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,052 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,054 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,057 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,059 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,061 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,064 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,067 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,070 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,074 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,076 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,080 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,084 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,090 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,096 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,103 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,110 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,116 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,122 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,127 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,130 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,136 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,141 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,145 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,149 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,154 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,159 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,165 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,170 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,174 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,178 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,182 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,185 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,189 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,192 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,196 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,200 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,203 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,205 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,208 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,211 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,213 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,215 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,218 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,220 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,222 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,224 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,226 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,228 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,230 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,232 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,233 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,235 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,237 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,239 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,241 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,244 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,246 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,248 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,250 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,252 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,254 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,256 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,258 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,260 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,262 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,264 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,267 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,269 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,270 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,272 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,274 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,276 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,278 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,280 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,282 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,284 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,286 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,287 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,289 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,291 - fake_useragent - WARNING - Error occurred during getting browser(s): random, but was suppressed with fallback.
+2026-02-04 16:46:13,298 - __main__ - INFO - \U0001f4e7 Account loaded: blazefoley97@gmail.com
+2026-02-04 16:46:13,298 - __main__ - INFO - \U0001f310 Initializing browser...
+2026-02-04 16:46:13,305 - browser.secure_storage - INFO - Successfully loaded CRYPTOBOT_COOKIE_KEY after explicit load_dotenv() from C:\Users\azureuser\Repositories\cryptobot\.env
+2026-02-04 16:46:13,305 - __main__ - INFO - \U0001f680 Launching browser...
+2026-02-04 16:46:13,305 - browser.instance - INFO - Launching Camoufox (Headless: False)...
+2026-02-04 16:46:17,358 - __main__ - INFO - \u2705 Browser launched
+2026-02-04 16:46:17,359 - __main__ - INFO - \U0001f4c4 Creating page context...
+2026-02-04 16:46:17,361 - browser.instance - INFO - Creating isolated stealth context (Profile: blazefoley97@gmail.com, Proxy: http://ub033d0d0583c05dd-zone-custom-session-j3ltt15a:ub033d0d0583c05dd@43.135.141.142:2334, Resolution: 1366x768)
+2026-02-04 16:46:17,630 - browser.secure_storage - INFO - Loaded 24 encrypted cookies for blazefoley97@gmail.com
+2026-02-04 16:46:17,637 - browser.instance - INFO - \U0001f36a Loaded 24 cookies for blazefoley97@gmail.com
+2026-02-04 16:46:24,101 - __main__ - INFO - \u2705 Page created
+2026-02-04 16:46:24,101 - __main__ - INFO - \U0001f916 Creating bot instance...
+2026-02-04 16:46:24,102 - __main__ - INFO - \u2705 Bot configured
+2026-02-04 16:46:24,102 - __main__ - INFO - \U0001f510 Starting login test...
+2026-02-04 16:46:24,102 - faucets.firefaucet - INFO - [FireFaucet] Navigating to login page...
+2026-02-04 16:46:29,896 - __main__ - INFO - \U0001f9f9 Cleaning up...

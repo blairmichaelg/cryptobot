@@ -1197,6 +1197,44 @@ class FaucetBot:
         """
         content = (await self.page.content()).lower()
         url = self.page.url.lower()
+        title = (await self.page.title()).lower()
+        
+        # First check if we're on an actual Cloudflare challenge page (not just site mentioning CF)
+        # True Cloudflare challenges have specific indicators
+        cf_challenge_indicators = [
+            "checking your browser",
+            "just a moment",
+            "please wait while we verify",
+            "verify you are human",
+            "enable javascript and cookies to continue",
+            "ray id:",  # Cloudflare ray ID on challenge pages
+            "cf-browser-verification",
+            "cf-challenge-running",
+        ]
+        
+        # Check title for CF challenge
+        if any(indicator in title for indicator in ["just a moment", "cloudflare", "ddos protection", "attention required"]):
+            logger.info(f"[{self.faucet_name}] Cloudflare challenge detected in title: {title}")
+            return "Site Maintenance / Blocked"
+        
+        # Check for ACTIVE Cloudflare challenge elements (not just mentions in scripts)
+        try:
+            cf_challenge_element = await self.page.locator("#cf-challenge-running, .cf-browser-verification, #challenge-running").count()
+            if cf_challenge_element > 0:
+                logger.info(f"[{self.faucet_name}] Cloudflare challenge element detected")
+                return "Site Maintenance / Blocked"
+        except:
+            pass
+        
+        # Only treat as CF block if challenge indicators are in visible text, not scripts
+        try:
+            visible_text = await self.page.evaluate("() => document.body.innerText.toLowerCase()")
+            for indicator in cf_challenge_indicators:
+                if indicator in visible_text:
+                    logger.info(f"[{self.faucet_name}] Cloudflare challenge pattern in visible text: '{indicator}'")
+                    return "Site Maintenance / Blocked"
+        except:
+            pass
         
         # Proxy/VPN Detection Patterns
         proxy_patterns = [
@@ -1233,15 +1271,13 @@ class FaucetBot:
                 logger.error(f"[{self.faucet_name}] Account ban pattern found: '{pattern}'")
                 return "Account Banned"
         
-        # Site Maintenance/Cloudflare Patterns
+        # Site Maintenance Patterns (excluding 'cloudflare' as it's too broad)
         maintenance_patterns = [
             "maintenance",
             "under maintenance",
             "temporarily unavailable",
-            "checking your browser",
-            "cloudflare",
-            "ddos protection",
-            "security check"
+            "ddos protection by",  # More specific - actual block message
+            "security check required",
         ]
         
         for pattern in maintenance_patterns:

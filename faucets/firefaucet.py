@@ -690,15 +690,58 @@ class FireFaucetBot(FaucetBot):
                 await self.human_like_click(faucet_btn)
                 await self.random_delay(3, 5)
                 
-                # Check for success with multiple selectors
-                success_selectors = [".success_msg", ".alert-success", ".toast-success", "[class*='success']"]
+                # Wait for page to update after claim
+                await asyncio.sleep(2)
+                
+                # Check for success with multiple selectors (expanded for FireFaucet)
+                success_selectors = [
+                    ".success_msg", 
+                    ".alert-success", 
+                    ".toast-success", 
+                    "[class*='success']",
+                    ".claim-success",
+                    ".reward-success",
+                    ".swal2-success",  # SweetAlert success popup
+                    ".swal2-popup:has(.swal2-success-ring)",  # SweetAlert with success icon
+                    ".modal:visible",  # Any visible modal might indicate success
+                    "[class*='claimed']",
+                    "[class*='reward']",
+                    ".toast:visible",  # Any toast notification
+                    ".notification:visible",
+                ]
                 success_found = False
                 for sel in success_selectors:
-                    if await self.page.locator(sel).count() > 0:
-                        success_msg = await self.page.locator(sel).first.text_content()
-                        logger.info(f"[{self.faucet_name}] ✅ Faucet claimed successfully: {success_msg}")
+                    try:
+                        locator = self.page.locator(sel)
+                        if await locator.count() > 0:
+                            success_msg = await locator.first.text_content() or ""
+                            # Check if message looks like success (not error)
+                            if not any(err in success_msg.lower() for err in ['error', 'fail', 'wait', 'timer']):
+                                logger.info(f"[{self.faucet_name}] ✅ Faucet claimed successfully: {success_msg[:100]}")
+                                success_found = True
+                                break
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Success selector {sel} error: {e}")
+                        continue
+                
+                # Also check if balance changed (alternative success indicator)
+                if not success_found:
+                    try:
+                        await asyncio.sleep(2)  # Wait for balance update
+                        new_balance_check = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
+                        if new_balance_check and new_balance_check > balance:
+                            logger.info(f"[{self.faucet_name}] ✅ Claim success detected via balance increase: {balance} -> {new_balance_check}")
+                            success_found = True
+                            balance = new_balance_check
+                    except Exception as bal_err:
+                        logger.debug(f"[{self.faucet_name}] Balance check error: {bal_err}")
+                
+                # Check for URL change indicating success
+                if not success_found:
+                    current_url = self.page.url
+                    if any(indicator in current_url.lower() for indicator in ['success', 'claimed', 'dashboard']):
+                        logger.info(f"[{self.faucet_name}] ✅ Claim success detected via URL: {current_url}")
                         success_found = True
-                        break
                 
                 if success_found:
                     # Get updated balance

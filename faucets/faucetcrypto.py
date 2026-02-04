@@ -80,10 +80,62 @@ class FaucetCryptoBot(FaucetBot):
                 login_btn = self.page.locator('button:has-text("Login"), button:has-text("Sign In"), input[type="submit"]')
                 await self.human_like_click(login_btn.first)
                 
-                # Wait for navigation to dashboard
-                await self.page.wait_for_url("**/dashboard", timeout=30000)
-                logger.info(f"[{self.faucet_name}] ✅ Login successful!")
-                return True
+                # Wait for navigation to dashboard with multiple fallback methods
+                try:
+                    await self.page.wait_for_url("**/dashboard**", timeout=20000)
+                    logger.info(f"[{self.faucet_name}] ✅ Login successful!")
+                    return True
+                except Exception as url_err:
+                    logger.debug(f"[{self.faucet_name}] URL wait failed: {url_err}")
+                    # Fallback: check if we're on dashboard by content
+                    await asyncio.sleep(3)
+                    current_url = self.page.url
+                    
+                    # Check URL patterns
+                    if any(indicator in current_url.lower() for indicator in ['dashboard', 'home', 'account', 'profile']):
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (URL: {current_url})")
+                        return True
+                    
+                    # Check for dashboard elements
+                    dashboard_indicators = [
+                        ".user-balance", 
+                        ".wallet-balance",
+                        "[class*='dashboard']",
+                        "a[href*='logout']",
+                        ".logout-btn",
+                        "[class*='user-menu']",
+                    ]
+                    for indicator in dashboard_indicators:
+                        try:
+                            if await self.page.locator(indicator).count() > 0:
+                                logger.info(f"[{self.faucet_name}] ✅ Login successful (detected: {indicator})")
+                                return True
+                        except:
+                            continue
+                    
+                    # Check if we're still on login page (failure)
+                    if "/login" in current_url.lower():
+                        # Check for error messages
+                        error_selectors = [".alert-danger", ".error-message", "[class*='error']"]
+                        for sel in error_selectors:
+                            try:
+                                if await self.page.locator(sel).count() > 0:
+                                    error_text = await self.page.locator(sel).first.text_content()
+                                    logger.error(f"[{self.faucet_name}] Login error: {error_text}")
+                                    break
+                            except:
+                                continue
+                        raise TimeoutError(f"Still on login page after submit")
+                    
+                    # If URL changed but no dashboard detected, log and try anyway
+                    logger.warning(f"[{self.faucet_name}] Uncertain login state, URL: {current_url}")
+                    # Give it a chance - might be slow loading
+                    await asyncio.sleep(5)
+                    if "dashboard" in self.page.url.lower():
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (delayed detection)")
+                        return True
+                    
+                    raise TimeoutError(f"Could not verify login success")
                 
             except TimeoutError as e:
                 logger.warning(f"[{self.faucet_name}] Login timeout (attempt {attempt + 1}/{max_retries}): {e}")
