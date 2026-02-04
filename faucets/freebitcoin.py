@@ -421,19 +421,20 @@ class FreeBitcoinBot(FaucetBot):
             logger.error("[FreeBitcoin] Credentials missing password")
             return False
 
-        # Simplified selectors - only 4 most reliable per field
+        # Updated selectors based on diagnostic script findings (Feb 2026)
+        # The login form uses specific IDs that are now confirmed
         email_selectors = [
-            "input[name='btc_address']",  # FreeBitcoin specific
-            "input[type='email']",
-            "input[name='email']",
+            "#login_form_btc_address",  # Confirmed working (hidden until trigger clicked)
+            "input[name='btc_address']",  # FreeBitcoin specific field name
+            "input[type='text'][name='btc_address']",
             "#email"
         ]
         
         password_selectors = [
+            "#login_form_password",  # Confirmed working (hidden until trigger clicked)
             "input[name='password']",
             "input[type='password']",
-            "#password",
-            "#login_form_password"
+            "#password"
         ]
         
         submit_selectors = [
@@ -454,25 +455,13 @@ class FreeBitcoinBot(FaucetBot):
                 else:
                     logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
 
-                # Navigate to login page
-                login_url = f"{self.base_url}/?op=login"
-                logger.info(f"[FreeBitcoin] Navigating to: {login_url}")
+                # Navigate to base URL (not login URL - site redirects to signup)
+                logger.info(f"[FreeBitcoin] Navigating to: {self.base_url}")
                 
-                nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
-                retry_timeout = max(nav_timeout, 120000)
-
-                
-                try:
-                    response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=nav_timeout)
-                    logger.debug(f"[FreeBitcoin] Navigation successful to {login_url}")
-                except Exception as e:
-                    logger.warning(f"[FreeBitcoin] Navigation failed ({type(e).__name__}): {str(e)[:100]}")
+                # Use safe_navigate from base class for proxy error handling
+                if not await self.safe_navigate(self.base_url, wait_until="domcontentloaded"):
+                    logger.warning(f"[FreeBitcoin] Navigation failed on attempt {attempt + 1}")
                     continue
-                
-                if response and response.status >= 400:
-                    logger.error(f"[FreeBitcoin] Login page returned HTTP {response.status}")
-                    if response.status in (401, 403, 429):
-                        continue
                 
                 await self.random_delay(1, 2)
                 
@@ -494,6 +483,37 @@ class FreeBitcoinBot(FaucetBot):
                 if await self.is_logged_in():
                     logger.info("✅ [FreeBitcoin] Session already active")
                     return True
+                
+                # CRITICAL: Click login trigger to show hidden login form
+                # The login form is hidden by default - need to click "LOGIN" link/button first
+                login_trigger_selectors = [
+                    "a:has-text('LOGIN')",
+                    "a:has-text('Log In')",
+                    "button:has-text('LOGIN')",
+                    "a[href*='login']",
+                    "a[href*='op=login']",
+                    ".login-link",
+                    "#login_link"
+                ]
+                
+                login_trigger_clicked = False
+                for selector in login_trigger_selectors:
+                    try:
+                        locator = self.page.locator(selector).first
+                        if await locator.is_visible(timeout=3000):
+                            logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
+                            await self.human_like_click(locator)
+                            await asyncio.sleep(2)  # Wait for form to appear
+                            login_trigger_clicked = True
+                            break
+                    except Exception:
+                        continue
+                
+                if not login_trigger_clicked:
+                    logger.warning(f"[FreeBitcoin] No login trigger found - form may already be visible or URL changed")
+                
+                # Wait a bit more for any animations
+                await asyncio.sleep(1)
                 
                 # Solve landing page CAPTCHA if present
                 logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA...")
