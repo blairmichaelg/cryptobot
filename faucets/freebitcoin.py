@@ -861,6 +861,50 @@ class FreeBitcoinBot(FaucetBot):
                     logger.info("✅ [FreeBitcoin] Session already active after navigation")
                     return True
 
+                # 🔒 CRITICAL FIX: Solve CAPTCHA BEFORE trying to access login form
+                # FreeBitcoin shows CAPTCHA on landing/signup page that blocks login form access
+                logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA (before login form access)...")
+                try:
+                    captcha_present = await self.page.evaluate(
+                        """
+                        () => {
+                            const intCaptcha = document.querySelector('#int_page_captchas');
+                            if (intCaptcha && intCaptcha.children.length > 0) return true;
+                            const captchaSelectors = [
+                                "iframe[src*='turnstile']",
+                                "iframe[src*='challenges.cloudflare.com']",
+                                ".cf-turnstile",
+                                "[id*='cf-turnstile']",
+                                "iframe[src*='hcaptcha']",
+                                "iframe[src*='recaptcha']",
+                                "input[name*='captcha']",
+                                "input[id*='captcha']"
+                            ];
+                            for (const sel of captchaSelectors) {
+                                if (document.querySelector(sel)) return true;
+                            }
+                            return false;
+                        }
+                        """
+                    )
+                except Exception:
+                    captcha_present = False
+
+                if captcha_present:
+                    logger.info("[FreeBitcoin] Landing page CAPTCHA detected - solving before login form access...")
+                    try:
+                        solved = await self.solver.solve_captcha(self.page)
+                        if solved is False:
+                            logger.error("[FreeBitcoin] Landing page CAPTCHA solve failed")
+                            continue  # Try next URL
+                        logger.info("✅ [FreeBitcoin] Landing page CAPTCHA solved - login form should be accessible")
+                        await asyncio.sleep(2)  # Wait for page to update after CAPTCHA
+                    except Exception as captcha_err:
+                        logger.error(f"[FreeBitcoin] Landing page CAPTCHA solve error: {captcha_err}")
+                        continue  # Try next URL
+                else:
+                    logger.debug("[FreeBitcoin] No landing page CAPTCHA detected")
+
                 try:
                     await self.page.wait_for_selector(",".join(login_form_selectors), timeout=6000)
                 except Exception:
@@ -1002,8 +1046,8 @@ class FreeBitcoinBot(FaucetBot):
                     logger.info("✅ [FreeBitcoin] Login successful via direct request")
                     return True
 
-            # Check for CAPTCHA on login page
-            logger.debug("[FreeBitcoin] Checking for login CAPTCHA...")
+            # Check for CAPTCHA on login form (different from landing page CAPTCHA)
+            logger.debug("[FreeBitcoin] Checking for login form CAPTCHA (after credentials filled)...")
             try:
                 captcha_present = False
                 try:
@@ -1022,12 +1066,12 @@ class FreeBitcoinBot(FaucetBot):
                     )
                 except Exception:
                     captcha_present = False
-                    captcha_present = False
 
                 if captcha_present:
+                    logger.info("[FreeBitcoin] Login form CAPTCHA detected - solving...")
                     solved = await self.solver.solve_captcha(self.page)
                     if solved is False:
-                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed")
+                        logger.error("[FreeBitcoin] Login form CAPTCHA solve failed")
                         return False
                     if not await self._wait_for_captcha_token():
                         logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
