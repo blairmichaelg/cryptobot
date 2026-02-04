@@ -846,21 +846,27 @@ class CaptchaSolver:
         else:
             params["sitekey"] = sitekey
         
-        if proxy_context:
-            params["proxy"] = proxy_context.get("proxy_string")
+        # Handle proxy from proxy_context (preferred) or self.proxy_string (fallback)
+        proxy_string_to_use = None
+        if proxy_context and proxy_context.get("proxy_string"):
+            proxy_string_to_use = proxy_context.get("proxy_string")
             params["proxytype"] = proxy_context.get("proxy_type", "HTTP")
-            logger.info(f"🔒 Using Proxy for 2Captcha (Context): {params['proxy']}")
-            
-            # Add User-Agent for better success rate (CRITICAL for reCAPTCHA/Turnstile)
-            if "user_agent" in proxy_context:
-                params["userAgent"] = proxy_context["user_agent"]
-                logger.debug(f"📱 Sending User-Agent to 2Captcha: {params['userAgent'][:50]}...")
-                
+            logger.info(f"🔒 Using Proxy for 2Captcha (Context): {proxy_string_to_use}")
         elif self.proxy_string:
             proxy_info = self._parse_proxy(self.proxy_string)
-            params["proxy"] = proxy_info["proxy"]
+            proxy_string_to_use = proxy_info["proxy"]
             params["proxytype"] = proxy_info["proxytype"]
-            logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_info['proxytype']}): {proxy_info['proxy'][:30]}...")
+            logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_info['proxytype']}): {proxy_string_to_use[:30]}...")
+        
+        # Only add proxy parameter if we have a valid proxy
+        if proxy_string_to_use:
+            params["proxy"] = proxy_string_to_use
+            
+        # Add User-Agent for better success rate (CRITICAL for reCAPTCHA/Turnstile)
+        # Can be sent with or without proxy
+        if proxy_context and "user_agent" in proxy_context:
+            params["userAgent"] = proxy_context["user_agent"]
+            logger.debug(f"📱 Sending User-Agent to 2Captcha: {params['userAgent'][:50]}...")
         
         logger.info(f"Submitting {method} to 2Captcha (sitekey: {sitekey[:20]}...)...")
         async with session.post(req_url, data=params) as resp:
