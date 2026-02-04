@@ -360,11 +360,26 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Debug all faucets")
     parser.add_argument("--faucet", "-f", help="Filter to specific faucet (partial match)")
-    parser.add_argument("--visible", "-v", action="store_true", default=True, help="Run with visible browser")
+    parser.add_argument("--visible", "-v", action="store_true", help="Run with visible browser")
     parser.add_argument("--headless", action="store_true", help="Run headless (no browser window)")
     
     args = parser.parse_args()
-    visible = not args.headless
+    
+    # Check HEADLESS environment variable (for VM compatibility)
+    env_headless = os.environ.get("HEADLESS", "").lower() in ("true", "1", "yes")
+    
+    # Priority: --headless flag > HEADLESS env var > --visible flag > default (headless on Linux, visible on Windows)
+    if args.headless:
+        visible = False
+    elif env_headless:
+        visible = False
+    elif args.visible:
+        visible = True
+    else:
+        # Default: headless on Linux (no DISPLAY), visible on Windows
+        visible = sys.platform == "win32" or os.environ.get("DISPLAY") is not None
+    
+    logger.info(f"Browser mode: {'visible' if visible else 'headless'}")
     
     try:
         results = asyncio.run(run_all_tests(faucet_filter=args.faucet, visible=visible))
