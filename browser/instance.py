@@ -1,9 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional, List, Dict, Any
-
-if TYPE_CHECKING:
-    from playwright.async_api import BrowserContext, Page
-    from browserforge.fingerprints import Screen
+from typing import Optional, List, Dict, Any
 
 from playwright.async_api import BrowserContext, Page
 from browserforge.fingerprints import Screen
