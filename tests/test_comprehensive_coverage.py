@@ -1262,16 +1262,14 @@ class TestBotSettingsComprehensive:
     def test_bot_settings_pick_faucet_fallbacks(self):
         """Test Pick.io faucet legacy credential fallbacks through get_account."""
         from core.config import BotSettings
-        from unittest.mock import patch
         
-        # Create settings with Pick.io credentials
+        # Create settings with Pick.io credentials and empty accounts list
+        # to force fallback path (accounts list takes priority otherwise)
         settings = BotSettings(
             litepick_username="lite_user",
-            litepick_password="lite_pass"
+            litepick_password="lite_pass",
+            accounts=[]  # Empty accounts to test fallback
         )
-        
-        # Clear accounts to force fallback path
-        settings.accounts = []
         
         account = settings.get_account("litepick")
         
