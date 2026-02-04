@@ -255,7 +255,13 @@ class FireFaucetBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login page...")
-            await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
+            nav_success = await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
+            if not nav_success:
+                logger.error(f"[{self.faucet_name}] Failed to navigate to login page")
+                return False
+            
+            # Log current URL for debugging
+            logger.debug(f"[{self.faucet_name}] Current URL after navigation: {self.page.url}")
             
             # Enhanced Cloudflare bypass with retry escalation
             cf_blocked = await self.detect_cloudflare_block()
@@ -269,8 +275,32 @@ class FireFaucetBot(FaucetBot):
                 # Still do basic check for race conditions
                 await self.handle_cloudflare(max_wait_seconds=20)
             
-            # Wait for login form to appear
-            await self.page.wait_for_selector('#username', timeout=15000)
+            # Wait for login form to appear - increased timeout for proxy scenarios
+            # Proxies add latency; give it 45s instead of 15s
+            try:
+                await self.page.wait_for_selector('#username', timeout=45000)
+            except Exception as e:
+                # Try alternate selectors if #username fails
+                logger.warning(f"[{self.faucet_name}] #username not found, trying alternate selectors...")
+                alt_selectors = ["input[name='username']", "input[type='text']", "#login-username"]
+                found = False
+                for sel in alt_selectors:
+                    try:
+                        if await self.page.locator(sel).count() > 0:
+                            logger.info(f"[{self.faucet_name}] Found login field with selector: {sel}")
+                            found = True
+                            break
+                    except:
+                        pass
+                if not found:
+                    # Log page info for debugging
+                    try:
+                        title = await self.page.title()
+                        url = self.page.url
+                        logger.error(f"[{self.faucet_name}] Login form not found. Title: {title}, URL: {url}")
+                    except:
+                        pass
+                    raise e
             
             # Updated selectors (as of 2026-01)
             logger.info(f"[{self.faucet_name}] Filling login form...")
