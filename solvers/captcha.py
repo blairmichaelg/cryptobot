@@ -368,6 +368,7 @@ class CaptchaSolver:
             page (Page): The Playwright Page instance.
             timeout (int, optional): Maximum time to wait for manual solve in seconds.
             proxy_context (dict, optional): Proxy details to pass to solver service.
+                Should include: proxy_string, proxy_type, user_agent, cookies (optional)
 
         Returns:
             bool: True if the captcha was solved successfully.
@@ -592,6 +593,19 @@ class CaptchaSolver:
                     return await self._solve_image_captcha(page)
 
                 if sitekey:
+                    # Build proxy context with browser fingerprinting data
+                    if not proxy_context:
+                        proxy_context = {}
+                    
+                    # Get user-agent from page if not already provided
+                    if "user_agent" not in proxy_context:
+                        try:
+                            user_agent = await page.evaluate("() => navigator.userAgent")
+                            proxy_context["user_agent"] = user_agent
+                            logger.debug(f"Extracted User-Agent: {user_agent[:50]}...")
+                        except Exception as e:
+                            logger.warning(f"Failed to extract User-Agent: {e}")
+                    
                     # Use the new solve_with_fallback method for provider fallback
                     code = await self.solve_with_fallback(page, method, sitekey, page.url, proxy_context)
                     
@@ -836,6 +850,12 @@ class CaptchaSolver:
             params["proxy"] = proxy_context.get("proxy_string")
             params["proxytype"] = proxy_context.get("proxy_type", "HTTP")
             logger.info(f"🔒 Using Proxy for 2Captcha (Context): {params['proxy']}")
+            
+            # Add User-Agent for better success rate (CRITICAL for reCAPTCHA/Turnstile)
+            if "user_agent" in proxy_context:
+                params["userAgent"] = proxy_context["user_agent"]
+                logger.debug(f"📱 Sending User-Agent to 2Captcha: {params['userAgent'][:50]}...")
+                
         elif self.proxy_string:
             proxy_info = self._parse_proxy(self.proxy_string)
             params["proxy"] = proxy_info["proxy"]
