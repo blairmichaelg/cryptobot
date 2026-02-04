@@ -949,6 +949,81 @@ class FaucetBot:
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Page crash detected: {e}")
             return False
+    
+    async def safe_navigate(self, url: str, wait_until: str = "domcontentloaded", timeout: int = None, retry_on_proxy_error: bool = True) -> bool:
+        """
+        Navigate to URL with automatic proxy error handling and retry logic.
+        
+        Handles common navigation failures including:
+        - NS_ERROR_PROXY_CONNECTION_REFUSED (bad proxy)
+        - Timeout errors
+        - Network errors
+        
+        Args:
+            url: Target URL to navigate to
+            wait_until: Playwright wait strategy (domcontentloaded, networkidle, load, commit)
+            timeout: Navigation timeout in ms (uses settings.timeout if None)
+            retry_on_proxy_error: If True, retries without proxy on proxy failures
+            
+        Returns:
+            True if navigation succeeded, False otherwise
+        """
+        if timeout is None:
+            timeout = max(getattr(self.settings, "timeout", 180000), 120000)
+        
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.debug(f"[{self.faucet_name}] Navigating to {url} (attempt {attempt}/{max_attempts})")
+                await self.page.goto(url, wait_until=wait_until, timeout=timeout)
+                logger.debug(f"[{self.faucet_name}] Navigation succeeded")
+                return True
+                
+            except Exception as e:
+                error_str = str(e)
+                
+                # Check for proxy-related errors
+                if any(proxy_error in error_str for proxy_error in [
+                    "NS_ERROR_PROXY_CONNECTION_REFUSED",
+                    "PROXY_CONNECTION_FAILED",
+                    "ERR_PROXY_CONNECTION_FAILED",
+                    "ECONNREFUSED",
+                    "proxy"
+                ]):
+                    logger.warning(f"[{self.faucet_name}] Proxy error on attempt {attempt}: {error_str[:150]}")
+                    
+                    # On last attempt with proxy errors, log it but don't fail yet
+                    if attempt == max_attempts:
+                        logger.error(f"[{self.faucet_name}] All {max_attempts} navigation attempts failed with proxy errors")
+                        return False
+                    
+                    # Wait before retry with exponential backoff
+                    wait_time = 2 ** (attempt - 1)  # 1s, 2s, 4s
+                    await asyncio.sleep(wait_time)
+                    continue
+                
+                # Check for timeout errors
+                elif "Timeout" in error_str or "timeout" in error_str:
+                    logger.warning(f"[{self.faucet_name}] Timeout on attempt {attempt}: {error_str[:150]}")
+                    
+                    if attempt < max_attempts:
+                        # Try with more lenient wait strategy on retry
+                        if wait_until == "domcontentloaded" and attempt == 2:
+                            wait_until = "commit"
+                            logger.info(f"[{self.faucet_name}] Switching to 'commit' wait strategy")
+                        await asyncio.sleep(2)
+                        continue
+                    else:
+                        logger.error(f"[{self.faucet_name}] Navigation failed after {max_attempts} timeout attempts")
+                        return False
+                
+                # Other errors - don't retry
+                else:
+                    logger.error(f"[{self.faucet_name}] Navigation error: {error_str[:150]}")
+                    return False
+        
+        return False
+            return False
 
 
     async def close_popups(self):
