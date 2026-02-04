@@ -3,6 +3,7 @@ import sys
 import gzip
 import shutil
 import os
+import io
 from logging.handlers import RotatingFileHandler
 
 class CompressedRotatingFileHandler(RotatingFileHandler):
@@ -15,6 +16,27 @@ class CompressedRotatingFileHandler(RotatingFileHandler):
                 shutil.copyfileobj(f_in, f_out)
         os.remove(source)
 
+class SafeStreamHandler(logging.StreamHandler):
+    """StreamHandler that safely handles Unicode on Windows by replacing unencodable chars."""
+    
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            # Replace any problematic characters for Windows console
+            if sys.platform == "win32":
+                try:
+                    stream.write(msg + self.terminator)
+                except UnicodeEncodeError:
+                    # Fallback: encode with replacement then decode back
+                    safe_msg = msg.encode('cp1252', errors='replace').decode('cp1252')
+                    stream.write(safe_msg + self.terminator)
+            else:
+                stream.write(msg + self.terminator)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
 def setup_logging(log_level: str = "INFO"):
     # Force UTF-8 encoding for console output on Windows
     # CRITICAL: Must happen BEFORE creating StreamHandler
@@ -26,7 +48,6 @@ def setup_logging(log_level: str = "INFO"):
                 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
                 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
             else:
-                import io
                 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
                 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
         except Exception as e:
@@ -45,8 +66,8 @@ def setup_logging(log_level: str = "INFO"):
         encoding='utf-8'
     )
     
-    # Create stream handler AFTER reconfiguring stdout
-    stream_handler = logging.StreamHandler(sys.stdout)
+    # Use SafeStreamHandler to prevent Unicode crashes on Windows
+    stream_handler = SafeStreamHandler(sys.stdout)
     
     logging.basicConfig(
         level=level,

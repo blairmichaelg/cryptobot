@@ -421,7 +421,7 @@ class HealthMonitor:
         Returns:
             Dict with all health check results
         """
-        logger.info("🏥 Running comprehensive health check...")
+        logger.info("[HEALTH] Running comprehensive health check...")
         
         # Run all checks
         browser_health = await self.check_browser_health()
@@ -472,7 +472,7 @@ class HealthMonitor:
             "faucets": faucet_health
         }
         
-        logger.info(f"✅ Health check complete - Overall: {'HEALTHY' if all_healthy else 'DEGRADED'}")
+        logger.info(f"[HEALTH] Health check complete - Overall: {'HEALTHY' if all_healthy else 'DEGRADED'}")
         return results
     
     def should_restart_browser(self) -> bool:
