@@ -1022,9 +1022,8 @@ class FaucetBot:
                     logger.error(f"[{self.faucet_name}] Navigation error: {error_str[:150]}")
                     return False
         
+        # If we get here, all attempts failed (shouldn't reach this)
         return False
-            return False
-
 
     async def close_popups(self):
         """
