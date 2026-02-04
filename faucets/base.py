@@ -979,13 +979,15 @@ class FaucetBot:
             True if navigation succeeded, False otherwise
         """
         if timeout is None:
-            timeout = max(getattr(self.settings, "timeout", 180000), 120000)
+            timeout = getattr(self.settings, "timeout", 60000)  # Use configured timeout
         
-        max_attempts = 3
+        max_attempts = 2  # Reduced from 3 - fail faster
         for attempt in range(1, max_attempts + 1):
             try:
-                logger.debug(f"[{self.faucet_name}] Navigating to {url} (attempt {attempt}/{max_attempts})")
-                await self.page.goto(url, wait_until=wait_until, timeout=timeout)
+                # Use shorter timeout on retry attempts
+                attempt_timeout = timeout if attempt == 1 else min(timeout // 2, 30000)
+                logger.debug(f"[{self.faucet_name}] Navigating to {url} (attempt {attempt}/{max_attempts}, timeout={attempt_timeout}ms)")
+                await self.page.goto(url, wait_until=wait_until, timeout=attempt_timeout)
                 logger.debug(f"[{self.faucet_name}] Navigation succeeded")
                 return True
                 
@@ -1007,9 +1009,8 @@ class FaucetBot:
                         logger.error(f"[{self.faucet_name}] All {max_attempts} navigation attempts failed with proxy errors")
                         return False
                     
-                    # Wait before retry with exponential backoff
-                    wait_time = 2 ** (attempt - 1)  # 1s, 2s, 4s
-                    await asyncio.sleep(wait_time)
+                    # Shorter wait before retry - fail faster
+                    await asyncio.sleep(1)
                     continue
                 
                 # Check for timeout errors
@@ -1018,10 +1019,10 @@ class FaucetBot:
                     
                     if attempt < max_attempts:
                         # Try with more lenient wait strategy on retry
-                        if wait_until == "domcontentloaded" and attempt == 2:
+                        if wait_until == "domcontentloaded":
                             wait_until = "commit"
                             logger.info(f"[{self.faucet_name}] Switching to 'commit' wait strategy")
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(1)  # Shorter wait
                         continue
                     else:
                         logger.error(f"[{self.faucet_name}] Navigation failed after {max_attempts} timeout attempts")

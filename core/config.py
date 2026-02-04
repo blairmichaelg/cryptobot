@@ -42,7 +42,7 @@ class BotSettings(BaseSettings):
     # Core
     log_level: str = "INFO"
     headless: bool = True
-    timeout: int = 180000  # Global timeout in ms (default 180s for slow proxies)
+    timeout: int = 60000  # Global timeout in ms (60s - fail faster on bad proxies/networks)
     
     # Security / API
     captcha_provider: str = "2captcha"
