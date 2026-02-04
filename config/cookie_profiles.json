@@ -82,5 +82,9 @@
   "test_tronpick": {
     "created_at": 1767735921.1367822,
     "cookie_count": 10
+  },
+  "test_firefaucet": {
+    "created_at": 1767649888.4745462,
+    "cookie_count": 12
   }
 }
