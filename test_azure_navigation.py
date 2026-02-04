@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 async def test_navigation():
     """Test basic browser navigation with and without proxy."""
     from camoufox.async_api import AsyncCamoufox
+    from browserforge.fingerprints import Screen
     
     test_urls = [
         "https://httpbin.org/ip",
@@ -21,11 +22,12 @@ async def test_navigation():
         "https://cointiply.com",
     ]
     
-    # Common browser options
+    # Common browser options - matching main app config
     browser_opts = {
         "headless": True,
-        "os": "linux",  # Match VM OS
-        "screen": {"max_width": 1920, "max_height": 1080},
+        "geoip": False,  # Skip geoip to avoid DB issues
+        "humanize": True,
+        "screen": Screen(max_width=1920, max_height=1080),
         "i_know_what_im_doing": True,  # Suppress warnings
     }
     
