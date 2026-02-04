@@ -45,7 +45,7 @@
   },
   "blazefoley97@gmail.com": {
     "locale": "en-US",
-    "timezone_id": "America/Chicago",
+    "timezone_id": "America/Los_Angeles",
     "canvas_seed": 663579,
     "gpu_index": 5,
     "audio_seed": 278254,

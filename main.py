@@ -110,7 +110,13 @@ async def main():
     
     # Main Execution Block
     try:
-        await browser_manager.launch()
+        logger.info("🚀 Starting browser launch...")
+        try:
+            await browser_manager.launch()
+            logger.info("✅ Browser launched successfully")
+        except Exception as e:
+            logger.error(f"❌ Browser launch FAILED: {e}", exc_info=True)
+            raise
         
         # Load Profiles and Populate Jobs
         profiles = []
@@ -151,6 +157,8 @@ async def main():
             if settings.usdpick_username:
                 profiles.append(AccountProfile(faucet="usdpick", username=settings.usdpick_username, password=settings.usdpick_password))
         
+        logger.info(f"📋 Loaded {len(profiles)} profiles")
+        
         # Filter if --single provided
         if args.single:
             target = args.single.lower().replace("_", "")
@@ -158,6 +166,7 @@ async def main():
             if not profiles:
                 logger.warning(f"No profiles found matching '{args.single}'")
                 return
+            logger.info(f"🎯 Filtered to {len(profiles)} profiles matching '{args.single}'")
             # Purge any restored jobs that don't match the single target
             removed = scheduler.purge_jobs(lambda j: target not in j.faucet_type.lower().replace("_", ""))
             if removed:
@@ -192,6 +201,7 @@ async def main():
             else:
                 logger.warning("⚠️ No 2Captcha proxies found in proxies.txt. Using fallback or direct connection.")
 
+        jobs_created = 0
         for profile in profiles:
             # Initialize bot instance to get its jobs using factory pattern
             f_type = profile.faucet.lower()
@@ -215,11 +225,15 @@ async def main():
                 
                 # Get jobs and add to scheduler
                 jobs = bot.get_jobs()
+                logger.info(f"📌 Creating {len(jobs)} jobs for {profile.faucet} ({profile.username})")
                 for job in jobs:
                     job.profile = profile
                     scheduler.add_job(job)
+                    jobs_created += 1
             else:
                 logger.warning(f"Unknown faucet type for profile {profile.username}: {profile.faucet}")
+
+        logger.info(f"✅ Created {jobs_created} total jobs for {len(profiles)} profiles")
 
         # Start Scheduler with signal support
         scheduler_task = asyncio.create_task(scheduler.scheduler_loop())
