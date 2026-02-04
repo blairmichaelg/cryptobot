@@ -13,8 +13,23 @@ import pytest
 import asyncio
 import json
 import os
+import tempfile
+import shutil
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 from pathlib import Path
+
+
+@pytest.fixture
+def safe_tmp_path():
+    """Create a temp directory in user's temp folder to avoid permission issues."""
+    # Use user's temp directory which has proper permissions
+    temp_dir = tempfile.mkdtemp(prefix="cryptobot_test_")
+    yield Path(temp_dir)
+    # Cleanup
+    try:
+        shutil.rmtree(temp_dir)
+    except Exception:
+        pass
 
 
 class TestBrowserManagerInitialization:
@@ -102,24 +117,24 @@ class TestBrowserManagerInitialization:
 class TestBrowserManagerJsonOperations:
     """Test JSON read/write operations with backup support."""
     
-    def test_safe_json_write_creates_directory(self, tmp_path):
+    def test_safe_json_write_creates_directory(self, safe_tmp_path):
         """Test _safe_json_write creates parent directory."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "subdir" / "test.json")
+        filepath = str(safe_tmp_path / "subdir" / "test.json")
         
         data = {"test": "value"}
         manager._safe_json_write(filepath, data)
         
         assert os.path.exists(filepath)
     
-    def test_safe_json_write_creates_backup(self, tmp_path):
+    def test_safe_json_write_creates_backup(self, safe_tmp_path):
         """Test _safe_json_write creates backup of existing file."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         # Write initial data
         initial_data = {"version": 1}
@@ -138,12 +153,12 @@ class TestBrowserManagerJsonOperations:
             backup_data = json.load(f)
         assert backup_data == initial_data
     
-    def test_safe_json_write_rotates_backups(self, tmp_path):
+    def test_safe_json_write_rotates_backups(self, safe_tmp_path):
         """Test _safe_json_write rotates multiple backups."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         # Write multiple versions
         for i in range(5):
@@ -154,12 +169,12 @@ class TestBrowserManagerJsonOperations:
         assert os.path.exists(filepath + ".backup.2")
         assert os.path.exists(filepath + ".backup.3")
     
-    def test_safe_json_write_atomic(self, tmp_path):
+    def test_safe_json_write_atomic(self, safe_tmp_path):
         """Test _safe_json_write is atomic (writes to temp then renames)."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         data = {"key": "value", "number": 123, "nested": {"a": 1}}
         manager._safe_json_write(filepath, data)
@@ -170,12 +185,12 @@ class TestBrowserManagerJsonOperations:
         
         assert loaded == data
     
-    def test_safe_json_read_valid_file(self, tmp_path):
+    def test_safe_json_read_valid_file(self, safe_tmp_path):
         """Test _safe_json_read with valid JSON file."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         data = {"key": "value"}
         with open(filepath, "w") as f:
@@ -185,23 +200,23 @@ class TestBrowserManagerJsonOperations:
         
         assert result == data
     
-    def test_safe_json_read_missing_file(self, tmp_path):
+    def test_safe_json_read_missing_file(self, safe_tmp_path):
         """Test _safe_json_read with missing file."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "nonexistent.json")
+        filepath = str(safe_tmp_path / "nonexistent.json")
         
         result = manager._safe_json_read(filepath)
         
         assert result is None
     
-    def test_safe_json_read_corrupt_file_uses_backup(self, tmp_path):
+    def test_safe_json_read_corrupt_file_uses_backup(self, safe_tmp_path):
         """Test _safe_json_read falls back to backup when primary is corrupt."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         # Write corrupt primary file
         with open(filepath, "w") as f:
@@ -216,12 +231,12 @@ class TestBrowserManagerJsonOperations:
         
         assert result == backup_data
     
-    def test_safe_json_read_all_corrupt_returns_none(self, tmp_path):
+    def test_safe_json_read_all_corrupt_returns_none(self, safe_tmp_path):
         """Test _safe_json_read returns None when all files are corrupt."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         # Write corrupt files
         for suffix in ["", ".backup.1", ".backup.2", ".backup.3"]:
@@ -283,12 +298,12 @@ class TestBrowserManagerClosedContextTracking:
 class TestBrowserManagerEdgeCases:
     """Test edge cases and error handling."""
     
-    def test_safe_json_write_with_special_characters(self, tmp_path):
+    def test_safe_json_write_with_special_characters(self, safe_tmp_path):
         """Test _safe_json_write with special characters in data."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         data = {
             "unicode": "日本語テスト",
@@ -301,12 +316,12 @@ class TestBrowserManagerEdgeCases:
         
         assert result == data
     
-    def test_safe_json_write_with_nested_data(self, tmp_path):
+    def test_safe_json_write_with_nested_data(self, safe_tmp_path):
         """Test _safe_json_write with deeply nested data."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         data = {
             "level1": {
@@ -323,12 +338,12 @@ class TestBrowserManagerEdgeCases:
         
         assert result == data
     
-    def test_safe_json_write_with_empty_dict(self, tmp_path):
+    def test_safe_json_write_with_empty_dict(self, safe_tmp_path):
         """Test _safe_json_write with empty dict."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         data = {}
         manager._safe_json_write(filepath, data)
@@ -337,12 +352,12 @@ class TestBrowserManagerEdgeCases:
         
         assert result == {}
     
-    def test_safe_json_write_with_large_data(self, tmp_path):
+    def test_safe_json_write_with_large_data(self, safe_tmp_path):
         """Test _safe_json_write with large data."""
         from browser.instance import BrowserManager
         
         manager = BrowserManager()
-        filepath = str(tmp_path / "test.json")
+        filepath = str(safe_tmp_path / "test.json")
         
         # Create large data structure
         data = {"items": [{"id": i, "data": "x" * 100} for i in range(1000)]}
