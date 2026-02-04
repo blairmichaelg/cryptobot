@@ -21,13 +21,21 @@ async def test_navigation():
         "https://cointiply.com",
     ]
     
+    # Common browser options
+    browser_opts = {
+        "headless": True,
+        "os": "linux",  # Match VM OS
+        "screen": {"max_width": 1920, "max_height": 1080},
+        "i_know_what_im_doing": True,  # Suppress warnings
+    }
+    
     # Test 1: Direct connection (no proxy)
     print("\n" + "="*60)
     print("TEST 1: Direct connection (no proxy)")
     print("="*60)
     
     try:
-        async with AsyncCamoufox(headless=True) as browser:
+        async with AsyncCamoufox(**browser_opts) as browser:
             context = await browser.new_context()
             page = await context.new_page()
             
@@ -54,7 +62,7 @@ async def test_navigation():
     proxy_url = "http://ub033d0d0583c05dd-zone-custom-session-test123:ub033d0d0583c05dd@43.135.141.142:2334"
     
     try:
-        async with AsyncCamoufox(headless=True) as browser:
+        async with AsyncCamoufox(**browser_opts) as browser:
             context = await browser.new_context(
                 proxy={"server": proxy_url}
             )
