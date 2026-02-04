@@ -35,12 +35,17 @@ class FaucetCryptoBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Navigating to login page (attempt {attempt + 1}/{max_retries})...")
                 # v4.0+ uses /login (not /login.php)
-                nav_timeout = getattr(self.settings, "timeout", 180000)
+                nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
                 try:
                     await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
                 except Exception as e:
-                    logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
-                    await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
+                    error_str = str(e)
+                    if "Timeout" in error_str:
+                        logger.warning(f"[{self.faucet_name}] domcontentloaded timeout, trying networkidle...")
+                        await self.page.goto(f"{self.base_url}/login", wait_until="networkidle", timeout=nav_timeout)
+                    else:
+                        logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
+                        await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
                 await self.handle_cloudflare()
                 await self.random_delay(1, 2)
                 

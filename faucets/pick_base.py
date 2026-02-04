@@ -42,13 +42,18 @@ class PickFaucetBase(FaucetBot):
         Returns:
             True if navigation succeeded, False if all retries exhausted
         """
-        nav_timeout = getattr(self.settings, "timeout", 180000)
+        # Use longer timeout for Pick.io sites - they're consistently slow
+        nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
 
         for attempt in range(max_retries):
             try:
-                # Use 'commit' wait strategy to handle Cloudflare challenge pages
-                # which may never reach 'domcontentloaded' until challenge is solved
-                response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
+                # Try domcontentloaded first (faster), fallback to commit if it fails
+                try:
+                    response = await self.page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+                except Exception:
+                    # Fallback to commit for Cloudflare challenges
+                    response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
+                
                 if response:
                     # Even 403/503 responses mean we got the page (might be Cloudflare)
                     logger.debug(f"[{self.faucet_name}] Navigation returned status {response.status}")

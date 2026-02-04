@@ -458,7 +458,7 @@ class FreeBitcoinBot(FaucetBot):
                 login_url = f"{self.base_url}/?op=login"
                 logger.info(f"[FreeBitcoin] Navigating to: {login_url}")
                 
-                nav_timeout = max(getattr(self.settings, "timeout", 90000), 90000)
+                nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
                 retry_timeout = max(nav_timeout, 120000)
 
                 
