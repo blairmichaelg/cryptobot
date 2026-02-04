@@ -261,7 +261,21 @@ class FireFaucetBot(FaucetBot):
                 return False
             
             # Log current URL for debugging
-            logger.debug(f"[{self.faucet_name}] Current URL after navigation: {self.page.url}")
+            current_url = self.page.url
+            logger.debug(f"[{self.faucet_name}] Current URL after navigation: {current_url}")
+            
+            # Check if already logged in (redirected to dashboard)
+            if "/dashboard" in current_url or "/home" in current_url:
+                logger.info(f"[{self.faucet_name}] ✅ Already logged in (session valid)")
+                return True
+            
+            # Also check for dashboard elements on current page (in case URL doesn't contain /dashboard)
+            try:
+                if await self.page.locator(".user-balance, .level-progress, .dashboard-content").count() > 0:
+                    logger.info(f"[{self.faucet_name}] ✅ Already logged in (dashboard elements detected)")
+                    return True
+            except Exception:
+                pass
             
             # Enhanced Cloudflare bypass with retry escalation
             cf_blocked = await self.detect_cloudflare_block()
