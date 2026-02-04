@@ -108,11 +108,7 @@ class CointiplyBot(FaucetBot):
         try:
             logger.info(f"[{self.faucet_name}] Starting login process")
             nav_timeout = getattr(self.settings, "timeout", 180000)
-            try:
-                await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
-            except Exception as e:
-                logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
-                await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
+            await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
             await self.handle_cloudflare()
             
             # Verify page is still alive before proceeding (Task 2 integration)
@@ -244,16 +240,8 @@ class CointiplyBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
                 
                 nav_timeout = getattr(self.settings, "timeout", 180000)
-                # Use safe_goto to prevent 'Target closed' errors (Task 2 integration)
-                goto_success = await self.safe_goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
-                if not goto_success:
-                    logger.warning(f"[{self.faucet_name}] Safe goto failed, trying with commit")
-                    try:
-                        await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
-                    except Exception as e:
-                        logger.error(f"[{self.faucet_name}] Navigation failed: {e}")
-                        retry_count += 1
-                        continue
+                # Use safe_navigate for better proxy error handling
+                await self.safe_navigate(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
                 await self.handle_cloudflare()
                 
                 # Verify page health before proceeding

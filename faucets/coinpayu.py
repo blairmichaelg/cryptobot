@@ -139,7 +139,7 @@ class CoinPayUBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Navigating to login... (Attempt {attempt + 1}/{max_retries})")
                 timeout_ms = getattr(self.settings, "timeout", 60000)
-                await self.page.goto(
+                await self.safe_navigate(
                     f"{self.base_url}/login",
                     wait_until="domcontentloaded",
                     timeout=timeout_ms,
@@ -268,7 +268,7 @@ class CoinPayUBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Starting claim process...")
             
             # Navigate to dashboard to get balance
-            await self.page.goto(f"{self.base_url}/dashboard", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard", wait_until="domcontentloaded", timeout=30000)
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # Extract main dashboard balance using standardized method
@@ -277,7 +277,7 @@ class CoinPayUBot(FaucetBot):
 
             # Navigate to faucet page
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
-            await self.page.goto(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
             await self.random_delay(1.0, 2.0)
             
             # Check for timer first
@@ -473,7 +473,7 @@ class CoinPayUBot(FaucetBot):
         
         try:
             logger.info(f"[{self.faucet_name}] Starting Faucet -> Main transfer...")
-            await self.page.goto(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # Add human-like delay
