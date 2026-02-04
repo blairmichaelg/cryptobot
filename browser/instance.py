@@ -1,3 +1,10 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional, List, Dict, Any
+
+if TYPE_CHECKING:
+    from playwright.async_api import BrowserContext, Page
+    from browserforge.fingerprints import Screen
+
 from playwright.async_api import BrowserContext, Page
 from browserforge.fingerprints import Screen
 from camoufox.async_api import AsyncCamoufox
@@ -10,7 +17,6 @@ import random
 import time
 import os
 import json
-from typing import Optional, List, Dict, Any
 import asyncio
 
 logger = logging.getLogger(__name__)
