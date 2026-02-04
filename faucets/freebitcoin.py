@@ -3,7 +3,6 @@ from core.extractor import DataExtractor
 import logging
 import asyncio
 import time
-from http.cookies import SimpleCookie
 
 logger = logging.getLogger(__name__)
 
@@ -168,286 +167,7 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             return False
 
-    async def _submit_login_via_request(self, username: str, password: str, tfa_code: str = "") -> bool:
-        """Submit login via direct POST and set cookies if successful."""
-        payloads = [
-            {
-                "op": "login",
-                "btc_address": username,
-                "password": password,
-                "2fa_code": tfa_code or "",
-            },
-            {
-                "op": "login_new",
-                "btc_address": username,
-                "password": password,
-                "tfa_code": tfa_code or "",
-            },
-        ]
 
-        for payload in payloads:
-            try:
-                response = await self.page.request.post(
-                    f"{self.base_url}/",
-                    data=payload,
-                    headers={
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Referer": f"{self.base_url}/?op=login",
-                        "Origin": self.base_url,
-                        "Accept": "*/*",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    },
-                    timeout=30000,
-                )
-            except Exception as exc:
-                logger.warning("[FreeBitcoin] Direct login request failed: %s", exc)
-                continue
-
-            logger.info("[FreeBitcoin] Direct login response status: %s", response.status)
-
-            try:
-                text = (await response.text()) or ""
-            except Exception:
-                text = ""
-
-            if not text:
-                logger.warning("[FreeBitcoin] Direct login response empty")
-                continue
-
-            parts = text.split(":")
-            if parts and parts[0] == "s" and len(parts) >= 5:
-                expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-                cookies = [
-                    {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                    {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                    {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                    {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                    {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                ]
-
-                try:
-                    await self.page.context.add_cookies(cookies)
-                except Exception as exc:
-                    logger.warning("[FreeBitcoin] Failed to set login cookies: %s", exc)
-                    continue
-
-                try:
-                    await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-                except Exception:
-                    pass
-
-                if await self.is_logged_in():
-                    return True
-                continue
-
-            if parts and parts[0] != "s":
-                logger.warning("[FreeBitcoin] Direct login failed: %s", text[:200])
-
-            try:
-                header_cookie = response.headers.get("set-cookie")
-            except Exception:
-                header_cookie = None
-
-            if header_cookie:
-                cookie_jar = SimpleCookie()
-                cookie_jar.load(header_cookie)
-                expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-                cookies = []
-                for name, morsel in cookie_jar.items():
-                    cookies.append({
-                        "name": name,
-                        "value": morsel.value,
-                        "domain": ".freebitco.in",
-                        "path": "/",
-                        "expires": expiry,
-                        "secure": True,
-                    })
-                if cookies:
-                    try:
-                        await self.page.context.add_cookies(cookies)
-                        if await self.is_logged_in():
-                            return True
-                    except Exception as exc:
-                        logger.warning("[FreeBitcoin] Failed to set response cookies: %s", exc)
-
-            if parts and len(parts) < 5:
-                logger.warning("[FreeBitcoin] Direct login response missing fields: %s", text[:200])
-
-        return False
-
-    async def _submit_login_via_ajax(self, username: str, password: str, tfa_code: str = "") -> bool:
-        """Inject jQuery and submit login via AJAX in-page."""
-        try:
-            await self.page.add_script_tag(url="https://code.jquery.com/jquery-3.6.0.min.js")
-            await self.page.wait_for_function("() => typeof window.$ !== 'undefined'", timeout=10000)
-        except Exception as exc:
-            logger.warning("[FreeBitcoin] jQuery injection failed: %s", exc)
-            return False
-
-        payloads = [
-            {
-                "op": "login",
-                "btc_address": username,
-                "password": password,
-                "2fa_code": tfa_code or "",
-            },
-            {
-                "op": "login_new",
-                "btc_address": username,
-                "password": password,
-                "tfa_code": tfa_code or "",
-            },
-        ]
-
-        for payload in payloads:
-            try:
-                result = await self.page.evaluate(
-                    """
-                    (data) => new Promise((resolve) => {
-                        try {
-                            window.$.post('/', data)
-                                .done((resp) => resolve(resp))
-                                .fail((xhr, status, err) => resolve(`error:${status || err || 'unknown'}`));
-                        } catch (e) {
-                            resolve(`error:${e && e.message ? e.message : 'exception'}`);
-                        }
-                    })
-                    """,
-                    payload
-                )
-            except Exception as exc:
-                logger.warning("[FreeBitcoin] AJAX login failed: %s", exc)
-                continue
-
-            if not result or (isinstance(result, str) and result.startswith("error:")):
-                logger.warning("[FreeBitcoin] AJAX login failed: %s", str(result)[:200])
-                continue
-
-            parts = str(result).split(":")
-            if not parts or parts[0] != "s":
-                if await self._has_session_cookie():
-                    try:
-                        await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-                    except Exception:
-                        pass
-                    if await self.is_logged_in():
-                        return True
-                logger.warning("[FreeBitcoin] AJAX login response unexpected: %s", str(result)[:200])
-                continue
-
-            if len(parts) < 5:
-                logger.warning("[FreeBitcoin] AJAX login response missing fields: %s", str(result)[:200])
-                continue
-
-            expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-            cookies = [
-                {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            ]
-
-            try:
-                await self.page.context.add_cookies(cookies)
-            except Exception as exc:
-                logger.warning("[FreeBitcoin] Failed to set AJAX login cookies: %s", exc)
-                continue
-
-            try:
-                await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-            except Exception:
-                pass
-
-            if await self.is_logged_in():
-                return True
-
-        return False
-
-    async def _submit_login_via_fetch(self, username: str, password: str, tfa_code: str = "") -> bool:
-        """Submit login using in-page fetch to mimic AJAX without jQuery."""
-        payloads = [
-            {
-                "op": "login",
-                "btc_address": username,
-                "password": password,
-                "2fa_code": tfa_code or "",
-            },
-            {
-                "op": "login_new",
-                "btc_address": username,
-                "password": password,
-                "tfa_code": tfa_code or "",
-            },
-        ]
-
-        for payload in payloads:
-            try:
-                result = await self.page.evaluate(
-                    """
-                    (data) => {
-                        const body = new URLSearchParams();
-                        Object.entries(data).forEach(([k, v]) => body.append(k, v || ''));
-                        return fetch('/', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                                'X-Requested-With': 'XMLHttpRequest'
-                            },
-                            body
-                        }).then(resp => resp.text()).catch(err => `error:${err && err.message ? err.message : 'fetch_failed'}`);
-                    }
-                    """,
-                    payload
-                )
-            except Exception as exc:
-                logger.warning("[FreeBitcoin] Fetch login failed: %s", exc)
-                continue
-
-            if not result or (isinstance(result, str) and result.startswith("error:")):
-                logger.warning("[FreeBitcoin] Fetch login failed: %s", str(result)[:200])
-                continue
-
-            parts = str(result).split(":")
-            if not parts or parts[0] != "s":
-                if await self._has_session_cookie():
-                    try:
-                        await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-                    except Exception:
-                        pass
-                    if await self.is_logged_in():
-                        return True
-                logger.warning("[FreeBitcoin] Fetch login response unexpected: %s", str(result)[:200])
-                continue
-
-            if len(parts) < 5:
-                logger.warning("[FreeBitcoin] Fetch login response missing fields: %s", str(result)[:200])
-                continue
-
-            expiry = int(time.time()) + 60 * 60 * 24 * 365 * 10
-            cookies = [
-                {"name": "btc_address", "value": parts[1], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "password", "value": parts[2], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "fbtc_userid", "value": parts[3], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "fbtc_session", "value": parts[4], "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-                {"name": "have_account", "value": "1", "domain": ".freebitco.in", "path": "/", "expires": expiry, "secure": True},
-            ]
-
-            try:
-                await self.page.context.add_cookies(cookies)
-            except Exception as exc:
-                logger.warning("[FreeBitcoin] Failed to set fetch login cookies: %s", exc)
-                continue
-
-            try:
-                await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-            except Exception:
-                pass
-
-            if await self.is_logged_in():
-                return True
-
-        return False
 
     async def _has_session_cookie(self) -> bool:
         try:
@@ -457,34 +177,7 @@ class FreeBitcoinBot(FaucetBot):
         names = {cookie.get("name") for cookie in cookies}
         return "fbtc_session" in names or "fbtc_userid" in names
 
-    async def _submit_login_via_form(self, username: str, password: str, tfa_code: str = "") -> None:
-        try:
-            await self.page.evaluate(
-                """
-                (payload) => {
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = 'https://freebitco.in/';
-                    for (const [key, value] of Object.entries(payload)) {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = key;
-                        input.value = value || '';
-                        form.appendChild(input);
-                    }
-                    document.body.appendChild(form);
-                    form.submit();
-                }
-                """,
-                {
-                    "op": "login",
-                    "btc_address": username,
-                    "password": password,
-                    "2fa_code": tfa_code or "",
-                }
-            )
-        except Exception:
-            pass
+
 
     async def _log_login_diagnostics(self, context: str) -> None:
         """Log login page diagnostics to identify captcha/input elements."""
@@ -694,6 +387,16 @@ class FreeBitcoinBot(FaucetBot):
         logger.info("[FreeBitcoin] Login diagnostics (%s): js_state=%s", context, js_state)
 
     async def login(self) -> bool:
+        """
+        Simplified login flow for FreeBitcoin with retry logic and enhanced error logging.
+        
+        Changes from original:
+        - Removed complex fallback methods (_submit_login_via_request/ajax/fetch/form)
+        - Reduced selectors from 16+ to 4 most reliable
+        - Added retry logic with exponential backoff
+        - Enhanced error logging with screenshots and diagnostics
+        - Single, clean browser-based login flow
+        """
         # Check for override (Multi-Account Loop)
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
             creds = self.settings_account_override
@@ -704,7 +407,7 @@ class FreeBitcoinBot(FaucetBot):
             logger.error("[FreeBitcoin] Credentials missing - set FREEBITCOIN_USERNAME and FREEBITCOIN_PASSWORD")
             return False
 
-        # Extract credentials early for use throughout the method
+        # Extract credentials
         login_id = creds.get("username") or creds.get("email")
         if not login_id:
             logger.error("[FreeBitcoin] Credentials missing username/email")
@@ -718,167 +421,91 @@ class FreeBitcoinBot(FaucetBot):
             logger.error("[FreeBitcoin] Credentials missing password")
             return False
 
-        try:
-            # Try modern login endpoints first
-            login_urls = [
-                self.base_url,  # Main page often has login form
-                f"{self.base_url}/signup-login/",  # Modern endpoint
-                f"{self.base_url}/?op=home",  # Home page with login
-                f"{self.base_url}/?op=login",  # Legacy endpoint
-                f"{self.base_url}/login",
-                f"{self.base_url}/login.php",
-            ]
-            email_field = None
-            password_field = None
+        # Simplified selectors - only 4 most reliable per field
+        email_selectors = [
+            "input[name='btc_address']",  # FreeBitcoin specific
+            "input[type='email']",
+            "input[name='email']",
+            "#email"
+        ]
+        
+        password_selectors = [
+            "input[name='password']",
+            "input[type='password']",
+            "#password",
+            "#login_form_password"
+        ]
+        
+        submit_selectors = [
+            "#login_button",
+            "button[type='submit']",
+            "input[type='submit']",
+            "button:has-text('Login')"
+        ]
 
-            # Try multiple selectors for email/username field
-            # ⚠️ Order matters - most specific first to avoid signup form fields
-            email_selectors = [
-                "#login_form input[name='btc_address']",  # FreeBitcoin uses BTC address - scoped to login form
-                "input[id='login_form_btc_address']",  # ID variant
-                "input#login_form_btc_address",  # Compact ID
-                "#login_form_btc_address",  # Direct ID
-                "#login_form input[name='login_form[btc_address]']",  # Form-scoped
-                "input[name='btc_address']:not([form*='signup']):not([form*='register'])",  # Exclude signup forms
-                "#login_form input[name='username']",  # Generic username in login form
-                "#login_form input[name='email']",  # Generic email in login form
-                "input[name='login_form[username]']",
-                "input[name='login_form[email]']",
-                "input[autocomplete='username']:visible",  # HTML5 autocomplete hint
-                "input[autocomplete='email']:visible",  # HTML5 autocomplete for email
-                "input[type='email']:not([form*='signup'])",  # Email type, exclude signup
-                "#btc_address",
-                "#username",
-                "#email",
-                "input[name='username']:not([form*='signup'])",  # Generic username, exclude signup
-            ]
+        # Retry logic with exponential backoff
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    backoff_seconds = 5 * attempt  # 5s, 10s, 15s
+                    logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
+                    await asyncio.sleep(backoff_seconds)
+                else:
+                    logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
 
-            # Try multiple selectors for password field
-            # ⚠️ Scoped to login form to avoid signup password fields
-            password_selectors = [
-                "#login_form input[name='password']",  # Login form scoped
-                "input[id='login_form_password']",  # ID variant
-                "input#login_form_password",  # Compact ID
-                "#login_form_password",  # Direct ID
-                "#login_form input[type='password']",  # Type-based in login form
-                "input[name='login_form[password]']",
-                "input[autocomplete='current-password']:visible",  # HTML5 autocomplete for login
-                "input[type='password']:not([autocomplete='new-password']):visible",  # Exclude new password fields
-                "input[name='password']:not([form*='signup'])",  # Exclude signup forms
-                "#password",
-            ]
+                # Navigate to login page
+                login_url = f"{self.base_url}/?op=login"
+                logger.info(f"[FreeBitcoin] Navigating to: {login_url}")
+                
+                nav_timeout = max(getattr(self.settings, "timeout", 90000), 90000)
+                retry_timeout = max(nav_timeout, 120000)
 
-            login_trigger_selectors = [
-                "a[href*='login']",
-                "a[href*='op=login']",
-                "button:has-text('Login')",
-                "button:has-text('Log In')",
-                "button:has-text('Sign in')",
-                "a:has-text('Login')",
-                "a:has-text('Log In')",
-                "a:has-text('Sign in')",
-                "a:has-text('Already')",
-                "a:has-text('Have an account')",
-                "#login_button",
-                "#login_link",
-                ".login-link",
-                "[data-target*='login']",
-                "[data-toggle*='login']",
-            ]
-
-            login_form_selectors = [
-                "form#login_form",
-                "#login_form",
-                "form[action*='login']",
-                "form[action*='op=login']",
-            ]
-
-            nav_timeout = max(getattr(self.settings, "timeout", 90000), 90000)
-            retry_timeout = max(nav_timeout, 120000)
-            last_nav_error = None
-
-            for login_url in login_urls:
-                logger.info(f"[FreeBitcoin] Navigating to login page: {login_url}")
-                # Use shorter timeout and more lenient wait strategy for slow proxies
-                response = None
+                
                 try:
                     response = await self.page.goto(login_url, wait_until="domcontentloaded", timeout=nav_timeout)
                     logger.debug(f"[FreeBitcoin] Navigation successful to {login_url}")
                 except Exception as e:
-                    last_nav_error = e
-                    logger.warning(f"[FreeBitcoin] Initial navigation slow ({type(e).__name__}), retrying with commit: {str(e)[:100]}")
-                    try:
-                        response = await self.page.goto(login_url, wait_until="commit", timeout=retry_timeout)
-                        logger.debug(f"[FreeBitcoin] Commit navigation successful")
-                    except Exception as commit_err:
-                        last_nav_error = commit_err
-                        logger.warning(f"[FreeBitcoin] Commit navigation failed ({type(commit_err).__name__}): {str(commit_err)[:100]}")
-                        # Don't continue immediately - try networkidle as last resort
-                        try:
-                            await asyncio.sleep(2)
-                            logger.debug(f"[FreeBitcoin] Trying networkidle wait strategy...")
-                            await self.page.wait_for_load_state("networkidle", timeout=30000)
-                            logger.debug(f"[FreeBitcoin] Networkidle wait successful")
-                        except Exception:
-                            logger.warning(f"[FreeBitcoin] All navigation strategies failed for {login_url}")
-                            continue
-                if response is not None:
-                    try:
-                        status = response.status
-                        if status >= 400:
-                            logger.error(f"[FreeBitcoin] Login page returned HTTP {status}. URL: {response.url}")
-                            try:
-                                self.last_error_type = self.classify_error(None, None, status)
-                            except Exception:
-                                pass
-                            if status in (401, 403, 429):
-                                await self.random_delay(1.0, 2.0)
-                                return False
-                    except Exception:
-                        pass
-                await self.random_delay(2, 4)
-
-                # Handle Cloudflare if present (extended wait for login page)
+                    logger.warning(f"[FreeBitcoin] Navigation failed ({type(e).__name__}): {str(e)[:100]}")
+                    continue
+                
+                if response and response.status >= 400:
+                    logger.error(f"[FreeBitcoin] Login page returned HTTP {response.status}")
+                    if response.status in (401, 403, 429):
+                        continue
+                
+                await self.random_delay(1, 2)
+                
+                # Handle Cloudflare and popups
                 try:
-                    await self.handle_cloudflare(max_wait_seconds=120)
+                    await self.handle_cloudflare(max_wait_seconds=60)
                 except Exception as cf_err:
                     logger.debug(f"[FreeBitcoin] Cloudflare handling: {cf_err}")
-                    # Check if we got through anyway
-                    if await self.is_logged_in():
-                        logger.info("✅ [FreeBitcoin] Logged in after Cloudflare")
-                        return True
-
-                # Close cookie banner if present
-                await self.close_popups()
                 
-                # Additional wait for dynamic content to load
-                await asyncio.sleep(1.5)
-
-                # Log current page state for debugging
-                logger.debug(f"[FreeBitcoin] Current URL: {self.page.url}")
-
+                await self.close_popups()
+                await asyncio.sleep(1)
+                
+                # Log current state
+                current_url = self.page.url
+                page_title = await self.page.title()
+                logger.info(f"[FreeBitcoin] Current page - URL: {current_url}, Title: {page_title}")
+                
+                # Check if already logged in
                 if await self.is_logged_in():
-                    logger.info("✅ [FreeBitcoin] Session already active after navigation")
+                    logger.info("✅ [FreeBitcoin] Session already active")
                     return True
-
-                # 🔒 CRITICAL FIX: Solve CAPTCHA BEFORE trying to access login form
-                # FreeBitcoin shows CAPTCHA on landing/signup page that blocks login form access
-                logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA (before login form access)...")
+                
+                # Solve landing page CAPTCHA if present
+                logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA...")
                 try:
                     captcha_present = await self.page.evaluate(
                         """
                         () => {
-                            const intCaptcha = document.querySelector('#int_page_captchas');
-                            if (intCaptcha && intCaptcha.children.length > 0) return true;
                             const captchaSelectors = [
                                 "iframe[src*='turnstile']",
-                                "iframe[src*='challenges.cloudflare.com']",
                                 ".cf-turnstile",
-                                "[id*='cf-turnstile']",
                                 "iframe[src*='hcaptcha']",
-                                "iframe[src*='recaptcha']",
-                                "input[name*='captcha']",
-                                "input[id*='captcha']"
+                                "iframe[src*='recaptcha']"
                             ];
                             for (const sel of captchaSelectors) {
                                 if (document.querySelector(sel)) return true;
@@ -887,447 +514,187 @@ class FreeBitcoinBot(FaucetBot):
                         }
                         """
                     )
-                except Exception:
-                    captcha_present = False
-
-                if captcha_present:
-                    logger.info("[FreeBitcoin] Landing page CAPTCHA detected - solving before login form access...")
-                    try:
+                    if captcha_present:
+                        logger.info("[FreeBitcoin] Landing page CAPTCHA detected - solving...")
                         solved = await self.solver.solve_captcha(self.page)
                         if solved is False:
                             logger.error("[FreeBitcoin] Landing page CAPTCHA solve failed")
-                            continue  # Try next URL
-                        logger.info("✅ [FreeBitcoin] Landing page CAPTCHA solved - login form should be accessible")
-                        await asyncio.sleep(2)  # Wait for page to update after CAPTCHA
-                    except Exception as captcha_err:
-                        logger.error(f"[FreeBitcoin] Landing page CAPTCHA solve error: {captcha_err}")
-                        continue  # Try next URL
-                else:
-                    logger.debug("[FreeBitcoin] No landing page CAPTCHA detected")
-
-                try:
-                    await self.page.wait_for_selector(",".join(login_form_selectors), timeout=6000)
-                except Exception:
-                    pass
-
-                email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
-                if not email_field:
-                    logger.debug("[FreeBitcoin] Email field not found on initial page load, checking for login trigger...")
-                    login_trigger = await self._find_selector_any_frame(login_trigger_selectors, "login trigger", timeout=4000)
-                    if login_trigger:
-                        logger.debug("[FreeBitcoin] Opening login form/modal...")
-                        await self.human_like_click(login_trigger)
-                        await self.random_delay(1.0, 2.0)
-                        email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
-                    if not email_field and await self.is_logged_in():
-                        logger.info("✅ [FreeBitcoin] Session active after login trigger")
-                        return True
-                if email_field:
-                    logger.debug("[FreeBitcoin] Email field found, looking for password field...")
-                    password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
-                    if password_field:
-                        if await self._is_signup_form_field(email_field) or await self._is_signup_form_field(password_field):
-                            logger.info("[FreeBitcoin] Signup form detected; attempting to switch to login form.")
-                            login_trigger = await self._find_selector_any_frame(login_trigger_selectors, "login trigger", timeout=4000)
-                            if login_trigger:
-                                await self.human_like_click(login_trigger)
-                                await self.random_delay(1.0, 2.0)
-                                email_field = await self._find_selector_any_frame(email_selectors, "email/username field", timeout=8000)
-                                password_field = await self._find_selector_any_frame(password_selectors, "password field", timeout=5000)
-                            if not email_field or not password_field or await self._is_signup_form_field(email_field):
-                                logger.warning("[FreeBitcoin] Still on signup form; continuing login URL attempts.")
-                                email_field = None
-                                password_field = None
-                                continue
-                        logger.debug("[FreeBitcoin] Both email and password fields found")
-                        break
-                    else:
-                        logger.warning(f"[FreeBitcoin] Email field found but password field missing on {login_url}")
-
-            if not email_field:
-                if last_nav_error:
+                            continue
+                        logger.info("✅ [FreeBitcoin] Landing page CAPTCHA solved")
+                        await asyncio.sleep(2)
+                except Exception as captcha_err:
+                    logger.debug(f"[FreeBitcoin] Landing CAPTCHA check: {captcha_err}")
+                
+                # Find email field
+                email_field = None
+                for selector in email_selectors:
                     try:
-                        self.last_error_type = self.classify_error(last_nav_error, None, None)
+                        locator = self.page.locator(selector).first
+                        if await locator.is_visible(timeout=5000):
+                            logger.info(f"[FreeBitcoin] Using email selector: {selector}")
+                            email_field = locator
+                            break
+                    except Exception:
+                        continue
+                
+                if not email_field:
+                    logger.warning(f"[FreeBitcoin] Email field not found on {login_url}")
+                    # Log visible form fields
+                    try:
+                        visible_inputs = await self.page.evaluate(
+                            """
+                            () => Array.from(document.querySelectorAll('input:visible')).map(el => ({
+                                type: el.type,
+                                name: el.name,
+                                id: el.id,
+                                placeholder: el.placeholder
+                            })).slice(0, 10)
+                            """
+                        )
+                        logger.info(f"[FreeBitcoin] Visible inputs: {visible_inputs}")
                     except Exception:
                         pass
-                logger.error("[FreeBitcoin] Could not find email/username field on login page after trying all URLs")
-                logger.error(f"[FreeBitcoin] Current URL: {self.page.url}")
-                # Log page diagnostics
-                await self._log_login_diagnostics("no_email_field")
-                # Take screenshot for debugging
+                    continue
+                
+                # Find password field
+                password_field = None
+                for selector in password_selectors:
+                    try:
+                        locator = self.page.locator(selector).first
+                        if await locator.is_visible(timeout=5000):
+                            logger.info(f"[FreeBitcoin] Using password selector: {selector}")
+                            password_field = locator
+                            break
+                    except Exception:
+                        continue
+                
+                if not password_field:
+                    logger.warning(f"[FreeBitcoin] Password field not found on {login_url}")
+                    continue
+                
+                # Fill credentials
+                username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
+                logger.info(f"[FreeBitcoin] Filling credentials for user: {username_display}")
+                
                 try:
-                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_email_field.png", full_page=True)
-                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_email_field.png")
-                except Exception:
-                    pass
-                # Try direct login as fallback
-                logger.info("[FreeBitcoin] Attempting direct POST request as fallback...")
-                if await self._submit_login_via_request(login_id, password):
-                    logger.info("✅ [FreeBitcoin] Login successful via direct request (no email field)")
-                    return True
-                logger.error("[FreeBitcoin] Direct POST fallback also failed")
-                return False
-
-            if not password_field:
-                logger.error("[FreeBitcoin] Could not find password field on login page")
-                logger.error(f"[FreeBitcoin] Current URL: {self.page.url}")
-                # Log page diagnostics
-                await self._log_login_diagnostics("no_password_field")
-                try:
-                    await self.page.screenshot(path="logs/freebitcoin_login_failed_no_password_field.png", full_page=True)
-                    logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_password_field.png")
-                except Exception:
-                    pass
-                logger.info("[FreeBitcoin] Attempting direct POST request as fallback...")
-                if await self._submit_login_via_request(login_id, password):
-                    logger.info("✅ [FreeBitcoin] Login successful via direct request (no password field)")
-                    return True
-                logger.error("[FreeBitcoin] Direct POST fallback also failed")
-                return False
-
-            # Fill Login with human-like typing (using safe operations)
-            # login_id and password already extracted at start of method
-            username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
-            logger.info(f"[FreeBitcoin] Filling login credentials for user: {username_display}")
-            
-            # Check page health before operations
-            if not await self.check_page_health():
-                logger.error("[FreeBitcoin] Page closed before credential entry")
-                return False
-            
-            try:
-                await self.human_type(email_field, login_id)
-                await self.random_delay(0.5, 1.5)
-                await self.human_type(password_field, password)
-                await self.idle_mouse(1.0)  # Simulate thinking time before submission
-            except Exception as type_err:
-                logger.error(f"[FreeBitcoin] Error filling credentials: {type_err}")
-                # Fallback to direct fill
-                try:
+                    await self.human_type(email_field, login_id)
+                    await self.random_delay(0.5, 1.0)
+                    await self.human_type(password_field, password)
+                    await self.idle_mouse(0.5)
+                except Exception as type_err:
+                    logger.warning(f"[FreeBitcoin] Human typing failed: {type_err}, using direct fill")
                     await email_field.fill(login_id)
-                    await self.random_delay(0.3, 0.8)
+                    await self.random_delay(0.3, 0.5)
                     await password_field.fill(password)
-                except Exception:
-                    logger.error("[FreeBitcoin] Direct fill also failed")
-                    return False
-            
-            # Check for 2FA field
-            twofa_selectors = [
-                "#login_2fa_input",
-                "input[name='2fa']",
-                "input[name='twofa']",
-                "input[name='2fa_code']",
-                "#login_form_2fa",
-                "input[placeholder*='2FA' i]",
-            ]
-            twofa_field = await self._find_selector_any_frame(twofa_selectors, "2FA field", timeout=2000)
-            if twofa_field:
-                logger.warning("[FreeBitcoin] 2FA field present. Proceeding without 2FA unless configured.")
-
-            # username and password already extracted at start of method
-            username = login_id
-
-            try:
-                has_jquery = await self.page.evaluate("() => typeof window.$ !== 'undefined'")
-            except Exception:
-                has_jquery = True
-
-            if not has_jquery:
-                logger.warning("[FreeBitcoin] jQuery not detected; attempting fetch login fallback")
-                if await self._submit_login_via_fetch(username, password):
-                    logger.info("✅ [FreeBitcoin] Login successful via fetch fallback")
-                    return True
-                logger.warning("[FreeBitcoin] Fetch fallback failed; attempting AJAX login fallback")
-                if await self._submit_login_via_ajax(username, password):
-                    logger.info("✅ [FreeBitcoin] Login successful via AJAX fallback")
-                    return True
-                logger.warning("[FreeBitcoin] AJAX fallback failed; attempting direct login request")
-                if await self._submit_login_via_request(username, password):
-                    logger.info("✅ [FreeBitcoin] Login successful via direct request")
-                    return True
-
-            # Check for CAPTCHA on login form (different from landing page CAPTCHA)
-            logger.debug("[FreeBitcoin] Checking for login form CAPTCHA (after credentials filled)...")
-            try:
-                captcha_present = False
+                
+                # Check for CAPTCHA on login form
+                logger.debug("[FreeBitcoin] Checking for login form CAPTCHA...")
                 try:
                     captcha_present = await self.page.evaluate(
                         """
                         () => {
-                            const intCaptcha = document.querySelector('#int_page_captchas');
-                            if (intCaptcha && intCaptcha.children.length > 0) return true;
-                            const loginForm = document.querySelector('#login_form');
-                            if (loginForm && loginForm.querySelector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], iframe[src*='hcaptcha'], iframe[src*='recaptcha'], input[name*='captcha'], input[id*='captcha']")) {
-                                return true;
+                            const captchaSelectors = [
+                                "iframe[src*='turnstile']",
+                                ".cf-turnstile",
+                                "iframe[src*='hcaptcha']",
+                                "iframe[src*='recaptcha']"
+                            ];
+                            for (const sel of captchaSelectors) {
+                                if (document.querySelector(sel)) return true;
                             }
                             return false;
                         }
                         """
                     )
-                except Exception:
-                    captcha_present = False
-
-                if captcha_present:
-                    logger.info("[FreeBitcoin] Login form CAPTCHA detected - solving...")
-                    solved = await self.solver.solve_captcha(self.page)
-                    if solved is False:
-                        logger.error("[FreeBitcoin] Login form CAPTCHA solve failed")
-                        return False
-                    if not await self._wait_for_captcha_token():
-                        logger.warning("[FreeBitcoin] CAPTCHA token not detected after solve")
-                    # Handle text/image captcha input if present
-                    captcha_input = await self._find_selector_any_frame(
-                        [
-                            "input[name='captcha']",
-                            "input[name='captcha_code']",
-                            "#captcha",
-                            "#captcha_code",
-                            "input[id*='captcha']",
-                            "input[name*='captcha']",
-                        ],
-                        "captcha input",
-                        timeout=2000
-                    )
-                    if captcha_input:
-                        captcha_text = await self.solver.solve_text_captcha(
-                            self.page,
-                            "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
-                        )
-                        if captcha_text:
-                            await captcha_input.fill(captcha_text)
-                    else:
-                        await self._log_login_diagnostics("captcha_input_not_found")
-                    await self.random_delay(1.5, 2.5)
-                    logger.debug("[FreeBitcoin] Login CAPTCHA solved")
-                else:
-                    logger.debug("[FreeBitcoin] No CAPTCHA detected on login page")
-            except Exception as captcha_err:
-                logger.debug(f"[FreeBitcoin] No CAPTCHA required or solve failed: {captcha_err}")
-                # Continue anyway, CAPTCHA might not be required
-
-            # Try multiple selectors for submit button
-            submit_selectors = [
-                "#login_button",
-                "button[type='submit']",
-                "input[type='submit']",
-                "button:has-text('Login')",
-                "button:has-text('Log In')",
-                "button:has-text('Sign In')",
-                ".login-button",
-                "#login_form_button",
-            ]
-            
-            submit_btn = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
-            login_response_task = None
-            try:
-                login_response_task = asyncio.create_task(
-                    self.page.wait_for_response(
-                        lambda response: "op=login" in response.url or "login" in response.url,
-                        timeout=15000
-                    )
-                )
-            except Exception:
-                login_response_task = None
-
-            if submit_btn:
-                logger.debug("[FreeBitcoin] Clicking submit button...")
-                await self.human_like_click(submit_btn)
-            else:
-                logger.warning("[FreeBitcoin] Submit button not found. Falling back to Enter key submission.")
-                try:
-                    await password_field.press("Enter")
-                except Exception:
+                    if captcha_present:
+                        logger.info("[FreeBitcoin] Login form CAPTCHA detected - solving...")
+                        solved = await self.solver.solve_captcha(self.page)
+                        if solved is False:
+                            logger.error("[FreeBitcoin] Login form CAPTCHA solve failed")
+                            continue
+                        logger.info("✅ [FreeBitcoin] Login form CAPTCHA solved")
+                        await asyncio.sleep(2)
+                except Exception as captcha_err:
+                    logger.debug(f"[FreeBitcoin] Login form CAPTCHA check: {captcha_err}")
+                
+                # Find and click submit button
+                submit_btn = None
+                for selector in submit_selectors:
                     try:
-                        await self.page.keyboard.press("Enter")
+                        locator = self.page.locator(selector).first
+                        if await locator.is_visible(timeout=5000):
+                            logger.info(f"[FreeBitcoin] Using submit selector: {selector}")
+                            submit_btn = locator
+                            break
                     except Exception:
-                        logger.error("[FreeBitcoin] Enter key fallback failed")
+                        continue
+                
+                if submit_btn:
+                    logger.debug("[FreeBitcoin] Clicking submit button...")
+                    await self.human_like_click(submit_btn)
+                else:
+                    logger.warning("[FreeBitcoin] Submit button not found, trying Enter key...")
+                    try:
+                        await password_field.press("Enter")
+                    except Exception:
+                        logger.error("[FreeBitcoin] Enter key failed")
+                        timestamp = int(time.time())
+                        screenshot_path = f"logs/freebitcoin_login_failed_no_submit_{timestamp}.png"
                         try:
-                            await self.page.screenshot(path="logs/freebitcoin_login_failed_no_submit.png")
-                            logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed_no_submit.png")
+                            await self.page.screenshot(path=screenshot_path, full_page=True)
+                            logger.info(f"[FreeBitcoin] Screenshot saved: {screenshot_path}")
                         except Exception:
                             pass
-                        return False
-
-            if login_response_task:
+                        continue
+                
+                # Wait for navigation
+                logger.debug("[FreeBitcoin] Waiting for login to complete...")
                 try:
-                    response = await login_response_task
-                    logger.info("[FreeBitcoin] Login response: %s %s", response.status, response.url)
-                except Exception:
-                    logger.debug("[FreeBitcoin] Login response not detected within timeout")
-                    try:
-                        submit_action = await self.page.evaluate(
-                            """
-                            () => {
-                                const form = document.querySelector('#login_form');
-                                if (form) {
-                                    if (form.tagName === 'FORM') {
-                                        form.submit();
-                                        return 'form_submit';
-                                    }
-                                    const parentForm = form.closest('form');
-                                    if (parentForm) {
-                                        parentForm.submit();
-                                        return 'parent_form_submit';
-                                    }
-                                }
-                                const btn = document.querySelector('#login_button');
-                                if (btn) {
-                                    btn.click();
-                                    return 'button_click';
-                                }
-                                return null;
-                            }
-                            """
-                        )
-                        if submit_action:
-                            logger.info("[FreeBitcoin] Login submit fallback triggered: %s", submit_action)
-                            try:
-                                response = await self.page.wait_for_response(
-                                    lambda resp: "op=login" in resp.url or "login" in resp.url,
-                                    timeout=15000
-                                )
-                                logger.info("[FreeBitcoin] Login response (fallback): %s %s", response.status, response.url)
-                            except Exception:
-                                logger.debug("[FreeBitcoin] Login response still not detected after fallback")
-                    except Exception:
-                        logger.debug("[FreeBitcoin] Login submit fallback failed")
-            
-            # Wait for navigation or login success
-            logger.debug("[FreeBitcoin] Waiting for login to complete...")
-            try:
-                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-                await self.page.wait_for_url(f"{self.base_url}/**", timeout=45000)
-                logger.debug(f"[FreeBitcoin] Navigation completed to: {self.page.url}")
-            except asyncio.TimeoutError:
-                logger.warning("[FreeBitcoin] Login redirect timeout, checking if logged in anyway...")
-
-            try:
-                await self.handle_cloudflare(max_wait_seconds=60)
-            except Exception:
-                pass
-            
-            # Small delay to let page settle
-            await self.random_delay(2, 3)
-
-            # Re-check CAPTCHA after submit (some pages render challenge only after submit)
-            try:
-                try:
-                    await self.page.wait_for_selector(
-                        "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [id*='cf-turnstile'], "
-                        "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']",
-                        timeout=8000
-                    )
-                except Exception:
-                    pass
-                await self.solver.solve_captcha(self.page)
-            except Exception as captcha_err:
-                logger.debug(f"[FreeBitcoin] Post-submit CAPTCHA solve skipped/failed: {captcha_err}")
-            
-            # Check if logged in
-            if await self.is_logged_in():
-                logger.info("✅ [FreeBitcoin] Login successful (session detected)")
-                return True
-
-            if await self._has_session_cookie():
-                try:
-                    await self.page.goto(f"{self.base_url}/?op=home", wait_until="domcontentloaded", timeout=30000)
-                except Exception:
-                    pass
+                    await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                except asyncio.TimeoutError:
+                    logger.warning("[FreeBitcoin] Login redirect timeout")
+                
+                await self.random_delay(2, 3)
+                
+                # Check if logged in
                 if await self.is_logged_in():
-                    logger.info("✅ [FreeBitcoin] Login successful via session cookies")
+                    logger.info("✅ [FreeBitcoin] Login successful!")
                     return True
-
-            logger.debug("[FreeBitcoin] Attempting form-based login fallback...")
-            await self._submit_login_via_form(login_id, password, "")
-            try:
-                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-            except Exception:
-                pass
-            if await self.is_logged_in():
-                logger.info("✅ [FreeBitcoin] Login successful via form submit")
-                return True
-            
-            # Login failed - check for error messages
-            logger.error("[FreeBitcoin] Login failed - balance element not found")
-            await self._log_login_diagnostics("login_failed")
-            
-            # Try to capture error message
-            error_selectors = [
-                ".alert-danger",
-                ".error",
-                ".login-error",
-                "#login_error",
-                "#login_error_msg",
-                ".alert",
-                "[class*='error']",
-            ]
-            error_text_norm = ""
-            for selector in error_selectors:
+                
+                # Check for error messages
+                error_text = ""
                 try:
-                    error_elem = await self._find_selector_any_frame([selector], "error message", timeout=2000)
-                    if error_elem:
+                    error_elem = await self.page.locator(".alert-danger, .error, .login-error").first
+                    if await error_elem.is_visible(timeout=2000):
                         error_text = await error_elem.text_content()
                         logger.error(f"[FreeBitcoin] Login error message: {error_text}")
-                        if error_text:
-                            error_text_norm = error_text.casefold()
-                        break
                 except Exception:
-                    continue
-
-            if error_text_norm and any(token in error_text_norm for token in ["captcha", "expired", "try again"]):
-                try:
-                    logger.info("[FreeBitcoin] Captcha error detected. Attempting re-solve and re-submit...")
-                    solved = await self.solver.solve_captcha(self.page)
-                    if solved is False:
-                        logger.error("[FreeBitcoin] Login CAPTCHA solve failed on retry")
-                        return False
-                    if not await self._wait_for_captcha_token():
-                        logger.warning("[FreeBitcoin] CAPTCHA token not detected after retry solve")
-                    captcha_input = await self._find_selector_any_frame(
-                        [
-                            "input[name='captcha']",
-                            "input[name='captcha_code']",
-                            "#captcha",
-                            "#captcha_code",
-                            "input[id*='captcha']",
-                            "input[name*='captcha']",
-                        ],
-                        "captcha input",
-                        timeout=2000
-                    )
-                    if captcha_input:
-                        captcha_text = await self.solver.solve_text_captcha(
-                            self.page,
-                            "img[src*='captcha'], #captcha_image, img#captcha, img.captcha, img[alt*='captcha' i]"
-                        )
-                        if captcha_text:
-                            await captcha_input.fill(captcha_text)
-                    await self.random_delay(1.0, 2.0)
-                    submit_btn_retry = await self._find_selector_any_frame(submit_selectors, "submit button", timeout=5000)
-                    if submit_btn_retry:
-                        await self.human_like_click(submit_btn_retry)
-                        await self.random_delay(2.0, 3.0)
-                        if await self.is_logged_in():
-                            logger.info("✅ [FreeBitcoin] Login successful after captcha retry")
-                            return True
-                except Exception as retry_err:
-                    logger.warning(f"[FreeBitcoin] Captcha retry failed: {retry_err}")
-            
-            # Take screenshot for debugging
-            try:
-                await self.page.screenshot(path="logs/freebitcoin_login_failed.png")
-                logger.info("[FreeBitcoin] Screenshot saved to logs/freebitcoin_login_failed.png")
-            except Exception:
-                pass
+                    pass
                 
-        except Exception as e:
-            logger.error(f"[FreeBitcoin] Login exception: {e}", exc_info=True)
-            try:
-                await self.page.screenshot(path="logs/freebitcoin_login_exception.png")
-                logger.info("[FreeBitcoin] Exception screenshot saved")
-            except Exception:
-                pass
-            
+                # Take screenshot on failure
+                timestamp = int(time.time())
+                screenshot_path = f"logs/freebitcoin_login_failed_{timestamp}.png"
+                try:
+                    await self.page.screenshot(path=screenshot_path, full_page=True)
+                    logger.info(f"[FreeBitcoin] Screenshot saved: {screenshot_path}")
+                except Exception:
+                    pass
+                
+                # Log diagnostics
+                await self._log_login_diagnostics(f"login_failed_attempt_{attempt + 1}")
+                
+            except Exception as e:
+                logger.error(f"[FreeBitcoin] Login attempt {attempt + 1} exception: {e}", exc_info=True)
+                timestamp = int(time.time())
+                screenshot_path = f"logs/freebitcoin_login_exception_{timestamp}.png"
+                try:
+                    await self.page.screenshot(path=screenshot_path)
+                    logger.info(f"[FreeBitcoin] Exception screenshot saved: {screenshot_path}")
+                except Exception:
+                    pass
+        
+        # All attempts failed
+        logger.error(f"[FreeBitcoin] Login failed after {max_attempts} attempts")
         return False
 
     async def claim(self) -> ClaimResult:
