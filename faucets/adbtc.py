@@ -54,7 +54,7 @@ class AdBTCBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login...")
-            await self.page.goto(f"{self.base_url}/index/enter", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
+            await self.safe_navigate(f"{self.base_url}/index/enter", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
             await self.handle_cloudflare(max_wait_seconds=30)

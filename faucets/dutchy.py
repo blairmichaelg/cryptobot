@@ -220,11 +220,7 @@ class DutchyBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Login attempt {attempt}/{self.max_retries}")
                 nav_timeout = getattr(self.settings, "timeout", 180000)
-                try:
-                    await self.page.goto(f"{self.base_url}/login.php", wait_until="domcontentloaded", timeout=nav_timeout)
-                except Exception as e:
-                    logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
-                    await self.page.goto(f"{self.base_url}/login.php", wait_until="commit", timeout=nav_timeout)
+                await self.safe_navigate(f\"{self.base_url}/login.php\", wait_until=\"domcontentloaded\", timeout=nav_timeout)
                 
                 # Handle Cloudflare challenges that may appear after navigation
                 await self.handle_cloudflare(max_wait_seconds=120)

@@ -255,7 +255,7 @@ class FireFaucetBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login page...")
-            await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
+            await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Enhanced Cloudflare bypass with retry escalation
             cf_blocked = await self.detect_cloudflare_block()
