@@ -56,17 +56,21 @@ async def test_navigation():
     except Exception as e:
         print(f"  ✗ Browser launch failed: {e}")
     
-    # Test 2: With proxy
+    # Test 2: With proxy (proper format for Playwright)
     print("\n" + "="*60)
-    print("TEST 2: With proxy")
+    print("TEST 2: With proxy (user:pass in server URL)")
     print("="*60)
     
-    proxy_url = "http://ub033d0d0583c05dd-zone-custom-session-test123:ub033d0d0583c05dd@43.135.141.142:2334"
+    proxy_config = {
+        "server": "http://43.135.141.142:2334",
+        "username": "ub033d0d0583c05dd-zone-custom-session-test123",
+        "password": "ub033d0d0583c05dd"
+    }
     
     try:
         async with AsyncCamoufox(**browser_opts) as browser:
             context = await browser.new_context(
-                proxy={"server": proxy_url}
+                proxy=proxy_config
             )
             page = await context.new_page()
             
