@@ -16,15 +16,17 @@ async def test_firefaucet():
     from core.config import BotSettings
     
     settings = BotSettings()
-    bm = BrowserManager()
     
     # Check headless mode
     headless = os.environ.get('HEADLESS', '').lower() == 'true' or sys.platform == 'linux'
     logger.info(f"Browser mode: {'headless' if headless else 'visible'}")
     
+    # Headless mode is passed to the constructor
+    bm = BrowserManager(headless=headless)
+    
     try:
-        await bm.launch(headless=headless)
-        ctx = await bm.create_context('test_firefaucet')
+        await bm.launch()
+        ctx = await bm.create_context(profile_name='test_firefaucet')
         page = await ctx.new_page()
         
         bot = FireFaucetBot(settings, page)
