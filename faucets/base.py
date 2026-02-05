@@ -995,22 +995,25 @@ class FaucetBot:
                 error_str = str(e)
                 
                 # Check for proxy-related errors
-                if any(proxy_error in error_str for proxy_error in [
+                is_proxy_error = any(proxy_error in error_str for proxy_error in [
                     "NS_ERROR_PROXY_CONNECTION_REFUSED",
                     "PROXY_CONNECTION_FAILED",
                     "ERR_PROXY_CONNECTION_FAILED",
                     "ECONNREFUSED",
                     "proxy"
-                ]):
-                    logger.warning(f"[{self.faucet_name}] Proxy error on attempt {attempt}: {error_str[:150]}")
+                ]) or ("Timeout" in error_str and attempt == 1)  # First attempt timeout likely proxy issue
+                
+                if is_proxy_error:
+                    logger.warning(f"[{self.faucet_name}] Proxy/connection error on attempt {attempt}: {error_str[:150]}")
                     
-                    # On last attempt with proxy errors, log it but don't fail yet
+                    # On last attempt with proxy errors, try to get fresh context without proxy as fallback
                     if attempt == max_attempts:
-                        logger.error(f"[{self.faucet_name}] All {max_attempts} navigation attempts failed with proxy errors")
+                        logger.warning(f"[{self.faucet_name}] All proxy attempts failed, proxy may be blocking this site")
                         return False
                     
-                    # Shorter wait before retry - fail faster
-                    await asyncio.sleep(1)
+                    # Immediate retry with exponentially longer wait
+                    wait_time = min(attempt * 2, 5)  # 2s, 4s max 5s
+                    await asyncio.sleep(wait_time)
                     continue
                 
                 # Check for timeout errors

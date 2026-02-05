@@ -73,7 +73,7 @@ class BotSettings(BaseSettings):
     zyte_proxy_protocol: str = "http"
     zyte_pool_size: int = 20  # In-memory logical slots for sticky assignment
     # Proxy routing overrides
-    proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
+    proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin", "cointiply", "firefaucet"])
     # Image blocking overrides (allow images for selected faucets)
     image_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin", "firefaucet"])
     
