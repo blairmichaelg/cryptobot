@@ -294,6 +294,21 @@ class CointiplyBot(FaucetBot):
                             await asyncio.sleep(5)
                             continue
                         
+                        # Manually enable submit button (CAPTCHA callback may not enable it)
+                        logger.debug(f"[{self.faucet_name}] CAPTCHA solved, enabling buttons")
+                        try:
+                            await self.page.evaluate("""
+                                const btns = document.querySelectorAll('button[type="submit"], button.claim-button, button[id*="claim"], button[id*="roll"]');
+                                btns.forEach(btn => {
+                                    if (btn.disabled) {
+                                        btn.disabled = false;
+                                        btn.removeAttribute('disabled');
+                                    }
+                                });
+                            """)
+                        except Exception:
+                            pass
+                        
                         # Click roll button with human-like behavior (safe click for Task 2 crash prevention)
                         await self.random_delay(0.5, 1.5)
                         click_success = await self.safe_click(roll)

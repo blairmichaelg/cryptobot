@@ -503,7 +503,7 @@ class FreeBitcoinBot(FaucetBot):
                         if await locator.is_visible(timeout=3000):
                             logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
                             await self.human_like_click(locator)
-                            await asyncio.sleep(2)  # Wait for form to appear
+                            await asyncio.sleep(3)  # Wait longer for form to appear
                             login_trigger_clicked = True
                             break
                     except Exception:
@@ -512,8 +512,16 @@ class FreeBitcoinBot(FaucetBot):
                 if not login_trigger_clicked:
                     logger.warning(f"[FreeBitcoin] No login trigger found - form may already be visible or URL changed")
                 
-                # Wait a bit more for any animations
-                await asyncio.sleep(1)
+                # Wait for login form to be fully visible and interactive
+                # After clicking LOGIN, the form should appear with these IDs
+                logger.debug("[FreeBitcoin] Waiting for login form to appear...")
+                try:
+                    await self.page.wait_for_selector('#login_form_btc_address', state='visible', timeout=10000)
+                    await self.page.wait_for_selector('#login_form_password', state='visible', timeout=5000)
+                    logger.info("[FreeBitcoin] Login form is now visible")
+                except Exception as wait_err:
+                    logger.warning(f"[FreeBitcoin] Login form wait timeout: {wait_err}")
+                    # Continue anyway - fields might still be findable
                 
                 # Solve landing page CAPTCHA if present
                 logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA...")
@@ -810,6 +818,24 @@ class FreeBitcoinBot(FaucetBot):
                     try:
                         await self.solver.solve_captcha(self.page)
                         logger.debug("[DEBUG] CAPTCHA solved successfully")
+                        
+                        # Manually enable roll button (CAPTCHA callback may not enable it)
+                        try:
+                            await self.page.evaluate("""
+                                const btns = document.querySelectorAll('#free_play_form_button, button[id*="play"], button.claim-btn, button[type="submit"]');
+                                btns.forEach(btn => {
+                                    if (btn.disabled) {
+                                        btn.disabled = false;
+                                        btn.removeAttribute('disabled');
+                                    }
+                                });
+                            """)
+                            logger.debug("[FreeBitcoin] Manually enabled roll button")
+                        except Exception:
+                            pass
+                        
+                        await asyncio.sleep(1)
+                        
                     except Exception as captcha_err:
                         logger.error(f"[DEBUG] CAPTCHA solve failed: {captcha_err}")
                         return ClaimResult(

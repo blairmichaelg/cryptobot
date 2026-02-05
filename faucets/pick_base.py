@@ -296,6 +296,21 @@ class PickFaucetBase(FaucetBot):
                     try:
                         if await self.solver.solve_captcha(self.page):
                             solved = True
+                            
+                            # Manually enable submit button
+                            try:
+                                await self.page.evaluate("""
+                                    const btns = document.querySelectorAll('button[type="submit"], button.btn, button.process_btn, input[type="submit"]');
+                                    btns.forEach(btn => {
+                                        if (btn.disabled) {
+                                            btn.disabled = false;
+                                            btn.removeAttribute('disabled');
+                                        }
+                                    });
+                                """)
+                            except Exception:
+                                pass
+                            
                             break
                         await asyncio.sleep(2)
                     except Exception as captcha_err:
@@ -485,6 +500,21 @@ class PickFaucetBase(FaucetBot):
                     try:
                         if await self.solver.solve_captcha(self.page):
                             solved = True
+                            
+                            # Manually enable submit button
+                            try:
+                                await self.page.evaluate("""
+                                    const btns = document.querySelectorAll('button[type="submit"], button.btn-primary, button#claim, button.btn');
+                                    btns.forEach(btn => {
+                                        if (btn.disabled) {
+                                            btn.disabled = false;
+                                            btn.removeAttribute('disabled');
+                                        }
+                                    });
+                                """)
+                            except Exception:
+                                pass
+                            
                             break
                         await asyncio.sleep(2)
                     except Exception as captcha_err:

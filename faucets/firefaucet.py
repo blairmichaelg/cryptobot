@@ -531,10 +531,19 @@ class FireFaucetBot(FaucetBot):
                 await self.human_like_click(unlock)
                 await self.random_delay()
             
-            turnstile_opt = self.page.locator("#select-turnstile")
-            if await turnstile_opt.count() > 0:
-                await turnstile_opt.click()
+            # Captcha selection (prefer Turnstile) - click label to avoid interception
+            turnstile_label = self.page.locator("label[for='select-turnstile']")
+            if await turnstile_label.count() > 0:
+                logger.debug(f"[{self.faucet_name}] Selecting Turnstile CAPTCHA via label (daily bonus)")
+                await turnstile_label.click()
                 await asyncio.sleep(1)
+            else:
+                # Fallback to JavaScript
+                turnstile_opt = self.page.locator("#select-turnstile")
+                if await turnstile_opt.count() > 0:
+                    logger.debug(f"[{self.faucet_name}] Selecting Turnstile CAPTCHA via JavaScript (daily bonus)")
+                    await self.page.evaluate("document.getElementById('select-turnstile').checked = true; change_captcha('turnstile');")
+                    await asyncio.sleep(1)
             
             await self.solver.solve_captcha(self.page)
             
@@ -609,10 +618,19 @@ class FireFaucetBot(FaucetBot):
                 await self.random_delay()
 
             # Captcha selection (prefer Turnstile)
-            turnstile_opt = self.page.locator("#select-turnstile")
-            if await turnstile_opt.count() > 0:
-                await turnstile_opt.click()
+            # Click the label instead of the radio button to avoid interception issues
+            turnstile_label = self.page.locator("label[for='select-turnstile']")
+            if await turnstile_label.count() > 0:
+                logger.debug(f"[{self.faucet_name}] Selecting Turnstile CAPTCHA via label")
+                await turnstile_label.click()
                 await asyncio.sleep(1)
+            else:
+                # Fallback to direct radio button selection via JavaScript
+                turnstile_opt = self.page.locator("#select-turnstile")
+                if await turnstile_opt.count() > 0:
+                    logger.debug(f"[{self.faucet_name}] Selecting Turnstile CAPTCHA via JavaScript")
+                    await self.page.evaluate("document.getElementById('select-turnstile').checked = true; change_captcha('turnstile');")
+                    await asyncio.sleep(1)
 
             await self.solver.solve_captcha(self.page)
             

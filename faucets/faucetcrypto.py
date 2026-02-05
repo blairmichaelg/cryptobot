@@ -222,6 +222,21 @@ class FaucetCryptoBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
+                    
+                    # Manually enable submit button (some sites disable it until CAPTCHA callback)
+                    try:
+                        await self.page.evaluate("""
+                            const btns = document.querySelectorAll('button[type="submit"], button.reward-button, button:has-text("Get Reward"), button:has-text("Collect")');
+                            btns.forEach(btn => {
+                                if (btn.disabled) {
+                                    btn.disabled = false;
+                                    btn.removeAttribute('disabled');
+                                }
+                            });
+                        """)
+                        logger.debug(f"[{self.faucet_name}] Manually enabled buttons")
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Button enable: {e}")
                 
                 # Click "Get Reward" button
                 reward_btn = self.page.locator("button:has-text('Get Reward'), button:has-text('Collect'), .reward-button")
