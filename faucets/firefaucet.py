@@ -686,14 +686,21 @@ class FireFaucetBot(FaucetBot):
             
             logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
             await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+            await asyncio.sleep(1)  # Brief wait for token injection
             
-            # Wait for page to be fully loaded and interactive
-            await self.page.wait_for_load_state("networkidle", timeout=10000)
-            await asyncio.sleep(3)  # Additional wait for JavaScript to render buttons and enable them
-            
-            # Wait for CAPTCHA token to be processed by the page
-            logger.info(f"[{self.faucet_name}] Waiting for page to process CAPTCHA token...")
-            await asyncio.sleep(2)
+            # Try to manually enable the button by removing disabled attribute
+            try:
+                await self.page.evaluate("""
+                    const btn = document.querySelector('button[type="submit"]');
+                    if (btn && btn.disabled) {
+                        btn.disabled = false;
+                        btn.removeAttribute('disabled');
+                        console.log('Button manually enabled');
+                    }
+                """)
+                logger.info(f"[{self.faucet_name}] Manually enabled submit button")
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Could not manually enable button: {e}")
             
             # Faucet Claim Button with fallback selectors (updated 2026-01-30)
             faucet_btn_selectors = [
