@@ -341,10 +341,14 @@ class BrowserManager:
                 logger.info(f"📌 Binding {profile_name} to proxy {proxy}")
                 await self.save_proxy_binding(profile_name, proxy)
         elif profile_name and not allow_sticky_proxy:
+            # Clear any existing proxy binding when bypassing proxies
+            await self.remove_proxy_binding(profile_name)
             if proxy:
                 logger.debug("🚫 Sticky proxy disabled for %s; using explicit proxy %s", profile_name, proxy)
             else:
                 logger.debug("🚫 Sticky proxy disabled for %s; no proxy will be used", profile_name)
+                # Ensure proxy stays None (don't load from sticky)
+                proxy = None
 
         if proxy:
             # Parse proxy string if it's a URL
