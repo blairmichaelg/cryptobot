@@ -740,9 +740,25 @@ class FireFaucetBot(FaucetBot):
             if faucet_btn and await faucet_btn.count() > 0:
                 logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
                 await self.human_like_click(faucet_btn)
-                await self.random_delay(3, 5)
+                await self.random_delay(1, 2)
                 
-                # Wait for page to update after claim
+                # Wait for "Please Wait" countdown timer to complete
+                # FireFaucet shows a countdown like "Please Wait (5)" after clicking
+                logger.info(f"[{self.faucet_name}] Waiting for claim processing...")
+                try:
+                    # Wait for button text to change from "Please Wait" to something else
+                    await self.page.wait_for_function(
+                        """() => {
+                            const btn = document.querySelector('button[type="submit"]');
+                            return btn && !btn.textContent.includes('Please Wait');
+                        }""",
+                        timeout=15000
+                    )
+                    logger.info(f"[{self.faucet_name}] Claim processing completed")
+                except Exception as wait_err:
+                    logger.debug(f"[{self.faucet_name}] Wait for timer error: {wait_err}")
+                
+                # Additional wait for page to fully update
                 await asyncio.sleep(3)
                 
                 # Enhanced debugging: Capture page state after claim
