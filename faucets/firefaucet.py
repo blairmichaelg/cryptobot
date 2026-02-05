@@ -743,7 +743,41 @@ class FireFaucetBot(FaucetBot):
                 await self.random_delay(3, 5)
                 
                 # Wait for page to update after claim
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
+                
+                # Enhanced debugging: Capture page state after claim
+                logger.info(f"[{self.faucet_name}] Checking claim result...")
+                current_url = self.page.url
+                page_title = await self.page.title()
+                logger.info(f"[{self.faucet_name}] Current URL: {current_url}")
+                logger.info(f"[{self.faucet_name}] Page title: {page_title}")
+                
+                # Check page HTML for success indicators in text content
+                try:
+                    page_text = await self.page.evaluate("() => document.body.innerText")
+                    page_text_lower = page_text.lower()
+                    
+                    # Look for success phrases in page text
+                    success_phrases = ['claimed successfully', 'reward received', 'congratulations', 
+                                      'success', 'you got', 'you earned', 'you received',
+                                      'claim successful', 'reward added', 'balance updated']
+                    
+                    for phrase in success_phrases:
+                        if phrase in page_text_lower:
+                            logger.info(f"[{self.faucet_name}] ✅ Success phrase found in page: '{phrase}'")
+                            # Extract amount if visible in text
+                            import re
+                            amount_match = re.search(r'(\d+\.?\d*)\s*(satoshi|sat|btc)', page_text_lower)
+                            if amount_match:
+                                amount = amount_match.group(1)
+                                logger.info(f"[{self.faucet_name}] ✅ Amount detected: {amount}")
+                            
+                            # Get updated balance
+                            new_balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
+                            return ClaimResult(success=True, status="Claimed", next_claim_minutes=30, 
+                                             amount=amount if amount_match else "unknown", balance=new_balance)
+                except Exception as text_err:
+                    logger.debug(f"[{self.faucet_name}] Page text check error: {text_err}")
                 
                 # Check for success with multiple selectors (expanded for FireFaucet)
                 success_selectors = [
@@ -755,23 +789,35 @@ class FireFaucetBot(FaucetBot):
                     ".reward-success",
                     ".swal2-success",  # SweetAlert success popup
                     ".swal2-popup:has(.swal2-success-ring)",  # SweetAlert with success icon
+                    ".swal2-popup",  # Any SweetAlert popup
                     ".modal:visible",  # Any visible modal might indicate success
                     "[class*='claimed']",
                     "[class*='reward']",
                     ".toast:visible",  # Any toast notification
                     ".notification:visible",
+                    "div:has-text('success')",
+                    "div:has-text('claimed')",
+                    "div:has-text('reward')",
                 ]
                 success_found = False
+                success_msg_text = ""
+                
                 for sel in success_selectors:
                     try:
                         locator = self.page.locator(sel)
                         if await locator.count() > 0:
-                            success_msg = await locator.first.text_content() or ""
-                            # Check if message looks like success (not error)
-                            if not any(err in success_msg.lower() for err in ['error', 'fail', 'wait', 'timer']):
-                                logger.info(f"[{self.faucet_name}] ✅ Faucet claimed successfully: {success_msg[:100]}")
-                                success_found = True
-                                break
+                            for i in range(await locator.count()):
+                                elem = locator.nth(i)
+                                if await elem.is_visible():
+                                    success_msg = await elem.text_content() or ""
+                                    # Check if message looks like success (not error)
+                                    if success_msg and not any(err in success_msg.lower() for err in ['error', 'fail', 'wait', 'timer', 'please try']):
+                                        logger.info(f"[{self.faucet_name}] ✅ Success message found via {sel}: {success_msg[:150]}")
+                                        success_found = True
+                                        success_msg_text = success_msg
+                                        break
+                        if success_found:
+                            break
                     except Exception as e:
                         logger.debug(f"[{self.faucet_name}] Success selector {sel} error: {e}")
                         continue
@@ -779,10 +825,13 @@ class FireFaucetBot(FaucetBot):
                 # Also check if balance changed (alternative success indicator)
                 if not success_found:
                     try:
+                        logger.info(f"[{self.faucet_name}] No success message found, checking balance change...")
                         await asyncio.sleep(2)  # Wait for balance update
                         new_balance_check = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
-                        if new_balance_check and new_balance_check > balance:
-                            logger.info(f"[{self.faucet_name}] ✅ Claim success detected via balance increase: {balance} -> {new_balance_check}")
+                        logger.info(f"[{self.faucet_name}] Old balance: {balance}, New balance: {new_balance_check}")
+                        
+                        if new_balance_check and new_balance_check != "0" and new_balance_check != balance:
+                            logger.info(f"[{self.faucet_name}] ✅ Claim success detected via balance change: {balance} -> {new_balance_check}")
                             success_found = True
                             balance = new_balance_check
                     except Exception as bal_err:
@@ -790,15 +839,32 @@ class FireFaucetBot(FaucetBot):
                 
                 # Check for URL change indicating success
                 if not success_found:
-                    current_url = self.page.url
                     if any(indicator in current_url.lower() for indicator in ['success', 'claimed', 'dashboard']):
                         logger.info(f"[{self.faucet_name}] ✅ Claim success detected via URL: {current_url}")
                         success_found = True
                 
+                # Check if button disappeared (claim consumed)
+                if not success_found:
+                    try:
+                        button_still_present = await self.page.locator("button:has-text('Get reward')").count() > 0
+                        if not button_still_present:
+                            logger.info(f"[{self.faucet_name}] ✅ Claim button disappeared - assuming success")
+                            success_found = True
+                    except:
+                        pass
+                
                 if success_found:
                     # Get updated balance
                     new_balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
-                    logger.info(f"[{self.faucet_name}] New balance: {new_balance}")
+                    logger.info(f"[{self.faucet_name}] Final balance: {new_balance}")
+                    
+                    # Extract amount from success message if available
+                    amount = "unknown"
+                    if success_msg_text:
+                        import re
+                        amount_match = re.search(r'(\d+\.?\d*)\s*(satoshi|sat|btc)', success_msg_text.lower())
+                        if amount_match:
+                            amount = amount_match.group(1)
                     
                     # Claim shortlinks if enabled (non-blocking, separate context)
                     enable_shortlinks = getattr(self.settings, 'enable_shortlinks', True)
@@ -809,9 +875,19 @@ class FireFaucetBot(FaucetBot):
                         except Exception as sl_err:
                             logger.debug(f"[{self.faucet_name}] Shortlink task creation failed: {sl_err}")
                     
-                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=30, balance=new_balance)
+                    return ClaimResult(success=True, status="Claimed", next_claim_minutes=30, 
+                                     amount=amount, balance=new_balance)
                 
-                logger.warning(f"[{self.faucet_name}] Claim verification failed - no success message found")
+                # If still not found, take screenshot and log page content for debugging
+                logger.warning(f"[{self.faucet_name}] Claim verification failed - no success indicator found")
+                
+                # Log visible text for debugging
+                try:
+                    visible_text = await self.page.evaluate("() => document.body.innerText")
+                    logger.info(f"[{self.faucet_name}] Page visible text (first 500 chars): {visible_text[:500]}")
+                except:
+                    pass
+                
                 await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)
             else:
                 # Debug: Log available buttons on the page
