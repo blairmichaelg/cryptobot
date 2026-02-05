@@ -738,9 +738,24 @@ class FireFaucetBot(FaucetBot):
                     continue
             
             if faucet_btn and await faucet_btn.count() > 0:
+                # Check button text before clicking for debugging
+                try:
+                    btn_text_before = await faucet_btn.first.text_content()
+                    logger.info(f"[{self.faucet_name}] Button text before click: '{btn_text_before}'")
+                except:
+                    pass
+                
                 logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
                 await self.human_like_click(faucet_btn)
                 await self.random_delay(1, 2)
+                
+                # Check button text after clicking
+                try:
+                    await asyncio.sleep(1)
+                    btn_text_after = await self.page.locator("button[type='submit']").first.text_content()
+                    logger.info(f"[{self.faucet_name}] Button text after click: '{btn_text_after}'")
+                except:
+                    pass
                 
                 # Wait for "Please Wait" countdown timer to complete
                 # FireFaucet shows a countdown like "Please Wait (5)" after clicking
@@ -754,7 +769,11 @@ class FireFaucetBot(FaucetBot):
                         }""",
                         timeout=15000
                     )
-                    logger.info(f"[{self.faucet_name}] Claim processing completed")
+                    logger.info(f"[{self.faucet_name}] Claim processing timer completed")
+                    
+                    # Check final button text
+                    final_btn_text = await self.page.locator("button[type='submit']").first.text_content()
+                    logger.info(f"[{self.faucet_name}] Button text after processing: '{final_btn_text}'")
                 except Exception as wait_err:
                     logger.debug(f"[{self.faucet_name}] Wait for timer error: {wait_err}")
                 
