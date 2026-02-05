@@ -689,7 +689,11 @@ class FireFaucetBot(FaucetBot):
             
             # Wait for page to be fully loaded and interactive
             await self.page.wait_for_load_state("networkidle", timeout=10000)
-            await asyncio.sleep(2)  # Additional wait for JavaScript to render buttons
+            await asyncio.sleep(3)  # Additional wait for JavaScript to render buttons and enable them
+            
+            # Wait for CAPTCHA token to be processed by the page
+            logger.info(f"[{self.faucet_name}] Waiting for page to process CAPTCHA token...")
+            await asyncio.sleep(2)
             
             # Faucet Claim Button with fallback selectors (updated 2026-01-30)
             faucet_btn_selectors = [
@@ -738,24 +742,43 @@ class FireFaucetBot(FaucetBot):
                     continue
             
             if faucet_btn and await faucet_btn.count() > 0:
-                # Check button text before clicking for debugging
+                # Check button state before clicking for debugging
                 try:
                     btn_text_before = await faucet_btn.first.text_content()
+                    is_enabled = await faucet_btn.first.is_enabled()
+                    is_disabled_attr = await faucet_btn.first.get_attribute("disabled")
                     logger.info(f"[{self.faucet_name}] Button text before click: '{btn_text_before}'")
-                except:
-                    pass
+                    logger.info(f"[{self.faucet_name}] Button enabled: {is_enabled}, disabled attr: {is_disabled_attr}")
+                    
+                    # If button is disabled, wait a bit more for it to enable
+                    if not is_enabled or is_disabled_attr is not None:
+                        logger.info(f"[{self.faucet_name}] Button is disabled, waiting for it to enable...")
+                        await asyncio.sleep(3)
+                        is_enabled_after = await faucet_btn.first.is_enabled()
+                        logger.info(f"[{self.faucet_name}] Button enabled after wait: {is_enabled_after}")
+                except Exception as btn_check_err:
+                    logger.warning(f"[{self.faucet_name}] Could not check button state: {btn_check_err}")
                 
                 logger.info(f"[{self.faucet_name}] Clicking faucet reward button...")
                 await self.human_like_click(faucet_btn)
-                await self.random_delay(1, 2)
+                await asyncio.sleep(1)
                 
-                # Check button text after clicking
+                # Check if button text changed - if not, try JavaScript click
                 try:
-                    await asyncio.sleep(1)
-                    btn_text_after = await self.page.locator("button[type='submit']").first.text_content()
+                    btn_text_after = await faucet_btn.first.text_content()
                     logger.info(f"[{self.faucet_name}] Button text after click: '{btn_text_after}'")
-                except:
-                    pass
+                    
+                    # If button text hasn't changed to "Please Wait", try JavaScript click
+                    if "please wait" not in btn_text_after.lower():
+                        logger.warning(f"[{self.faucet_name}] Button text didn't change, trying JavaScript click...")
+                        await self.page.evaluate("document.querySelector('button[type=\"submit\"]').click()")
+                        await asyncio.sleep(2)
+                        btn_text_js = await faucet_btn.first.text_content()
+                        logger.info(f"[{self.faucet_name}] Button text after JS click: '{btn_text_js}'")
+                except Exception as btn_check_err:
+                    logger.warning(f"[{self.faucet_name}] Could not check button text after click: {btn_check_err}")
+                
+                await self.random_delay(1, 2)
                 
                 # Wait for "Please Wait" countdown timer to complete
                 # FireFaucet shows a countdown like "Please Wait (5)" after clicking
