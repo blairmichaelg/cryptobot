@@ -219,7 +219,13 @@ async def diagnose_faucet(faucet_name: str, browser_mgr: BrowserManager, setting
         # Step 6: Test balance extraction
         logger.info(f"[{faucet_name}] Step 6: Testing balance extraction...")
         try:
-            balance = await bot.get_balance()
+            # Try calling with default selector first, then without if that fails
+            try:
+                balance = await bot.get_balance(".balance")
+            except TypeError:
+                # Method doesn't take selector argument
+                balance = await bot.get_balance()
+            
             if balance and balance != "0":
                 diag.balance_ok = True
                 logger.info(f"[{faucet_name}] ✅ Balance extracted: {balance}")
@@ -231,8 +237,15 @@ async def diagnose_faucet(faucet_name: str, browser_mgr: BrowserManager, setting
         
         # Step 7: Test timer extraction
         logger.info(f"[{faucet_name}] Step 7: Testing timer extraction...")
+        timer = -1
         try:
-            timer = await bot.get_timer()
+            # Try calling with default selector first, then without if that fails
+            try:
+                timer = await bot.get_timer("#time")
+            except TypeError:
+                # Method doesn't take selector argument
+                timer = await bot.get_timer()
+                
             if timer >= 0:
                 diag.timer_ok = True
                 logger.info(f"[{faucet_name}] ✅ Timer extracted: {timer:.1f} minutes")
