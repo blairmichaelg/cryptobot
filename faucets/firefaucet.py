@@ -289,10 +289,15 @@ class FireFaucetBot(FaucetBot):
                 # Still do basic check for race conditions
                 await self.handle_cloudflare(max_wait_seconds=20)
             
-            # Wait for login form to appear - increased timeout for proxy scenarios
-            # Proxies add latency; give it 45s instead of 15s
+            # Check for adblock redirect before looking for login form
+            if "/adblock" in self.page.url:
+                logger.error(f"[{self.faucet_name}] ❌ Redirected to adblock page. Site blocking us as adblock user.")
+                logger.info(f"[{self.faucet_name}] This shouldn't happen with image_bypass enabled. Check config.")
+                return False
+            
+            # Wait for login form to appear - reduced timeout for faster failure detection
             try:
-                await self.page.wait_for_selector('#username', timeout=45000)
+                await self.page.wait_for_selector('#username', timeout=20000)
             except Exception as e:
                 # Try alternate selectors if #username fails
                 logger.warning(f"[{self.faucet_name}] #username not found, trying alternate selectors...")
@@ -312,6 +317,9 @@ class FireFaucetBot(FaucetBot):
                         title = await self.page.title()
                         url = self.page.url
                         logger.error(f"[{self.faucet_name}] Login form not found. Title: {title}, URL: {url}")
+                        # Check if we hit adblock page
+                        if "/adblock" in url:
+                            logger.error(f"[{self.faucet_name}] Site detected us as using adblock!")
                     except:
                         pass
                     raise e

@@ -75,7 +75,7 @@ class BotSettings(BaseSettings):
     # Proxy routing overrides
     proxy_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
     # Image blocking overrides (allow images for selected faucets)
-    image_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin"])
+    image_bypass_faucets: List[str] = Field(default_factory=lambda: ["freebitcoin", "firefaucet"])
     
     # Optimization
     block_images: bool = True
