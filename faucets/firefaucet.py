@@ -28,29 +28,33 @@ class FireFaucetBot(FaucetBot):
             bool: True if Cloudflare protection is active
         """
         try:
-            # Check page title
+            # Check page title for challenge indicators
             title = (await self.page.title()).lower()
-            if any(indicator in title for indicator in ["just a moment", "cloudflare", "security check", "ddos protection", "attention required"]):
+            challenge_titles = ["just a moment", "security check", "ddos protection", "attention required", "checking your browser"]
+            if any(indicator in title for indicator in challenge_titles):
                 logger.warning(f"[{self.faucet_name}] 🛡️ Cloudflare detected in title: {title}")
                 return True
             
-            # Check page content
+            # Check page content for CHALLENGE-SPECIFIC patterns (not just "cloudflare" which appears in footers)
             body_text = await self.page.evaluate("() => document.body.innerText.toLowerCase()")
-            cloudflare_patterns = [
-                "cloudflare",
+            challenge_patterns = [
                 "checking your browser",
-                "please wait",
-                "enable javascript",
-                "ddos protection",
-                "security check",
+                "please wait while we check your browser",
                 "just a moment",
                 "verify you are human",
-                "ray id"
+                "enable javascript and cookies",
+                "this process is automatic"
             ]
             
-            if any(pattern in body_text for pattern in cloudflare_patterns):
-                logger.warning(f"[{self.faucet_name}] 🛡️ Cloudflare pattern detected in page content")
-                return True
+            # Must match challenge pattern AND have short page text (challenge pages are minimal)
+            if any(pattern in body_text for pattern in challenge_patterns):
+                # Challenge pages are typically very short (< 1000 chars)
+                # Normal pages mention "cloudflare" in footer but have much more content
+                if len(body_text) < 1000:
+                    logger.warning(f"[{self.faucet_name}] 🛡️ Cloudflare challenge detected in page content (length: {len(body_text)})")
+                    return True
+                else:
+                    logger.debug(f"[{self.faucet_name}] Page mentions Cloudflare but has normal content (length: {len(body_text)}), not a challenge")
             
             # Check for Turnstile iframes
             turnstile_frame = await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com']")
