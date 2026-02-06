@@ -54,6 +54,13 @@ class BotSettings(BaseSettings):
     captcha_fallback_provider: Optional[str] = None  # Optional fallback provider (e.g., capsolver)
     captcha_fallback_api_key: Optional[str] = None
     
+    # 2Captcha Proxy Auto-Refresh Settings
+    proxy_auto_refresh_enabled: bool = True  # Enable automatic proxy refresh
+    proxy_auto_refresh_interval_hours: int = 24  # How often to check and refresh proxies
+    proxy_min_healthy_count: int = 50  # Minimum healthy proxies before triggering refresh
+    proxy_target_count: int = 100  # Target total proxy count
+    proxy_max_latency_ms: float = 3000  # Maximum acceptable proxy latency in milliseconds
+    
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
     azure_proxies_file: str = str(CONFIG_DIR / "azure_proxies.txt")  # Azure VM proxy list
