@@ -295,7 +295,7 @@ class CaptchaSolver:
         
         Logic:
         - Try self.provider (2captcha or capsolver) up to 2 times
-        - If NO_SLOT or ZERO_BALANCE, try fallback
+        - If NO_SLOT, ZERO_BALANCE, or ERROR_METHOD_CALL, try fallback immediately
         - If both fail, raise exception
         - Track which provider succeeded for cost attribution
         
@@ -366,7 +366,7 @@ class CaptchaSolver:
                     self._record_provider_result(provider, captcha_type, success=False)
 
                     # If not fallback-worthy, propagate
-                    if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
+                    if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper() and "ERROR_METHOD_CALL" not in error_msg.upper():
                         raise
                     break  # Exit retry loop, try next provider
         
@@ -904,6 +904,9 @@ class CaptchaSolver:
                 logger.error(f"2Captcha Submit Error: {error_code}")
                 if error_code == "ERROR_IP_NOT_ALLOWED":
                     logger.error("❌ 2Captcha: IP not whitelisted. Triggering whitelist update.")
+                elif error_code == "ERROR_METHOD_CALL":
+                    logger.warning(f"⚠️ 2Captcha doesn't support {method} - triggering fallback")
+                    raise Exception(f"ERROR_METHOD_CALL: {method} not supported by 2Captcha")
                 return None
                 
             request_id = data['request']
