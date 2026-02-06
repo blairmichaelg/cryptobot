@@ -7,15 +7,15 @@
 
 ## Quick Deployment (Azure VM)
 
-### Option A: Automated Deployment Script
+### Option A: Using Azure Deployment Script
 
 ```bash
-# From your local machine (with Azure CLI and SSH access)
+# From your local machine (with SSH access to Azure VM)
 cd /path/to/cryptobot
 ./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
 ```
 
-This will:
+This will automatically:
 1. SSH into the VM
 2. Pull latest code from this branch
 3. Restart the faucet_worker service
