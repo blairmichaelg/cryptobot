@@ -766,8 +766,8 @@ class FreeBitcoinBot(FaucetBot):
                 # Extract Balance with fallback selectors
                 logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
-                    "#balance",
-                    fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
+                    "#balance_small",
+                    fallback_selectors=["#balance", "span.balance", ".user-balance", "[data-balance]"]
                 )
                 logger.info(f"[DEBUG] Balance: {balance}")
 
@@ -873,13 +873,14 @@ class FreeBitcoinBot(FaucetBot):
 
                             # Confirm claim by checking timer and/or balance update
                             new_balance = await self.get_balance(
-                                "#balance",
-                                fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
+                                "#balance_small",
+                                fallback_selectors=["#balance", "span.balance", ".user-balance", "[data-balance]"]
                             )
                             timer_after = await self.get_timer(
                                 "#time_remaining",
                                 fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]
                             )
+                            logger.debug(f"[FreeBitcoin] Claim confirmation - Balance before: {balance}, after: {new_balance}, timer_after: {timer_after}")
                             balance_changed = new_balance != balance and new_balance != "0"
                             confirmed = bool(clean_amount and clean_amount != "0") and (timer_after > 0 or balance_changed)
 
@@ -991,7 +992,7 @@ class FreeBitcoinBot(FaucetBot):
             await self.close_popups()
             
             # Get current balance
-            balance = await self.get_balance("#balance")
+            balance = await self.get_balance("#balance_small", fallback_selectors=["#balance", "span.balance", ".user-balance"])
             balance_sat = int(float(balance) * 100000000) if balance else 0
             
             # Check minimum (30,000 satoshis)
