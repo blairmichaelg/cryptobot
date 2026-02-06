@@ -142,7 +142,7 @@ class BrowserManager:
         return False
 
     async def launch(self):
-        """Launches a highly stealthy Camoufox instance."""
+        """Launches a highly stealthy Camoufox instance with hardened configuration."""
         logger.info("Launching Camoufox (Headless: %s)...", self.headless)
         
         # Construct arguments
@@ -160,6 +160,41 @@ class BrowserManager:
         # headless defaults (e.g., 1024x768) by constraining to a common size.
         if self.headless:
             kwargs["screen"] = Screen(max_width=1920, max_height=1080)
+
+        # Hardened Firefox preferences for stealth
+        firefox_prefs = {
+            # Disable telemetry and crash reporting
+            "toolkit.telemetry.enabled": False,
+            "datareporting.policy.dataSubmissionEnabled": False,
+            "browser.crashReports.unsubmittedCheck.autoSubmit2": False,
+            # Disable health reporting
+            "datareporting.healthreport.uploadEnabled": False,
+            # Disable first-run annoyances
+            "browser.shell.checkDefaultBrowser": False,
+            "browser.startup.homepage_override.mstone": "ignore",
+            # Reduce unique identifiers
+            "privacy.resistFingerprinting.letterboxing": False,  # Letterboxing reveals anti-fp
+            # Disable Service Worker & Push notifications (reduces fingerprint surface)
+            "dom.push.enabled": False,
+            "dom.serviceWorkers.enabled": True,  # Keep enabled - disabling is suspicious
+            # WebRTC hardening 
+            "media.peerconnection.ice.default_address_only": True,  # Prevent local IP leak
+            "media.peerconnection.ice.no_host": True,  # No host candidate in ICE
+            "media.peerconnection.ice.proxy_only": True,  # Force ICE through proxy
+            # Disable battery API (Firefox doesn't expose it anyway, but be safe)
+            "dom.battery.enabled": False,
+            # Enable DRM for maximum compatibility (sites check this)
+            "media.eme.enabled": True,
+            # Disable Pocket and other Mozilla services that add requests
+            "extensions.pocket.enabled": False,
+            "browser.newtabpage.activity-stream.feeds.section.topstories": False,
+            # Avoid DNS prefetch leaking real IP
+            "network.dns.disablePrefetch": True,
+            "network.prefetch-next": False,
+            # Proper referrer policy  
+            "network.http.referer.XOriginPolicy": 0,  # Send referrer (blocking is suspicious)
+        }
+        kwargs["config"] = firefox_prefs
 
         # We keep the camoufox instance wrapper
         try:
@@ -365,18 +400,56 @@ class BrowserManager:
             else:
                 context_args["proxy"] = {"server": proxy}
 
+        # Add realistic HTTP headers that browsers always send
+        accept_language_map = {
+            "en-US": "en-US,en;q=0.9",
+            "en-GB": "en-GB,en;q=0.9",
+            "en-CA": "en-CA,en;q=0.9,en-US;q=0.8",
+            "en-AU": "en-AU,en;q=0.9,en-US;q=0.8",
+        }
+        ua = context_args.get("user_agent", "")
+        
+        extra_headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": accept_language_map.get(locale or "en-US", "en-US,en;q=0.9"),
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "DNT": random.choice(["1", "1", "1", None]),  # ~75% have DNT
+            "Priority": "u=0, i",
+        }
+
+        # Add Sec-CH-UA client hints based on UA string
+        if "Chrome/" in ua:
+            chrome_match = ua.split("Chrome/")[-1].split(" ")[0].split(".")[0] if "Chrome/" in ua else "131"
+            extra_headers["Sec-CH-UA"] = f'"Chromium";v="{chrome_match}", "Google Chrome";v="{chrome_match}", "Not-A.Brand";v="99"'
+            extra_headers["Sec-CH-UA-Mobile"] = "?0"
+            extra_headers["Sec-CH-UA-Platform"] = f'"{platform_name or "Windows"}"'
+        elif "Edg/" in ua:
+            edge_match = ua.split("Edg/")[-1].split(".")[0] if "Edg/" in ua else "133"
+            extra_headers["Sec-CH-UA"] = f'"Chromium";v="{edge_match}", "Microsoft Edge";v="{edge_match}", "Not-A.Brand";v="99"'
+            extra_headers["Sec-CH-UA-Mobile"] = "?0"
+            extra_headers["Sec-CH-UA-Platform"] = f'"Windows"'
+        
+        # Remove None values (e.g., DNT)
+        extra_headers = {k: v for k, v in extra_headers.items() if v is not None}
+        context_args["extra_http_headers"] = extra_headers
+
         logger.info("Creating isolated stealth context (Profile: %s, Proxy: %s, Resolution: %sx%s)", profile_name or "Anonymous", proxy or "None", dims[0], dims[1])
         context = await self.browser.new_context(**context_args)
         
         # Set global timeout for this context
         context.set_default_timeout(self.timeout)
         
-        # Comprehensive Anti-Fingerprinting Suite using StealthHub with per-profile fingerprints
+        # Comprehensive Anti-Fingerprinting Suite v3.0 using StealthHub
         # Generate deterministic parameters if not loaded from existing fingerprint
         if canvas_seed is None and profile_name:
             canvas_seed = hash(profile_name) % 1000000
         if gpu_index is None and profile_name:
-            gpu_index = hash(profile_name + "_gpu") % 13
+            gpu_index = hash(profile_name + "_gpu") % 17  # Expanded GPU list (0-16)
         if audio_seed is None and profile_name:
             audio_seed = hash(profile_name + "_audio") % 1000000
         
@@ -392,16 +465,24 @@ class BrowserManager:
             languages = [locale or "en-US", (locale or "en-US").split("-")[0]]
         if not platform_name:
             platform_name = "Win32"
+        
+        # Derive hardware_concurrency deterministically per profile
+        hardware_concurrency = None
+        if profile_name:
+            hardware_concurrency = 4 + (hash(profile_name + "_cores") % 5) * 2  # 4,6,8,10,12
+        
         await context.add_init_script(
             StealthHub.get_stealth_script(
                 canvas_seed=canvas_seed,
                 gpu_index=gpu_index,
                 audio_seed=audio_seed,
                 languages=languages,
-                platform=platform_name
+                platform=platform_name,
+                hardware_concurrency=hardware_concurrency
             )
         )
-        logger.debug("🎨 Injected fingerprint: canvas_seed=%s, gpu_index=%s", canvas_seed, gpu_index)
+        logger.debug("🎨 Injected stealth v3.0: canvas_seed=%s, gpu=%s, cores=%s", 
+                     canvas_seed, gpu_index, hardware_concurrency)
 
         # Apply Resource Blocker using instance settings or overrides
         block_images = self.block_images if block_images_override is None else block_images_override
@@ -497,25 +578,51 @@ class BrowserManager:
         self._safe_json_write(str(profile_file), data)
 
     async def _seed_cookie_jar(self, context: BrowserContext, profile_name: str) -> None:
-        """Seed a minimal cookie jar to avoid a brand new profile signature."""
+        """Seed a minimal cookie jar to avoid a brand new profile signature.
+        
+        Uses realistic domain/cookie patterns that mimic organic browsing:
+        - Popular sites with realistic cookie names
+        - Consent cookies (GDPR compliance signals)
+        - Age-appropriate creation timestamps
+        """
         profiles = self._load_cookie_profile()
         entry = profiles.get(profile_name, {})
 
         if "created_at" not in entry:
-            back_days = random.randint(7, 30)
+            back_days = random.randint(14, 90)
             entry["created_at"] = time.time() - (back_days * 86400)
 
+        # Realistic browsing history domains (weighted towards popular sites)
         base_domains = [
             "google.com",
-            "bing.com",
+            "youtube.com",
             "wikipedia.org",
             "reddit.com",
-            "news.ycombinator.com"
+            "amazon.com",
+            "twitter.com",
+            "github.com",
+            "stackoverflow.com",
+            "linkedin.com",
+            "medium.com",
+        ]
+        
+        # Realistic cookie names that don't look auto-generated
+        cookie_templates = [
+            {"name": "_ga", "value_fn": lambda: f"GA1.2.{random.randint(100000000, 999999999)}.{int(time.time()) - random.randint(86400, 7776000)}"},
+            {"name": "_gid", "value_fn": lambda: f"GA1.2.{random.randint(100000000, 999999999)}.{int(time.time()) - random.randint(0, 86400)}"},
+            {"name": "NID", "value_fn": lambda: f"{random.randint(100, 999)}={random.randbytes(32).hex()[:40]}"},
+            {"name": "CONSENT", "value_fn": lambda: f"YES+cb.{int(time.time()) - random.randint(0, 31536000):010d}-04-p0.en+FX+{random.randint(100, 999)}"},
+            {"name": "PREF", "value_fn": lambda: f"tz={random.choice(['America.New_York', 'America.Los_Angeles', 'Europe.London'])}&f6=40000000&f7=100"},
+            {"name": "cookie_consent", "value_fn": lambda: random.choice(["accepted", "true", "1"])},
+            {"name": "_fbp", "value_fn": lambda: f"fb.1.{int(time.time() * 1000) - random.randint(0, 86400000)}.{random.randint(100000000, 999999999)}"},
+            {"name": "theme", "value_fn": lambda: random.choice(["light", "dark", "auto"])},
+            {"name": "lang", "value_fn": lambda: random.choice(["en", "en-US", "en-GB"])},
+            {"name": "session_id", "value_fn": lambda: random.randbytes(16).hex()},
         ]
 
         cookie_count = entry.get("cookie_count")
         if not cookie_count:
-            cookie_count = random.randint(8, 20)
+            cookie_count = random.randint(12, 30)
             entry["cookie_count"] = cookie_count
 
         profiles[profile_name] = entry
@@ -526,26 +633,37 @@ class BrowserManager:
         age_days = max(1, int((now - created_at) / 86400))
 
         cookies = []
+        used_combos = set()
+        
         for i in range(cookie_count):
             domain = random.choice(base_domains)
-            max_age_days = random.randint(30, 90)
+            template = random.choice(cookie_templates)
+            combo_key = f"{domain}:{template['name']}"
+            
+            # Avoid duplicate domain+name combos
+            if combo_key in used_combos:
+                continue
+            used_combos.add(combo_key)
+            
+            max_age_days = random.randint(30, 365)
             expires = int(created_at + (max_age_days * 86400))
             if expires < now:
-                expires = int(now + (max_age_days * 86400))
+                expires = int(now + random.randint(30, 180) * 86400)
+            
             cookies.append({
-                "name": f"pref_{i}",
-                "value": f"{random.randint(1000, 9999)}",
-                "domain": domain,
+                "name": template["name"],
+                "value": template["value_fn"](),
+                "domain": f".{domain}",
                 "path": "/",
                 "expires": expires,
-                "httpOnly": False,
+                "httpOnly": random.random() < 0.3,
                 "secure": True,
-                "sameSite": "Lax"
+                "sameSite": random.choice(["Lax", "None", "Lax"]),
             })
 
         if cookies:
             await context.add_cookies(cookies)
-            logger.info(f"🍪 Seeded {len(cookies)} cookies for {profile_name} (age ~{age_days}d)")
+            logger.info(f"🍪 Seeded {len(cookies)} realistic cookies for {profile_name} (age ~{age_days}d)")
 
     async def save_proxy_binding(self, profile_name: str, proxy: str):
         """Save the proxy binding for a profile to ensuring sticky sessions."""

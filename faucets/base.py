@@ -571,9 +571,12 @@ class FaucetBot:
 
     async def human_like_click(self, locator: Locator):
         """
-        Simulate a human-like click with Bézier-curve style movement,
-        randomized delays, scrolling, and offset clicks.
-        Includes profile-based pre-click pause for realism.
+        Simulate a human-like click with Bézier-curve mouse movement,
+        randomized delays, scrolling, offset clicks, and realistic
+        mouse acceleration/deceleration profiles.
+        
+        Uses proper cubic Bézier curves with control points that follow
+        natural hand movement patterns.
         """
         if await locator.is_visible():
             await locator.scroll_into_view_if_needed()
@@ -593,21 +596,97 @@ class FaucetBot:
                 await locator.click(delay=random.randint(100, 250))
                 return
 
-            # Target point within the button (randomized)
-            target_x = box['x'] + box['width'] * random.uniform(0.2, 0.8)
-            target_y = box['y'] + box['height'] * random.uniform(0.2, 0.8)
+            # Target point within the button (Gaussian distribution toward center)
+            target_x = box['x'] + box['width'] * max(0.15, min(0.85, random.gauss(0.5, 0.15)))
+            target_y = box['y'] + box['height'] * max(0.15, min(0.85, random.gauss(0.5, 0.15)))
 
-            # Move mouse in 'human' way (multiple small steps)
-            # This is a simplified version of Bézier pathing
-            await self.page.mouse.move(target_x, target_y, steps=random.randint(5, 12))
-            await asyncio.sleep(random.uniform(0.1, 0.3))
+            # Get current mouse position estimate (or use a random starting point)
+            vp = self.page.viewport_size
+            if vp:
+                start_x = random.uniform(0, vp['width'])
+                start_y = random.uniform(0, vp['height'])
+            else:
+                start_x = random.uniform(100, 800)
+                start_y = random.uniform(100, 500)
+
+            # Cubic Bézier mouse movement for natural trajectory
+            await self._bezier_mouse_move(start_x, start_y, target_x, target_y)
+            
+            # Tiny pause before click (aim/settle time)
+            await asyncio.sleep(random.uniform(0.05, 0.18))
+
+            # Randomized mouse button hold duration (humans don't click instantly)
+            click_delay = random.randint(60, 180)
 
             # Action synchronizer
             if self.action_lock:
                 async with self.action_lock:
-                    await self.page.mouse.click(target_x, target_y, delay=random.randint(80, 200))
+                    await self.page.mouse.click(target_x, target_y, delay=click_delay)
             else:
-                await self.page.mouse.click(target_x, target_y, delay=random.randint(80, 200))
+                await self.page.mouse.click(target_x, target_y, delay=click_delay)
+            
+            # Small post-click drift (hand relaxation)
+            if random.random() < 0.4:
+                drift_x = target_x + random.uniform(-8, 8)
+                drift_y = target_y + random.uniform(-5, 15)
+                await self.page.mouse.move(drift_x, drift_y, steps=random.randint(2, 5))
+
+    async def _bezier_mouse_move(self, start_x: float, start_y: float, end_x: float, end_y: float):
+        """
+        Move the mouse cursor along a cubic Bézier curve with natural
+        acceleration (fast start, slow end - Fitts's law approximation).
+        
+        Uses two random control points offset from the straight line
+        to create a natural arc.
+        """
+        import math
+        
+        # Distance determines number of steps and control point spread
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # More steps for longer distances (with natural variation)
+        num_steps = max(8, min(40, int(distance / 15) + random.randint(-3, 5)))
+        
+        # Generate control points with perpendicular offset (for curve arc)
+        # Control point 1 (about 1/3 of the way, with arc offset)
+        spread = min(distance * 0.4, 150)
+        cp1_x = start_x + dx * random.uniform(0.2, 0.4) + random.uniform(-spread, spread)
+        cp1_y = start_y + dy * random.uniform(0.2, 0.4) + random.uniform(-spread * 0.5, spread * 0.5)
+        
+        # Control point 2 (about 2/3 of the way, smaller offset for convergence)
+        cp2_x = start_x + dx * random.uniform(0.6, 0.8) + random.uniform(-spread * 0.3, spread * 0.3)
+        cp2_y = start_y + dy * random.uniform(0.6, 0.8) + random.uniform(-spread * 0.3, spread * 0.3)
+        
+        # Generate points along the Bézier curve with easing (ease-out)
+        last_x, last_y = start_x, start_y
+        for i in range(1, num_steps + 1):
+            # Ease-out timing function: fast start, slow approach
+            t_linear = i / num_steps
+            t = 1 - (1 - t_linear) ** 2.5  # Quadratic ease-out
+            
+            # Cubic Bézier formula
+            inv_t = 1 - t
+            bx = (inv_t**3 * start_x + 
+                  3 * inv_t**2 * t * cp1_x + 
+                  3 * inv_t * t**2 * cp2_x + 
+                  t**3 * end_x)
+            by = (inv_t**3 * start_y + 
+                  3 * inv_t**2 * t * cp1_y + 
+                  3 * inv_t * t**2 * cp2_y + 
+                  t**3 * end_y)
+            
+            # Add micro-jitter (hand tremor) - reduces near the target
+            jitter_scale = max(0.2, 1.0 - t)
+            bx += random.gauss(0, 0.5 * jitter_scale)
+            by += random.gauss(0, 0.5 * jitter_scale)
+            
+            await self.page.mouse.move(bx, by)
+            
+            # Variable inter-step delay (slower near target = Fitts's law)
+            speed_factor = max(0.3, 1.0 - t * 0.7)
+            await asyncio.sleep(random.uniform(0.003, 0.015) * speed_factor)
 
     async def remove_overlays(self):
         """
@@ -626,8 +705,13 @@ class FaucetBot:
 
     async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None):
         """
-        Type text into a field with human-like delays between keystrokes.
-        Uses human profile timing if available.
+        Type text into a field with human-like keystroke dynamics.
+        
+        Simulates realistic typing patterns including:
+        - Variable inter-key delay (faster for common sequences, slower after spaces)
+        - Occasional brief pauses (thinking mid-word)
+        - Burst typing followed by short pauses
+        - Different speed for different character types
         
         Args:
             selector: CSS selector or Playwright Locator
@@ -639,20 +723,48 @@ class FaucetBot:
         
         await self.human_like_click(locator)
         
-        # Clear existing text if any (optional, context dependent)
-        await locator.fill("") 
+        # Clear existing text
+        await locator.fill("")
         
-        # Use human profile for typing speed if available
+        # Determine base typing speed from profile
         if self.human_profile and delay_min is None and delay_max is None:
-            # Get per-character delay from profile
             char_delay_s = HumanProfile.get_action_delay(self.human_profile, "type")
-            delay_ms = max(20, min(300, int(char_delay_s * 1000)))
-            await locator.type(text, delay=delay_ms)
+            base_delay_ms = max(30, min(250, int(char_delay_s * 1000)))
         else:
-            # Fallback to legacy behavior profile system
             delay_min, delay_max = self._resolve_typing_range(delay_min, delay_max)
-            delay_ms = self._behavior_rng.randint(delay_min, delay_max)
-            await locator.type(text, delay=delay_ms)
+            base_delay_ms = self._behavior_rng.randint(delay_min, delay_max)
+        
+        # Type character by character with realistic dynamics
+        # Common letter pairs that are typed faster (muscle memory)
+        fast_pairs = {'th', 'he', 'in', 'er', 'an', 'on', 'en', 'at', 'es', 'or', 'ti', 'te', 'st', 'io', 'ar', 'le', 'nd', 'ou', 'it', 'se'}
+        
+        for i, char in enumerate(text):
+            # Calculate delay for this keystroke
+            delay = base_delay_ms
+            
+            # Common digraphs are faster (muscle memory)
+            if i > 0 and text[i-1:i+1].lower() in fast_pairs:
+                delay = int(delay * random.uniform(0.5, 0.75))
+            
+            # Capitals and special characters take slightly longer
+            if char.isupper() or char in '!@#$%^&*()_+-=[]{}|;:,.<>?/~`':
+                delay = int(delay * random.uniform(1.2, 1.6))
+            
+            # Spaces often have a tiny pause (between words)
+            if char == ' ':
+                delay = int(delay * random.uniform(1.1, 1.8))
+            
+            # Occasional "thinking" micro-pause (2-5% of keystrokes)
+            if random.random() < 0.035 and i > 2:
+                await asyncio.sleep(random.uniform(0.3, 0.9))
+            
+            # Add natural variance (±30%)
+            delay = int(delay * random.uniform(0.7, 1.3))
+            delay = max(20, delay)
+            
+            # Use page.keyboard for reliable character input
+            await self.page.keyboard.type(char, delay=0)
+            await asyncio.sleep(delay / 1000.0)
 
     async def check_page_health(self) -> bool:
         """
@@ -751,8 +863,12 @@ class FaucetBot:
 
     async def idle_mouse(self, duration: Optional[float] = None):
         """
-        Move mouse randomly to simulate user reading/thinking.
-        Uses human profile for timing if available.
+        Move mouse randomly to simulate user reading/thinking
+        with natural movement patterns including:
+        - Drift towards content areas (not edges)
+        - Variable speed (slow drifts + quick repositions)
+        - Occasional pauses (hand resting)
+        - Small circular/figure-8 micro-movements
         
         Args:
             duration: Approximate duration in seconds (optional)
@@ -765,28 +881,69 @@ class FaucetBot:
                 duration = self._resolve_idle_duration(duration)
         
         start = time.time()
+        # Initialize cursor position
+        vp = self.page.viewport_size
+        if not vp:
+            return
+        
+        w, h = vp['width'], vp['height']
+        # Start in the content area (avoid edges)
+        cur_x = random.uniform(w * 0.15, w * 0.85)
+        cur_y = random.uniform(h * 0.2, h * 0.7)
+        
         while time.time() - start < duration:
-            # Get current viewport size
-            vp = self.page.viewport_size
-            if not vp: return
+            action = random.random()
             
-            w, h = vp['width'], vp['height']
-            
-            # Random destination
-            x = random.randint(0, w)
-            y = random.randint(0, h)
-            
-            # Move in short burst
-            await self.page.mouse.move(x, y, steps=self._behavior_rng.randint(5, 20))
-            await asyncio.sleep(self._behavior_rng.uniform(0.1, 0.5))
+            if action < 0.15:
+                # 15%: Hand resting - no movement, just pause
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+                
+            elif action < 0.35:
+                # 20%: Small micro-circle (finger fidget)
+                radius = random.uniform(3, 12)
+                steps = random.randint(6, 12)
+                for j in range(steps):
+                    import math
+                    angle = 2 * math.pi * j / steps
+                    mx = cur_x + radius * math.cos(angle)
+                    my = cur_y + radius * math.sin(angle)
+                    await self.page.mouse.move(mx, my)
+                    await asyncio.sleep(random.uniform(0.02, 0.06))
+                    
+            elif action < 0.65:
+                # 30%: Short drift (reading along a line)
+                drift_x = cur_x + random.uniform(-60, 60)
+                drift_y = cur_y + random.uniform(-15, 25)  # Bias slightly downward
+                # Clamp to content area
+                drift_x = max(w * 0.05, min(w * 0.95, drift_x))
+                drift_y = max(h * 0.05, min(h * 0.95, drift_y))
+                
+                steps = random.randint(4, 10)
+                await self.page.mouse.move(drift_x, drift_y, steps=steps)
+                cur_x, cur_y = drift_x, drift_y
+                await asyncio.sleep(random.uniform(0.15, 0.5))
+                
+            else:
+                # 35%: Quick reposition (looking at different part of page)
+                new_x = random.gauss(w * 0.5, w * 0.2)  # Gaussian toward center
+                new_y = random.gauss(h * 0.45, h * 0.2)
+                new_x = max(w * 0.05, min(w * 0.95, new_x))
+                new_y = max(h * 0.05, min(h * 0.95, new_y))
+                
+                await self.page.mouse.move(new_x, new_y, steps=random.randint(6, 15))
+                cur_x, cur_y = new_x, new_y
+                await asyncio.sleep(random.uniform(0.2, 0.8))
 
     async def simulate_reading(self, duration: Optional[float] = None):
         """
         Simulate a user reading content with natural scrolling behavior.
-        Uses human profile for timing if available.
         
-        Combines idle mouse movement with randomized scrolling to mimic
-        real user interaction patterns while consuming content.
+        Models realistic reading patterns:
+        - Smooth scroll segments (reading paragraphs)
+        - Quick skim scrolls (scanning content)
+        - Occasional scroll-back (re-reading)
+        - Mouse following text (tracking with cursor)
+        - Pauses at interesting content
         
         Args:
             duration: Approximate duration in seconds to simulate reading (optional)
@@ -799,47 +956,193 @@ class FaucetBot:
                 duration = self._resolve_reading_duration(duration)
         
         start = time.time()
+        vp = self.page.viewport_size
+        if not vp:
+            await asyncio.sleep(duration)
+            return
+        
+        total_scrolled = 0
+        
         while time.time() - start < duration:
-            # Small random scrolls (mostly down, sometimes up)
-            direction = self._behavior_rng.choice([1, 1, 1, -1])  # 75% down, 25% up
-            delta = self._behavior_rng.randint(30, 100) * direction
-            await self.page.mouse.wheel(0, delta)
+            action_roll = self._behavior_rng.random()
             
-            # Natural pause between scrolls
-            await asyncio.sleep(self._behavior_rng.uniform(0.4, 1.2))
-            
-            # Occasional small mouse movement
-            if self._behavior_rng.random() < 0.3:
-                vp = self.page.viewport_size
-                if vp:
-                    x = self._behavior_rng.randint(int(vp['width'] * 0.2), int(vp['width'] * 0.8))
-                    y = self._behavior_rng.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.7))
-                    await self.page.mouse.move(x, y, steps=self._behavior_rng.randint(3, 8))
+            if action_roll < 0.50:
+                # 50%: Normal reading scroll (small, paragraph-sized)
+                scroll_amount = self._behavior_rng.randint(40, 120)
+                # Smooth scroll: multiple small wheel events
+                scroll_steps = self._behavior_rng.randint(2, 5)
+                for _ in range(scroll_steps):
+                    await self.page.mouse.wheel(0, scroll_amount // scroll_steps)
+                    await asyncio.sleep(self._behavior_rng.uniform(0.05, 0.15))
+                total_scrolled += scroll_amount
+                
+                # Reading pause (longer = more engaged)
+                await asyncio.sleep(self._behavior_rng.uniform(0.8, 2.5))
+                
+            elif action_roll < 0.65:
+                # 15%: Quick skim scroll (scanning content)
+                scroll_amount = self._behavior_rng.randint(150, 350)
+                await self.page.mouse.wheel(0, scroll_amount)
+                total_scrolled += scroll_amount
+                await asyncio.sleep(self._behavior_rng.uniform(0.3, 0.8))
+                
+            elif action_roll < 0.75:
+                # 10%: Scroll back up (re-reading something)
+                scroll_back = self._behavior_rng.randint(50, min(200, max(50, total_scrolled // 3)))
+                await self.page.mouse.wheel(0, -scroll_back)
+                total_scrolled = max(0, total_scrolled - scroll_back)
+                await asyncio.sleep(self._behavior_rng.uniform(0.5, 1.5))
+                
+            elif action_roll < 0.88:
+                # 13%: Mouse tracks text (cursor follows reading position)
+                w = vp['width']
+                # Simulate reading left-to-right
+                line_y = self._behavior_rng.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.6))
+                x_start = self._behavior_rng.randint(int(w * 0.1), int(w * 0.3))
+                x_end = self._behavior_rng.randint(int(w * 0.5), int(w * 0.8))
+                
+                await self.page.mouse.move(x_start, line_y, steps=3)
+                steps = self._behavior_rng.randint(6, 15)
+                for step in range(steps):
+                    progress = step / steps
+                    x = x_start + (x_end - x_start) * progress
+                    y = line_y + random.gauss(0, 1.5)
+                    await self.page.mouse.move(x, y)
+                    await asyncio.sleep(self._behavior_rng.uniform(0.04, 0.12))
+                
+                await asyncio.sleep(self._behavior_rng.uniform(0.3, 0.8))
+                
+            else:
+                # 12%: Pause + idle micro-movement (absorbed in content)
+                await self.idle_mouse(duration=self._behavior_rng.uniform(0.5, 1.5))
+
+    async def random_micro_interaction(self):
+        """
+        Perform a small random interaction that makes the session appear
+        more organic. Called periodically during long waits.
+        
+        Possible micro-actions:
+        - Hover over a random link
+        - Scroll slightly
+        - Tab focus/blur cycle
+        - Mouse idle movement
+        - Text selection/deselection
+        """
+        action = random.random()
+        
+        try:
+            if action < 0.25:
+                # Hover over a random visible link
+                links = self.page.locator("a:visible")
+                count = await links.count()
+                if count > 0:
+                    idx = random.randint(0, min(count - 1, 10))
+                    link = links.nth(idx)
+                    try:
+                        await link.hover(timeout=2000)
+                        await asyncio.sleep(random.uniform(0.3, 1.0))
+                    except Exception:
+                        pass
+                        
+            elif action < 0.45:
+                # Small scroll
+                direction = random.choice([1, 1, -1])
+                amount = random.randint(20, 80) * direction
+                await self.page.mouse.wheel(0, amount)
+                await asyncio.sleep(random.uniform(0.2, 0.5))
+                
+            elif action < 0.60:
+                # Tab focus/blur cycle
+                await self.random_focus_blur()
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+                
+            elif action < 0.80:
+                # Idle mouse movement
+                await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+                
+            else:
+                # Just wait naturally
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+                
+        except Exception:
+            # Micro-interactions should never crash the bot
+            pass
 
     async def random_focus_blur(self):
         """
         Simulate tab switching/focus events to appear more human.
         
-        Dispatches blur/focus events with realistic timing to mimic
-        a user switching between tabs or windows.
+        Models realistic behavior: user switches to another tab,
+        spends variable time there, then returns. Uses page-level
+        visibility API events for maximum realism.
         """
-        delay = self._resolve_focus_blur_delay()
-        delay_ms = int(delay * 1000)
+        # How long user "looks at another tab"
+        if self.human_profile:
+            away_time = HumanProfile.get_action_delay(self.human_profile, "read") * random.uniform(0.3, 0.8)
+        else:
+            away_time = random.uniform(0.8, 4.0)
+        
+        away_time_ms = int(away_time * 1000)
+        
         await self.page.evaluate(
-            """() => {
-            // Dispatch blur event (user switched away)
-            document.dispatchEvent(new Event('blur'));
+            """(awayMs) => {
+            // Simulate tab losing focus
+            document.dispatchEvent(new Event('visibilitychange'));
             window.dispatchEvent(new FocusEvent('blur'));
-
-            // Schedule focus event after random delay (user came back)
-            const delay = %d;  // profile-based delay
+            document.dispatchEvent(new Event('blur'));
+            
+            // After 'away' period, simulate returning
             setTimeout(() => {
-                document.dispatchEvent(new Event('focus'));
+                document.dispatchEvent(new Event('visibilitychange'));
                 window.dispatchEvent(new FocusEvent('focus'));
-            }, delay);
-        }"""
-            % delay_ms
+                document.dispatchEvent(new Event('focus'));
+                
+                // Mouse re-entry (user moves cursor back into window)
+                const evt = new MouseEvent('mouseenter', {
+                    bubbles: true, clientX: Math.random() * window.innerWidth,
+                    clientY: Math.random() * window.innerHeight
+                });
+                document.dispatchEvent(evt);
+            }, awayMs);
+        }""",
+            away_time_ms
         )
+        
+        # Actually wait the away time
+        await asyncio.sleep(away_time)
+
+    async def human_wait(self, seconds: float, with_interactions: bool = True):
+        """
+        Wait for a specified duration while performing periodic human-like
+        micro-interactions to maintain session liveness.
+        
+        Use this instead of bare asyncio.sleep() for long waits (>5s)
+        to prevent inactivity detection.
+        
+        Args:
+            seconds: Total time to wait
+            with_interactions: Whether to perform micro-interactions during wait
+        """
+        if not with_interactions or seconds < 3:
+            await asyncio.sleep(seconds)
+            return
+        
+        start = time.time()
+        while time.time() - start < seconds:
+            remaining = seconds - (time.time() - start)
+            if remaining <= 0:
+                break
+            
+            # Wait a chunk, then do a micro-interaction
+            chunk = min(remaining, random.uniform(8, 25))
+            await asyncio.sleep(chunk)
+            
+            remaining = seconds - (time.time() - start)
+            if remaining > 2 and with_interactions:
+                try:
+                    await self.random_micro_interaction()
+                except Exception:
+                    pass
 
     async def handle_cloudflare(self, max_wait_seconds: int = 60) -> bool:
         """

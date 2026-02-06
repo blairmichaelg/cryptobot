@@ -143,51 +143,96 @@ class StealthHub:
     """
     
     @staticmethod
-    def get_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0, audio_seed: int = 98765, languages: Optional[List[str]] = None, platform: str = "Win32") -> str:
+    def get_stealth_script(canvas_seed: int = 12345, gpu_index: int = 0, audio_seed: int = 98765, languages: Optional[List[str]] = None, platform: str = "Win32", hardware_concurrency: Optional[int] = None) -> str:
         """
         Returns a comprehensive JavaScript snippet to be injected into the browser context.
         
+        Includes v3.0 stealth protections:
+        - Automation artifact deep-clean (Playwright/Selenium/Puppeteer/CDP)
+        - Canvas/WebGL/Audio fingerprint evasion (seeded per-profile)
+        - ClientRects noise, Performance timing jitter
+        - Navigator property spoofing (plugins, battery, connection, devices)
+        - Screen/Display consistency, Visibility/Focus fix
+        - Proxy/VPN header leak prevention
+        - Speech synthesis voices, Clipboard protection
+        
         Args:
             canvas_seed: Deterministic seed for canvas noise (ensures same profile = same fingerprint)
-            gpu_index: Index into GPU configurations array (0-12, selected per profile)
+            gpu_index: Index into GPU configurations array (0-16, selected per profile)
+            audio_seed: Deterministic seed for audio fingerprint noise
+            languages: Language list (e.g., ['en-US', 'en'])
+            platform: Navigator platform string
+            hardware_concurrency: CPU core count to report (auto-calculated from seed if None)
         
         Returns:
             Combined stealth script with per-profile fingerprint consistency
         """
-        # Import here to get the latest version with fingerprint parameters
         from .stealth_scripts import get_full_stealth_script
         return get_full_stealth_script(
             canvas_seed=canvas_seed,
             gpu_index=gpu_index,
             audio_seed=audio_seed,
             languages=languages,
-            platform=platform
+            platform=platform,
+            hardware_concurrency=hardware_concurrency
         )
 
     @staticmethod
     def get_random_dimensions():
-        """Returns a randomized viewport and screen resolution."""
+        """Returns a randomized viewport and screen resolution.
+        
+        Includes the most common desktop resolutions from 2024-2026 Steam/StatCounter data.
+        Weighted towards most popular to reduce fingerprint uniqueness.
+        """
         resolutions = [
-            {"width": 1920, "height": 1080, "screen": {"width": 1920, "height": 1080}},
-            {"width": 1366, "height": 768, "screen": {"width": 1366, "height": 768}},
-            {"width": 1440, "height": 900, "screen": {"width": 1440, "height": 900}},
-            {"width": 1536, "height": 864, "screen": {"width": 1536, "height": 864}}
+            {"width": 1920, "height": 1080, "screen": {"width": 1920, "height": 1080}},  # Most common
+            {"width": 2560, "height": 1440, "screen": {"width": 2560, "height": 1440}},  # 1440p growing
+            {"width": 1366, "height": 768, "screen": {"width": 1366, "height": 768}},   # Laptops
+            {"width": 1440, "height": 900, "screen": {"width": 1440, "height": 900}},   # MacBook
+            {"width": 1536, "height": 864, "screen": {"width": 1536, "height": 864}},   # Scaled
+            {"width": 1600, "height": 900, "screen": {"width": 1600, "height": 900}},   # Laptops
+            {"width": 1280, "height": 720, "screen": {"width": 1280, "height": 720}},   # HD
+            {"width": 1680, "height": 1050, "screen": {"width": 1680, "height": 1050}}, # 16:10
+            {"width": 1920, "height": 1200, "screen": {"width": 1920, "height": 1200}}, # 16:10
         ]
-        return random.choice(resolutions)
+        # Weight towards common resolutions
+        weights = [35, 15, 12, 10, 8, 7, 5, 4, 4]
+        return random.choices(resolutions, weights=weights, k=1)[0]
 
     @staticmethod
     def get_human_ua(pool: Optional[List[str]] = None) -> str:
-        """Returns a modern, common User Agent from a provided pool or fallback."""
+        """Returns a modern, common User Agent from a provided pool or fallback.
+        
+        Updated to 2025-2026 browser versions. Weighted towards Chrome (65% market share)
+        to avoid statistical anomalies.
+        """
         if pool:
             return random.choice(pool)
-            
+        
+        # 2025-2026 User Agents - kept current to avoid old-version detection
         uas = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/107.0.0.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15"
+            # Chrome 131-134 (Windows) - most common
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            # Chrome (macOS)
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            # Chrome (Linux)
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            # Firefox 133-135
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0",
+            # Edge
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0",
+            # Safari (macOS)
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
         ]
-        return random.choice(uas)
+        # Weight: Chrome Windows > Chrome Mac > Firefox > Edge > Safari > Chrome Linux
+        weights = [15, 12, 10, 8, 8, 6, 5, 4, 7, 5, 3, 5, 4, 4, 4]
+        return random.choices(uas, weights=weights, k=1)[0]

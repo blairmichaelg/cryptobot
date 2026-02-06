@@ -4,7 +4,7 @@ from playwright.async_api import Route, Request
 
 logger = logging.getLogger(__name__)
 
-# Common Ad/Tracker/Fingerprinting Domains (Expanded)
+# Common Ad/Tracker/Fingerprinting Domains (Expanded 2025-2026)
 AD_DOMAINS = [
     # Google Ads & Analytics
     r".*googlesyndication\.com.*",
@@ -14,10 +14,12 @@ AD_DOMAINS = [
     r".*googletagmanager\.com.*",
     r".*googletagservices\.com.*",
     r".*pagead2\.googlesyndication\.com.*",
+    r".*adservice\.google\.com.*",
     # Facebook/Meta
     r".*facebook\.net.*",
     r".*facebook\.com/tr.*",
     r".*connect\.facebook\.net.*",
+    r".*pixel\.facebook\.com.*",
     # Amazon
     r".*amazon-adsystem\.com.*",
     r".*assoc-amazon\.com.*",
@@ -32,6 +34,16 @@ AD_DOMAINS = [
     r".*adform\.net.*",
     r".*bidswitch\.net.*",
     r".*casalemedia\.com.*",
+    r".*popads\.net.*",
+    r".*popcash\.net.*",
+    r".*propellerads\.com.*",
+    r".*adsterra\.com.*",
+    r".*hilltopads\.net.*",
+    r".*richads\.com.*",
+    r".*clickadu\.com.*",
+    r".*exoclick\.com.*",
+    r".*juicyads\.com.*",
+    r".*trafficjunky\.com.*",
     # Analytics & Tracking
     r".*hotjar\.com.*",
     r".*bing\.com/bat\.js.*",
@@ -42,14 +54,44 @@ AD_DOMAINS = [
     r".*amplitude\.com.*",
     r".*fullstory\.com.*",
     r".*heapanalytics\.com.*",
-    # Fingerprinting & Bot Detection
+    r".*smartlook\.com.*",
+    r".*logrocket\.com.*",
+    r".*posthog\.com.*",
+    r".*plausible\.io.*",
+    r".*matomo\.cloud.*",
+    # Bot Detection & Fingerprinting Services
     r".*datadome\.co.*",
     r".*perimeterx\.net.*",
     r".*kasada\.io.*",
     r".*imperva\.com.*",
     r".*fingerprintjs\.com.*",
+    r".*fingerprint\.com.*",
     r".*creativecdn\.com.*",
-    # Social Widgets (load tracking scripts)
+    r".*distil\.it.*",
+    r".*distilnetworks\.com.*",
+    r".*arkoselabs\.com.*",
+    r".*funcaptcha\.com.*",
+    r".*shape\.com.*",
+    r".*shapesecurity\.com.*",
+    r".*akamaiedge\.net/bot.*",
+    r".*botd\.io.*",
+    r".*castle\.io.*",
+    r".*human\.com.*",
+    r".*humansecurity\.com.*",
+    r".*ipqualityscore\.com.*",
+    r".*maxmind\.com.*",
+    r".*sift\.com.*",
+    r".*device-detector\.io.*",
+    # IP/Proxy Detection APIs  
+    r".*api\.ipify\.org.*",
+    r".*ip-api\.com.*",
+    r".*ipinfo\.io.*",
+    r".*proxycheck\.io.*",
+    r".*iphub\.info.*",
+    r".*ip2location\.com.*",
+    r".*getipintel\.net.*",
+    r".*abstractapi\.com.*",
+    # Social Widgets
     r".*addthis\.com.*",
     r".*sharethis\.com.*",
     # Crypto-specific Ad Networks
@@ -57,6 +99,8 @@ AD_DOMAINS = [
     r".*bitmedia\.io.*",
     r".*coinzilla\.com.*",
     r".*cointraffic\.io.*",
+    r".*coinad\.media.*",
+    r".*mellow\.ads.*",
 ]
 
 class ResourceBlocker:
