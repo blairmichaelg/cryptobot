@@ -1311,8 +1311,7 @@ class ProxyManager:
             return str(name).lower().replace("_", "").replace(" ", "")
 
         bypass_raw = getattr(self.settings, "proxy_bypass_faucets", None) or []
-        if not bypass_raw:
-            bypass_raw = ["freebitcoin"]
+        # Don't apply a default - respect explicit empty list to enable proxies for all faucets
         bypass = {_normalize(name) for name in bypass_raw}
         
         for i, profile in enumerate(profiles):
