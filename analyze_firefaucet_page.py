@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from browser.instance import BrowserManager
-from core.settings import BotSettings
+from core.config import BotSettings
 from core.registry import get_faucet_class
 
 async def analyze_firefaucet():
