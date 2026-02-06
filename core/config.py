@@ -55,7 +55,7 @@ class BotSettings(BaseSettings):
     captcha_fallback_api_key: Optional[str] = None
     
     # 2Captcha Proxy Auto-Refresh Settings
-    proxy_auto_refresh_enabled: bool = True  # Enable automatic proxy refresh
+    proxy_auto_refresh_enabled: bool = False  # Enable automatic proxy refresh (opt-in)
     proxy_auto_refresh_interval_hours: int = 24  # How often to check and refresh proxies
     proxy_min_healthy_count: int = 50  # Minimum healthy proxies before triggering refresh
     proxy_target_count: int = 100  # Target total proxy count

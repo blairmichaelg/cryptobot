@@ -433,7 +433,7 @@ The bot supports **automatic proxy fetching** from 2Captcha residential proxy se
 2. Enable in `.env`:
    ```bash
    USE_2CAPTCHA_PROXIES=true
-   PROXY_AUTO_REFRESH_ENABLED=true
+   PROXY_AUTO_REFRESH_ENABLED=true  # Optional: enable auto-refresh
    ```
 3. Run the fetch script:
    ```bash

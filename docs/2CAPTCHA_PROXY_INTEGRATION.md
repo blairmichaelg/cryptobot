@@ -63,7 +63,6 @@ print(f"Added {count} valid proxies to pool")
 #### Method 2: Using the test script
 
 ```bash
-cd /home/runner/work/cryptobot/cryptobot
 python3 test_fetch_2captcha_proxies.py
 ```
 
