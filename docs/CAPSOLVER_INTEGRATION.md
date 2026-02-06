@@ -21,8 +21,12 @@ Add to `.env`:
 TWOCAPTCHA_API_KEY=your_2captcha_key_here
 
 # Fallback provider (CapSolver for hCaptcha)
-CAPTCHA_FALLBACK_PROVIDER=capsolver
 CAPSOLVER_API_KEY=your_capsolver_key_here
+CAPTCHA_FALLBACK_PROVIDER=capsolver
+
+# Note: CAPTCHA_FALLBACK_API_KEY is optional - if not set, 
+# the system will automatically use CAPSOLVER_API_KEY when 
+# CAPTCHA_FALLBACK_PROVIDER=capsolver
 ```
 
 ### 3. Test Configuration
@@ -39,11 +43,12 @@ HEADLESS=true python3 test_all_claims.py
 
 ### Automatic Fallback Chain
 1. **2Captcha tries first** - Fast and cheap for Turnstile/reCaptcha
-2. **CapSolver activates** - When 2Captcha returns errors:
-   - `ERROR_METHOD_CALL` (hCaptcha not supported)
+2. **CapSolver activates immediately** - When 2Captcha returns errors:
+   - `ERROR_METHOD_CALL` (hCaptcha not supported) ⚡ **Triggers instant fallback**
    - `ERROR_NO_SLOT` (service busy)
    - `ERROR_ZERO_BALANCE` (out of funds)
-3. **Up to 2 retries per provider** - Handles temporary timeouts
+3. **Up to 2 retries per provider** - Handles temporary timeouts (but not for ERROR_METHOD_CALL)
+4. **Auto-configured API keys** - Fallback provider automatically uses matching API key (e.g., CAPSOLVER_API_KEY for capsolver)
 
 ### Provider Selection Logic
 Located in `solvers/captcha.py`:
@@ -104,10 +109,18 @@ python3 -c "import asyncio; from solvers.capsolver import CapSolverClient; impor
 - **Fix**: Increase `CAPTCHA_DAILY_BUDGET` in `.env` (default $5.00)
 
 ## Implementation Files
-- `solvers/capsolver.py` - CapSolver API client (NEW)
-- `solvers/captcha.py` - Main solver with fallback logic (EXISTING)
+- `solvers/capsolver.py` - CapSolver API client (EXISTING)
+- `solvers/captcha.py` - Main solver with fallback logic (ENHANCED - now raises exception for ERROR_METHOD_CALL)
+- `faucets/base.py` - FaucetBot initialization (ENHANCED - auto-configures fallback API key)
 - `core/config.py` - Configuration fields (EXISTING)
-- `.env.example` - Environment template (UPDATED)
+- `.env.example` - Environment template (UPDATED - includes CAPTCHA_FALLBACK_PROVIDER)
+- `tests/test_capsolver_fallback.py` - Comprehensive test suite (NEW - 11 tests covering all scenarios)
+
+## Recent Improvements (Feb 2026)
+✅ **ERROR_METHOD_CALL instant fallback** - No more wasted retries when 2Captcha doesn't support hCaptcha  
+✅ **Auto-configured fallback keys** - No need to duplicate API keys in .env  
+✅ **Comprehensive test coverage** - 11 unit tests validating all fallback scenarios  
+✅ **Updated documentation** - Clear .env.example with fallback provider configuration
 
 ## Next Steps
 After CapSolver integration:

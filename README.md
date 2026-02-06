@@ -103,6 +103,11 @@ Create a `.env` file in the root directory. Copy the structure from `.env.exampl
 # --- Core Credentials ---
 TWOCAPTCHA_API_KEY=your_2captcha_key_here
 
+# --- Optional: CapSolver Fallback (for hCaptcha support) ---
+# When 2Captcha fails on hCaptcha (e.g., Cointiply), CapSolver takes over
+CAPSOLVER_API_KEY=your_capsolver_key_here
+CAPTCHA_FALLBACK_PROVIDER=capsolver
+
 # --- Faucet Credentials ---
 FIREFAUCET_USERNAME=email@example.com
 FIREFAUCET_PASSWORD=secret
@@ -124,6 +129,8 @@ ELECTRUM_RPC_URL=http://127.0.0.1:7777
 # ELECTRUM_RPC_USER=user
 # ELECTRUM_RPC_PASS=pass
 ```
+
+> **💡 Tip:** For Cointiply and other faucets using hCaptcha, configure CapSolver as fallback provider. See [docs/CAPSOLVER_INTEGRATION.md](docs/CAPSOLVER_INTEGRATION.md) for details.
 
 ---
 
@@ -479,10 +486,16 @@ Some faucets (DutchyCorp, CoinPayU, AdBTC) have aggressive proxy detection that 
 - "Manual solve timed out" messages
 - Captcha not being detected
 - Token injection not working
+- "ERROR_METHOD_CALL" from 2Captcha (especially for hCaptcha)
 
 **Solutions**:
 
 - Verify 2Captcha/CapSolver API key is valid and has credits
+- **For hCaptcha errors**: Configure CapSolver as fallback provider (see [CapSolver Integration](docs/CAPSOLVER_INTEGRATION.md))
+  ```bash
+  CAPSOLVER_API_KEY=your_key
+  CAPTCHA_FALLBACK_PROVIDER=capsolver
+  ```
 - Check logs for sitekey extraction errors
 - Enable `--visible` mode to manually solve and observe behavior
 - For image captchas, manual solving is currently required
