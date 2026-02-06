@@ -119,8 +119,11 @@ async def test_faucet(faucet_name: str, action: str = "check", headless: bool = 
         logger.warning(f"⚠️ 2Captcha Check Failed: {captcha_result['error']}")
         logger.warning("CAPTCHA will need manual solving!")
     
-    # Set cookie encryption key env var to avoid regenerating
-    os.environ["CRYPTOBOT_COOKIE_KEY"] = "mRgSLNkLX4aQdi-shVgeEU1mosio2nD9ZGf2slK1To0="
+    # Use cookie encryption key from environment (don't hardcode in source!)
+    # If not set, browser/secure_storage.py will generate one automatically
+    if "CRYPTOBOT_COOKIE_KEY" not in os.environ:
+        logger.warning("CRYPTOBOT_COOKIE_KEY not set - a new key will be generated")
+        logger.info("To reuse cookies across runs, set CRYPTOBOT_COOKIE_KEY in .env")
     
     # Launch browser in VISIBLE mode
     logger.info(f"Launching browser for {faucet_name}...")
