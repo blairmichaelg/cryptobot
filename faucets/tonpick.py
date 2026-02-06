@@ -41,7 +41,6 @@ class TonPickBot(PickFaucetBase):
         try:
             selectors = [selector] + (fallback_selectors or [
                 ".balance",
-                ".balance",
                 ".navbar-right .balance",
                 "#balance",
                 "span.balance",
@@ -77,7 +76,6 @@ class TonPickBot(PickFaucetBase):
         """
         try:
             selectors = [selector] + (fallback_selectors or [
-                "#time",
                 "#time",
                 ".timer",
                 "[data-timer]",

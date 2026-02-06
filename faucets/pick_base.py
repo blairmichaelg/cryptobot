@@ -341,11 +341,35 @@ class PickFaucetBase(FaucetBot):
                     logger.error(f"[{self.faucet_name}] Captcha solve failed on login")
                     return False
 
-            login_btn = self.page.locator(
-                'button#process_login, button.btn, button.process_btn, button:has-text("Login"), '
-                'button:has-text("Log in"), button[type="submit"], input[type="submit"], '
-                '#login_button, .login-btn, .login-button'
-            )
+            # Find login button - prioritize specific selectors over generic ones
+            login_btn_selectors = [
+                'button#process_login',
+                '#login_button',
+                'button.login-btn',
+                'button.login-button',
+                'button.process_btn',
+                'button:has-text("Login")',
+                'button:has-text("Log in")',
+                'button[type="submit"]:visible',
+                'input[type="submit"]:visible',
+                'button.btn:visible:has-text("Login")',  # More specific than just button.btn
+            ]
+            
+            login_btn = None
+            for sel in login_btn_selectors:
+                try:
+                    locator = self.page.locator(sel).first
+                    if await locator.is_visible(timeout=2000):
+                        login_btn = locator
+                        logger.info(f"[{self.faucet_name}] Using login button selector: {sel}")
+                        break
+                except Exception:
+                    continue
+            
+            if not login_btn:
+                logger.error(f"[{self.faucet_name}] No visible login button found")
+                return False
+            
             await self.human_like_click(login_btn)
 
             try:
