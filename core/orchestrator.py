@@ -175,6 +175,20 @@ class JobScheduler:
         self.consecutive_job_failures = 0
         self.performance_alert_score = 0
         
+        # Daily summary scheduling
+        self.last_daily_summary_time = 0
+        self.daily_summary_scheduled = False
+        
+        # Queue stall detection
+        self.last_queue_progress_time = time.time()
+        self.last_queue_size = 0
+        self.queue_stall_threshold_seconds = 600  # 10 minutes
+        
+        # Error rate tracking for alerting
+        self.recent_errors: List[Dict[str, Any]] = []  # Track recent errors with timestamps
+        self.error_window_seconds = 600  # 10 minute window
+        self.error_threshold = 5  # Alert on >5 errors in window
+        
         # Operation mode tracking for graceful degradation
         from core.config import OperationMode
         self.current_mode: OperationMode = OperationMode.NORMAL
@@ -183,6 +197,7 @@ class JobScheduler:
         
         # Try to restore session on init
         self._restore_session()
+
 
     def _restore_session(self):
         """Restore job queue from disk if available."""
@@ -400,6 +415,152 @@ class JobScheduler:
                 f.write(f"Accounts: {', '.join(active_accounts) if active_accounts else 'None'}\n")
         except Exception as e:
             logger.debug(f"Heartbeat write failed: {e}")
+    
+    def check_queue_stall(self) -> bool:
+        """
+        Check if the job queue has stalled (no progress for extended period).
+        
+        Returns:
+            True if queue appears stalled, False otherwise
+        """
+        now = time.time()
+        current_queue_size = len(self.queue)
+        
+        # If queue size changed or jobs are running, we have progress
+        if current_queue_size != self.last_queue_size or len(self.running_jobs) > 0:
+            self.last_queue_progress_time = now
+            self.last_queue_size = current_queue_size
+            return False
+        
+        # Check if we've been stalled too long
+        stall_duration = now - self.last_queue_progress_time
+        
+        if stall_duration > self.queue_stall_threshold_seconds and current_queue_size > 0:
+            logger.warning(
+                f"⚠️ Queue appears stalled: {current_queue_size} jobs queued, "
+                f"no progress for {stall_duration:.0f}s"
+            )
+            return True
+        
+        return False
+    
+    def record_error(self, error_type: str, message: str, faucet_name: str = "unknown"):
+        """
+        Record an error for rate-based alerting.
+        
+        Args:
+            error_type: Type of error
+            message: Error message
+            faucet_name: Faucet where error occurred
+        """
+        now = time.time()
+        
+        # Add new error
+        self.recent_errors.append({
+            'timestamp': now,
+            'type': error_type,
+            'message': message,
+            'faucet': faucet_name
+        })
+        
+        # Clean up old errors outside window
+        cutoff = now - self.error_window_seconds
+        self.recent_errors = [e for e in self.recent_errors if e['timestamp'] > cutoff]
+        
+        # Check if we've exceeded threshold
+        if len(self.recent_errors) >= self.error_threshold:
+            logger.error(
+                f"🚨 High error rate detected: {len(self.recent_errors)} errors "
+                f"in last {self.error_window_seconds}s"
+            )
+            
+            # Track in Azure Monitor if available
+            try:
+                from core.azure_monitor import track_error
+                track_error(
+                    "high_error_rate", 
+                    f"{len(self.recent_errors)} errors in {self.error_window_seconds}s",
+                    "orchestrator"
+                )
+            except Exception:
+                pass
+
+    async def schedule_daily_summary(self):
+        """Schedule automated daily summary report generation."""
+        try:
+            # Calculate next midnight (or next run if already past today)
+            now = datetime.now()
+            
+            # Schedule for 23:30 daily (30 minutes before midnight)
+            next_run = now.replace(hour=23, minute=30, second=0, microsecond=0)
+            
+            # If we're past 23:30 today, schedule for tomorrow
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            
+            self.daily_summary_scheduled = True
+            logger.info(f"📊 Daily summary scheduled for {next_run.strftime('%Y-%m-%d %H:%M')}")
+            
+        except Exception as e:
+            logger.error(f"Failed to schedule daily summary: {e}")
+    
+    async def generate_and_send_daily_summary(self):
+        """Generate and send daily summary report."""
+        try:
+            from core.analytics import get_tracker
+            from core.azure_monitor import track_metric, track_service_event
+            
+            logger.info("📊 Generating daily summary report...")
+            
+            # Get analytics data
+            tracker = get_tracker()
+            summary_text = tracker.get_daily_summary()
+            session_stats = tracker.get_session_stats()
+            faucet_stats = tracker.get_faucet_stats(24)
+            
+            # Get proxy health if available
+            proxy_status = ""
+            if self.proxy_manager:
+                health = self.proxy_manager.get_health_status()
+                proxy_status = f"\n\nProxy Health:\n"
+                proxy_status += f"  Active: {health['active_proxies']}/{health['total_proxies']}\n"
+                proxy_status += f"  Avg Latency: {health['avg_latency_ms']:.0f}ms\n"
+                if health['alerts']:
+                    proxy_status += f"  Alerts: {', '.join(health['alerts'])}\n"
+            
+            # Combine into full report
+            full_report = summary_text + proxy_status
+            
+            # Log the summary
+            logger.info(f"\n{full_report}")
+            
+            # Track metrics in Azure Monitor
+            track_metric("daily.total_claims", session_stats.get('total_claims', 0))
+            track_metric("daily.success_rate", session_stats.get('success_rate', 0))
+            
+            # Send via health monitor notification system
+            await self.health_monitor.send_health_alert(
+                severity="info",
+                message=f"Daily Summary Report\n\n{full_report}",
+                component="daily_summary"
+            )
+            
+            # Track event
+            track_service_event(
+                "daily_summary_generated",
+                f"Generated daily summary: {session_stats.get('total_claims', 0)} claims, "
+                f"{session_stats.get('success_rate', 0):.1f}% success rate",
+                "info"
+            )
+            
+            # Update timestamp
+            self.last_daily_summary_time = time.time()
+            
+            logger.info("✅ Daily summary generated and sent")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate daily summary: {e}", exc_info=True)
+
 
     def get_domain_delay(self, faucet_type: str) -> float:
         """Get required delay before accessing this faucet domain."""
@@ -1991,10 +2152,30 @@ class JobScheduler:
                     logger.warning(f"Failed to schedule withdrawal jobs: {e}")
                     withdrawal_jobs_scheduled = True  # Don't retry every loop
             
+            # Schedule daily summary once at startup
+            if not self.daily_summary_scheduled:
+                await self.schedule_daily_summary()
+            
+            # Check if it's time for daily summary (23:30 daily)
+            current_time = datetime.now()
+            if (current_time.hour == 23 and current_time.minute == 30 and 
+                now - self.last_daily_summary_time > 3600):  # Only once per hour to avoid multiple runs
+                await self.generate_and_send_daily_summary()
+            
             # Maintenance tasks (heartbeat and session persistence)
             if now - self.last_heartbeat_time >= HEARTBEAT_INTERVAL_SECONDS:
                 self._write_heartbeat()
                 self.last_heartbeat_time = now
+                
+                # Check for queue stall during heartbeat
+                if self.check_queue_stall():
+                    # Alert on queue stall
+                    await self.health_monitor.send_health_alert(
+                        severity="warning",
+                        message=f"Queue stalled: {len(self.queue)} jobs queued, no progress for {now - self.last_queue_progress_time:.0f}s",
+                        component="scheduler"
+                    )
+
             
             if now - self.last_persist_time >= SESSION_PERSIST_INTERVAL:
                 self._persist_session()
@@ -2033,6 +2214,20 @@ class JobScheduler:
                     # Auto-response: replenish proxies if unhealthy
                     proxy_health = health_results.get("proxy", {})
                     if self.proxy_manager and not proxy_health.get("healthy", True):
+                        # Check detailed proxy health status
+                        detailed_health = self.proxy_manager.get_health_status()
+                        
+                        # Alert on critical proxy issues
+                        if detailed_health['alerts']:
+                            for alert in detailed_health['alerts']:
+                                logger.critical(f"🔴 Proxy Health Alert: {alert}")
+                                await self.health_monitor.send_health_alert(
+                                    severity="critical" if "CRITICAL" in alert else "warning",
+                                    message=alert,
+                                    component="proxy_manager"
+                                )
+                        
+                        # Auto-provision if below threshold
                         await self.proxy_manager.auto_provision_proxies(
                             min_threshold=self.settings.low_proxy_threshold,
                             provision_count=5

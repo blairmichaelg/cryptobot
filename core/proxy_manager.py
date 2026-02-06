@@ -1411,3 +1411,52 @@ class ProxyManager:
             self._save_health_data()
         
         return removed
+    
+    def get_health_status(self) -> dict:
+        """
+        Get comprehensive proxy health status for monitoring and alerting.
+        
+        Returns:
+            Dictionary with health metrics and alert conditions
+        """
+        total_proxies = len(self.all_proxies)
+        active_proxies = len(self.proxies)
+        cooldown_count = len(self.proxy_cooldowns)
+        dead_count = len(self.dead_proxies)
+        
+        # Calculate average latency
+        all_latencies = []
+        for latency_list in self.proxy_latency.values():
+            if latency_list:
+                all_latencies.extend(latency_list)
+        
+        avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0
+        
+        # Health thresholds (matching requirements)
+        MIN_HEALTHY_PROXIES = 50
+        MAX_AVG_LATENCY_MS = 5000
+        
+        # Determine health status
+        alerts = []
+        if active_proxies < MIN_HEALTHY_PROXIES:
+            alerts.append(f"CRITICAL: Only {active_proxies} healthy proxies (minimum: {MIN_HEALTHY_PROXIES})")
+        
+        if avg_latency > MAX_AVG_LATENCY_MS:
+            alerts.append(f"WARNING: Average proxy latency {avg_latency:.0f}ms exceeds {MAX_AVG_LATENCY_MS}ms threshold")
+        
+        if total_proxies == 0:
+            alerts.append("CRITICAL: No proxies available in pool")
+        
+        healthy = len(alerts) == 0
+        
+        return {
+            'healthy': healthy,
+            'total_proxies': total_proxies,
+            'active_proxies': active_proxies,
+            'cooldown_count': cooldown_count,
+            'dead_count': dead_count,
+            'avg_latency_ms': avg_latency,
+            'alerts': alerts,
+            'meets_min_threshold': active_proxies >= MIN_HEALTHY_PROXIES,
+            'latency_ok': avg_latency <= MAX_AVG_LATENCY_MS
+        }

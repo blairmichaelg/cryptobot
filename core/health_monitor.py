@@ -621,6 +621,33 @@ class HealthMonitor:
         memory_usage = self.check_memory_usage()
         heartbeat_age = self.check_heartbeat()
         
+        # Get service uptime if available
+        uptime_seconds = 0
+        try:
+            exit_code, stdout, _ = self._run_command(
+                f"systemctl show {self.service_name} --property=ActiveEnterTimestamp --value"
+            )
+            if exit_code == 0 and stdout.strip():
+                from datetime import datetime
+                import dateutil.parser
+                try:
+                    start_time = dateutil.parser.parse(stdout.strip())
+                    uptime_seconds = (datetime.now(start_time.tzinfo) - start_time).total_seconds()
+                except Exception:
+                    # Fallback: simple timestamp parsing
+                    pass
+        except Exception as e:
+            logger.debug(f"Could not get service uptime: {e}")
+        
+        # Track uptime metric for 30-day retention
+        try:
+            from core.azure_monitor import get_metric_store, track_metric
+            if uptime_seconds > 0:
+                get_metric_store().record_metric("service.uptime_seconds", uptime_seconds)
+                track_metric("service.uptime_hours", uptime_seconds / 3600.0)
+        except Exception:
+            pass
+        
         # Determine overall status and collect alerts
         alerts = []
         status = HealthStatus.HEALTHY
@@ -687,11 +714,13 @@ class HealthMonitor:
                 'memory_usage': memory_usage,
                 'heartbeat_age': heartbeat_age,
                 'crash_count': crash_count,
+                'uptime_seconds': uptime_seconds,
+                'uptime_hours': uptime_seconds / 3600.0,
             }
         )
         
         # Log result
-        logger.info(f"Health check complete: {status.value}")
+        logger.info(f"Health check complete: {status.value} (uptime: {uptime_seconds/3600:.1f}h)")
         if alerts:
             for alert in alerts:
                 logger.warning(f"Alert: {alert}")
@@ -877,11 +906,40 @@ Alerts:
         
         logger.info(f"Attempting to restart service (attempt #{self.restart_count + 1})")
         
+        # Log restart event to Azure Monitor
+        try:
+            from core.azure_monitor import track_service_event, get_metric_store
+            track_service_event(
+                "restart",
+                f"Service restart attempt #{self.restart_count + 1}",
+                "warning"
+            )
+            # Record restart in metrics for 30-day retention
+            get_metric_store().record_metric(
+                "service.restart",
+                1.0,
+                {'restart_count': self.restart_count + 1, 'backoff_seconds': self.backoff_seconds}
+            )
+        except Exception as e:
+            logger.debug(f"Failed to log restart event: {e}")
+        
         # Restart the service
         exit_code, stdout, stderr = self._run_command(f"sudo systemctl restart {self.service_name}")
         
         if exit_code != 0:
             logger.error(f"Failed to restart service: {stderr}")
+            
+            # Log failed restart
+            try:
+                from core.azure_monitor import track_service_event
+                track_service_event(
+                    "restart_failed",
+                    f"Service restart failed: {stderr}",
+                    "error"
+                )
+            except Exception:
+                pass
+            
             return False
         
         # Wait a moment for service to start
@@ -892,6 +950,17 @@ Alerts:
         
         if is_active and is_running:
             logger.info("Service restarted successfully")
+            
+            # Log successful restart
+            try:
+                from core.azure_monitor import track_service_event
+                track_service_event(
+                    "restart_success",
+                    f"Service restarted successfully (attempt #{self.restart_count + 1})",
+                    "info"
+                )
+            except Exception:
+                pass
             
             # Update backoff state
             self.restart_count += 1

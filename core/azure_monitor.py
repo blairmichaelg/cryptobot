@@ -6,8 +6,12 @@ Uses the OpenTelemetry distro (recommended by Microsoft for Python apps in 2024+
 """
 
 import os
+import json
 import logging
-from typing import Optional
+import time
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -128,3 +132,179 @@ def track_metric(name: str, value: float, tags: dict = None):
                     span.set_attribute(f"metric.{key}", val)
     except Exception as e:
         logger.debug(f"Failed to track metric: {e}")
+
+
+class MetricRetentionStore:
+    """
+    Stores metrics locally for 30-day retention and historical analysis.
+    Complements Azure Monitor with local persistence.
+    """
+    
+    RETENTION_DAYS = 30
+    
+    def __init__(self, storage_dir: Optional[Path] = None):
+        """
+        Initialize metric retention store.
+        
+        Args:
+            storage_dir: Directory for storing metrics (default: config/metrics/)
+        """
+        if storage_dir is None:
+            from core.config import CONFIG_DIR
+            storage_dir = CONFIG_DIR / "metrics"
+        
+        self.storage_dir = Path(storage_dir)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_file = self.storage_dir / "retained_metrics.json"
+        self.metrics: List[Dict[str, Any]] = []
+        self._load_metrics()
+    
+    def _load_metrics(self):
+        """Load metrics from disk."""
+        try:
+            if self.metrics_file.exists():
+                with open(self.metrics_file, 'r') as f:
+                    data = json.load(f)
+                    # Only keep metrics within retention period
+                    cutoff = time.time() - (self.RETENTION_DAYS * 86400)
+                    self.metrics = [
+                        m for m in data 
+                        if m.get('timestamp', 0) > cutoff
+                    ]
+                logger.debug(f"Loaded {len(self.metrics)} retained metrics")
+        except Exception as e:
+            logger.debug(f"Could not load retained metrics: {e}")
+            self.metrics = []
+    
+    def _save_metrics(self):
+        """Save metrics to disk."""
+        try:
+            with open(self.metrics_file, 'w') as f:
+                json.dump(self.metrics, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save retained metrics: {e}")
+    
+    def record_metric(self, name: str, value: float, tags: Optional[Dict[str, Any]] = None):
+        """
+        Record a metric with 30-day retention.
+        
+        Args:
+            name: Metric name
+            value: Metric value
+            tags: Optional tags/metadata
+        """
+        metric = {
+            'timestamp': time.time(),
+            'name': name,
+            'value': value,
+            'tags': tags or {}
+        }
+        self.metrics.append(metric)
+        
+        # Cleanup old metrics periodically (every 100 records)
+        if len(self.metrics) % 100 == 0:
+            cutoff = time.time() - (self.RETENTION_DAYS * 86400)
+            self.metrics = [m for m in self.metrics if m['timestamp'] > cutoff]
+        
+        self._save_metrics()
+    
+    def get_metrics(self, name: Optional[str] = None, hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        Get metrics from the last N hours.
+        
+        Args:
+            name: Optional metric name filter
+            hours: Hours to look back
+            
+        Returns:
+            List of metrics matching criteria
+        """
+        cutoff = time.time() - (hours * 3600)
+        filtered = [m for m in self.metrics if m['timestamp'] > cutoff]
+        
+        if name:
+            filtered = [m for m in filtered if m['name'] == name]
+        
+        return filtered
+    
+    def get_daily_summary(self, days: int = 1) -> Dict[str, Any]:
+        """
+        Get aggregated metrics summary for the last N days.
+        
+        Args:
+            days: Number of days to summarize
+            
+        Returns:
+            Dictionary with metric summaries
+        """
+        cutoff = time.time() - (days * 86400)
+        recent = [m for m in self.metrics if m['timestamp'] > cutoff]
+        
+        summary = {
+            'period_days': days,
+            'total_metrics': len(recent),
+            'metrics': {}
+        }
+        
+        # Group by metric name
+        by_name: Dict[str, List[float]] = {}
+        for m in recent:
+            name = m['name']
+            if name not in by_name:
+                by_name[name] = []
+            by_name[name].append(m['value'])
+        
+        # Calculate statistics for each metric
+        for name, values in by_name.items():
+            summary['metrics'][name] = {
+                'count': len(values),
+                'avg': sum(values) / len(values) if values else 0,
+                'min': min(values) if values else 0,
+                'max': max(values) if values else 0,
+                'latest': values[-1] if values else 0
+            }
+        
+        return summary
+
+
+# Global metric retention store
+_metric_store: Optional[MetricRetentionStore] = None
+
+
+def get_metric_store() -> MetricRetentionStore:
+    """Get the global metric retention store."""
+    global _metric_store
+    if _metric_store is None:
+        _metric_store = MetricRetentionStore()
+    return _metric_store
+
+
+def track_service_event(event_type: str, message: str, severity: str = "info"):
+    """
+    Track service lifecycle events (starts, stops, crashes, restarts).
+    
+    Args:
+        event_type: Type of event (start, stop, crash, restart)
+        message: Event message
+        severity: Event severity (info, warning, error, critical)
+    """
+    if _tracer:
+        try:
+            with _tracer.start_as_current_span(f"service/{event_type}") as span:
+                span.set_attribute("event.type", event_type)
+                span.set_attribute("event.message", message)
+                span.set_attribute("event.severity", severity)
+                
+                if severity in ("error", "critical"):
+                    span.set_status(Status(StatusCode.ERROR, message))
+                else:
+                    span.set_status(Status(StatusCode.OK))
+        except Exception as e:
+            logger.debug(f"Failed to track service event: {e}")
+    
+    # Also store locally
+    get_metric_store().record_metric(
+        f"service.event.{event_type}",
+        1.0,
+        {'message': message, 'severity': severity}
+    )
