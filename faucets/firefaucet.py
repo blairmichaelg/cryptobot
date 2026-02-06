@@ -96,10 +96,10 @@ class FireFaucetBot(FaucetBot):
                 # Progressive stealth: increase delays with each retry
                 base_wait = 10 + (attempt * 5)  # 15s, 20s, 25s
                 
-                # Simulate human-like waiting behavior
+                # Simulate human-like waiting behavior with micro-interactions
                 logger.info(f"[{self.faucet_name}] ⏳ Waiting {base_wait}s for automatic challenge resolution...")
                 await self.idle_mouse(duration=random.uniform(2.0, 4.0))
-                await asyncio.sleep(base_wait)
+                await self.human_wait(base_wait, with_interactions=True)
                 
                 # Check for Turnstile and solve if present
                 turnstile_detected = await self.page.query_selector("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [data-sitekey]")
@@ -120,7 +120,7 @@ class FireFaucetBot(FaucetBot):
                         if attempt < self.max_cloudflare_retries:
                             # Retry with page refresh
                             logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
-                            await self.page.reload(wait_until="domcontentloaded")
+                            await self.page.reload()
                             await asyncio.sleep(3)
                             continue
                 
@@ -146,7 +146,7 @@ class FireFaucetBot(FaucetBot):
                 if attempt < self.max_cloudflare_retries:
                     await asyncio.sleep(random.uniform(3.0, 6.0))  # Longer delay between retries
                     logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
-                    await self.page.reload(wait_until="domcontentloaded")
+                    await self.page.reload()
                     await asyncio.sleep(random.uniform(4.0, 7.0))
                     
             except Exception as e:
@@ -259,7 +259,7 @@ class FireFaucetBot(FaucetBot):
 
         try:
             logger.info(f"[{self.faucet_name}] Navigating to login page...")
-            nav_success = await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
+            nav_success = await self.safe_navigate(f"{self.base_url}/login", timeout=getattr(self.settings, "timeout", 180000))
             if not nav_success:
                 logger.error(f"[{self.faucet_name}] Failed to navigate to login page")
                 return False
@@ -648,7 +648,7 @@ class FireFaucetBot(FaucetBot):
             
             # Now, Faucet Claim
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
-            await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded")
+            await self.page.goto(f"{self.base_url}/faucet")
 
             # Wait extra time for dynamic content to load
             await asyncio.sleep(5)

@@ -107,7 +107,7 @@ class DutchyBot(FaucetBot):
             
             nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
-                await page.goto(f"{self.base_url}/shortlinks.php", wait_until="domcontentloaded", timeout=nav_timeout)
+                await page.goto(f"{self.base_url}/shortlinks.php", timeout=nav_timeout)
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] Shortlinks navigation retry with commit: {e}")
                 await page.goto(f"{self.base_url}/shortlinks.php", wait_until="commit", timeout=nav_timeout)
@@ -220,7 +220,7 @@ class DutchyBot(FaucetBot):
             try:
                 logger.info(f"[{self.faucet_name}] Login attempt {attempt}/{self.max_retries}")
                 nav_timeout = getattr(self.settings, "timeout", 180000)
-                await self.safe_navigate(f"{self.base_url}/login.php", wait_until="domcontentloaded", timeout=nav_timeout)
+                await self.safe_navigate(f"{self.base_url}/login.php", timeout=nav_timeout)
                 
                 # Handle Cloudflare challenges that may appear after navigation
                 await self.handle_cloudflare(max_wait_seconds=120)
@@ -396,7 +396,7 @@ class DutchyBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Checking {roll_name}...")
             nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
-                await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="domcontentloaded", timeout=nav_timeout)
+                await self.page.goto(f"{self.base_url}/{page_slug}", timeout=nav_timeout)
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] {roll_name} navigation retry with commit: {e}")
                 await self.page.goto(f"{self.base_url}/{page_slug}", wait_until="commit", timeout=nav_timeout)
@@ -487,7 +487,7 @@ class DutchyBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
             nav_timeout = getattr(self.settings, "timeout", 180000)
             try:
-                await self.page.goto(f"{self.base_url}/balance.php", wait_until="domcontentloaded", timeout=nav_timeout)
+                await self.page.goto(f"{self.base_url}/balance.php", timeout=nav_timeout)
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] Balance navigation retry with commit: {e}")
                 await self.page.goto(f"{self.base_url}/balance.php", wait_until="commit", timeout=nav_timeout)

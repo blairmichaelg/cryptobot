@@ -453,7 +453,7 @@ class FreeBitcoinBot(FaucetBot):
                 if attempt > 0:
                     backoff_seconds = 5 * attempt  # 5s, 10s, 15s
                     logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
-                    await asyncio.sleep(backoff_seconds)
+                    await self.human_wait(backoff_seconds, with_interactions=True)
                 else:
                     logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
 
@@ -461,7 +461,7 @@ class FreeBitcoinBot(FaucetBot):
                 logger.info(f"[FreeBitcoin] Navigating to: {self.base_url}")
                 
                 # Use safe_navigate from base class for proxy error handling
-                if not await self.safe_navigate(self.base_url, wait_until="domcontentloaded"):
+                if not await self.safe_navigate(self.base_url):
                     logger.warning(f"[FreeBitcoin] Navigation failed on attempt {attempt + 1}")
                     continue
                 
@@ -508,7 +508,7 @@ class FreeBitcoinBot(FaucetBot):
                         if await locator.is_visible(timeout=3000):
                             logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
                             await self.human_like_click(locator)
-                            await asyncio.sleep(5)  # Increased wait time for form animation/rendering
+                            await self.human_wait(5, with_interactions=True)  # Wait for form animation with activity
                             login_trigger_clicked = True
                             break
                     except Exception:
@@ -749,7 +749,7 @@ class FreeBitcoinBot(FaucetBot):
         for attempt in range(max_retries):
             try:
                 logger.info(f"[DEBUG] Attempt {attempt + 1}/{max_retries}: Navigating to {self.base_url}/")
-                response = await self.page.goto(f"{self.base_url}/", wait_until="domcontentloaded", timeout=nav_timeout)
+                response = await self.page.goto(f"{self.base_url}/", timeout=nav_timeout)
                 if response is not None:
                     try:
                         status = response.status
@@ -992,7 +992,7 @@ class FreeBitcoinBot(FaucetBot):
                 if attempt < max_retries - 1:
                     backoff_time = (2 ** attempt) * 5  # Exponential backoff: 5s, 10s, 20s
                     logger.info(f"Retrying in {backoff_time}s...")
-                    await asyncio.sleep(backoff_time)
+                    await self.human_wait(backoff_time, with_interactions=True)
                     continue
                 return ClaimResult(
                     success=False,
@@ -1005,7 +1005,7 @@ class FreeBitcoinBot(FaucetBot):
                 if attempt < max_retries - 1:
                     backoff_time = (2 ** attempt) * 5
                     logger.info(f"Retrying in {backoff_time}s...")
-                    await asyncio.sleep(backoff_time)
+                    await self.human_wait(backoff_time, with_interactions=True)
                     continue
                 return ClaimResult(
                     success=False,

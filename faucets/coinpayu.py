@@ -41,7 +41,7 @@ class CoinPayUBot(FaucetBot):
             else:
                 page = self.page
             
-            await page.goto(f"{self.base_url}/dashboard/shortlinks", wait_until="domcontentloaded")
+            await page.goto(f"{self.base_url}/dashboard/shortlinks")
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # CoinPayU shortlink selectors
@@ -141,7 +141,6 @@ class CoinPayUBot(FaucetBot):
                 timeout_ms = getattr(self.settings, "timeout", 60000)
                 await self.safe_navigate(
                     f"{self.base_url}/login",
-                    wait_until="domcontentloaded",
                     timeout=timeout_ms,
                 )
                 
@@ -334,7 +333,7 @@ class CoinPayUBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Starting claim process...")
             
             # Navigate to dashboard to get balance
-            await self.safe_navigate(f"{self.base_url}/dashboard", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard", timeout=30000)
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # Extract main dashboard balance using standardized method
@@ -343,7 +342,7 @@ class CoinPayUBot(FaucetBot):
 
             # Navigate to faucet page
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
-            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", timeout=30000)
             await self.random_delay(1.0, 2.0)
             
             # Check for timer first
@@ -539,7 +538,7 @@ class CoinPayUBot(FaucetBot):
         
         try:
             logger.info(f"[{self.faucet_name}] Starting Faucet -> Main transfer...")
-            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", wait_until="domcontentloaded", timeout=30000)
+            await self.safe_navigate(f"{self.base_url}/dashboard/faucet", timeout=30000)
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # Add human-like delay
@@ -686,7 +685,7 @@ class CoinPayUBot(FaucetBot):
         
         try:
             logger.info(f"[{self.faucet_name}] Checking Surf Ads...")
-            await self.page.goto(f"{self.base_url}/dashboard/ads_surf", wait_until="domcontentloaded", timeout=30000)
+            await self.page.goto(f"{self.base_url}/dashboard/ads_surf", timeout=30000)
             await self.handle_cloudflare(max_wait_seconds=20)
             
             # Wait for list or no-ads message
@@ -751,8 +750,8 @@ class CoinPayUBot(FaucetBot):
                     logger.debug(f"[{self.faucet_name}] Ad page opened, waiting {duration}s...")
                     
                     # SURF ADS: Timer is on the MAIN tab. Ad tab just needs to exist.
-                    # Add extra buffer time for safety
-                    await asyncio.sleep(duration + random.uniform(3, 5))
+                    # Add extra buffer time with human activity to avoid idle detection
+                    await self.human_wait(duration + random.uniform(3, 5), with_interactions=True)
                     
                     await ad_page.close()
                     logger.debug(f"[{self.faucet_name}] Ad page closed")

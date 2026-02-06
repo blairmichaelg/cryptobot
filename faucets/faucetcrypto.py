@@ -37,7 +37,7 @@ class FaucetCryptoBot(FaucetBot):
                 # v4.0+ uses /login (not /login.php)
                 nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
                 try:
-                    await self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
+                    await self.page.goto(f"{self.base_url}/login", timeout=nav_timeout)
                 except Exception as e:
                     error_str = str(e)
                     if "Timeout" in error_str:
@@ -143,12 +143,12 @@ class FaucetCryptoBot(FaucetBot):
             except TimeoutError as e:
                 logger.warning(f"[{self.faucet_name}] Login timeout (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(5)
+                    await self.human_wait(5, with_interactions=True)
                     continue
             except Exception as e:
                 logger.error(f"[{self.faucet_name}] Login failed (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(5)
+                    await self.human_wait(5, with_interactions=True)
                     continue
         
         logger.error(f"[{self.faucet_name}] ❌ Login failed after {max_retries} attempts")
@@ -171,7 +171,7 @@ class FaucetCryptoBot(FaucetBot):
                     logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
                     nav_timeout = getattr(self.settings, "timeout", 180000)
                     try:
-                        await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
+                        await self.page.goto(f"{self.base_url}/faucet", timeout=nav_timeout)
                     except Exception as e:
                         logger.warning(f"[{self.faucet_name}] Faucet navigation retry with commit: {e}")
                         await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
@@ -212,12 +212,10 @@ class FaucetCryptoBot(FaucetBot):
                 await self.human_like_click(claim_btn.first)
                 
                 # Wait for internal countdown timer (10-15s typically)
-                # Use random delay for stealth
+                # Use human_wait for natural micro-interactions during the wait
                 logger.info(f"[{self.faucet_name}] Waiting for internal timer...")
-                await self.random_delay(12, 18)
-                
-                # Simulate user activity while waiting
-                await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+                timer_wait = random.uniform(12, 18)
+                await self.human_wait(timer_wait, with_interactions=True)
                 
                 # Solve CAPTCHA if present
                 logger.info(f"[{self.faucet_name}] Checking for CAPTCHA...")

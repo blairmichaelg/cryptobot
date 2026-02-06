@@ -5,6 +5,7 @@ Inherits login from PickFaucetBase and implements USDT-specific claim logic.
 """
 import asyncio
 import logging
+import random
 from typing import Optional
 from playwright.async_api import Page
 from faucets.pick_base import PickFaucetBase
@@ -122,7 +123,11 @@ class UsdPickBot(PickFaucetBase):
                 balance=await self.get_balance()
             )
         
-        await self.idle_mouse(duration=2.0)
+        # Full stealth setup for claim page
+        await self.warm_up_page()
+        if random.random() < 0.3:
+            await self.simulate_tab_activity()
+        await self.natural_mouse_drift(duration=random.uniform(1.0, 2.0))
         await self.random_delay(1, 3)
         
         try:

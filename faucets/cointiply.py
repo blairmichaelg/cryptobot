@@ -71,8 +71,8 @@ class CointiplyBot(FaucetBot):
                 await ad_page.bring_to_front()
                 
                 # Dynamic duration extraction (usually 10-30s)
-                # For safety, wait 35s
-                await asyncio.sleep(35)
+                # For safety, wait 35s with human activity to avoid idle detection
+                await self.human_wait(35, with_interactions=True)
                 
                 # Switch back to resolve any verification if needed
                 await self.page.bring_to_front()
@@ -108,7 +108,7 @@ class CointiplyBot(FaucetBot):
         try:
             logger.info(f"[{self.faucet_name}] Starting login process")
             nav_timeout = getattr(self.settings, "timeout", 180000)
-            await self.safe_navigate(f"{self.base_url}/login", wait_until="domcontentloaded", timeout=nav_timeout)
+            await self.safe_navigate(f"{self.base_url}/login", timeout=nav_timeout)
             await self.handle_cloudflare()
             
             # Verify page is still alive before proceeding (Task 2 integration)
@@ -271,7 +271,7 @@ class CointiplyBot(FaucetBot):
                 navigated = False
                 for faucet_url in faucet_urls:
                     try:
-                        nav_result = await self.safe_navigate(faucet_url, wait_until="domcontentloaded", timeout=nav_timeout)
+                        nav_result = await self.safe_navigate(faucet_url, timeout=nav_timeout)
                         if nav_result:
                             # Check if we got a 404 or error page
                             page_title = await self.page.title()

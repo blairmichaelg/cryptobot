@@ -51,7 +51,7 @@ class PickFaucetBase(FaucetBot):
             try:
                 # Try domcontentloaded first (faster), fallback to commit if it fails
                 try:
-                    response = await self.page.goto(url, timeout=nav_timeout, wait_until="domcontentloaded")
+                    response = await self.page.goto(url, timeout=nav_timeout)
                 except Exception:
                     # Fallback to commit for Cloudflare challenges
                     response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
