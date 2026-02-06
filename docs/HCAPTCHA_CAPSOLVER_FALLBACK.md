@@ -212,7 +212,8 @@ pytest tests/test_hcaptcha_fallback.py -v
 ### Testing on Azure VM
 
 ```bash
-ssh azureuser@4.155.230.212
+# SSH to your Azure VM (replace <vm-ip> with your VM's IP address)
+ssh azureuser@<vm-ip>
 cd ~/Repositories/cryptobot
 
 # Set environment variables
