@@ -651,7 +651,7 @@ class FireFaucetBot(FaucetBot):
             await self.page.goto(f"{self.base_url}/faucet")
 
             # Wait extra time for dynamic content to load
-            await asyncio.sleep(5)
+            await self.human_wait(5)
 
             # Check for Cloudflare on faucet page
             cf_blocked = await self.detect_cloudflare_block()
@@ -922,7 +922,7 @@ class FireFaucetBot(FaucetBot):
                     logger.debug(f"[{self.faucet_name}] Wait for timer error: {wait_err}")
                 
                 # Additional wait for page to fully update
-                await asyncio.sleep(3)
+                await self.human_wait(3)
                 
                 # Enhanced debugging: Capture page state after claim
                 logger.info(f"[{self.faucet_name}] Checking claim result...")

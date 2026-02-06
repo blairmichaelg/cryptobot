@@ -888,7 +888,7 @@ class FreeBitcoinBot(FaucetBot):
                         
                         # Wait longer for result - FreeBitcoin can take 10-15 seconds
                         logger.debug("[FreeBitcoin] Waiting for claim result...")
-                        await asyncio.sleep(3)
+                        await self.human_wait(3)
                         await self.close_popups()
                         
                         # Log current page URL to verify we're still on the right page

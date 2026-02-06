@@ -91,7 +91,7 @@ class FaucetCryptoBot(FaucetBot):
                 except Exception as url_err:
                     logger.debug(f"[{self.faucet_name}] URL wait failed: {url_err}")
                     # Fallback: check if we're on dashboard by content
-                    await asyncio.sleep(3)
+                    await self.human_wait(3)
                     current_url = self.page.url
                     
                     # Check URL patterns
@@ -133,7 +133,7 @@ class FaucetCryptoBot(FaucetBot):
                     # If URL changed but no dashboard detected, log and try anyway
                     logger.warning(f"[{self.faucet_name}] Uncertain login state, URL: {current_url}")
                     # Give it a chance - might be slow loading
-                    await asyncio.sleep(5)
+                    await self.human_wait(5)
                     if "dashboard" in self.page.url.lower():
                         logger.info(f"[{self.faucet_name}] ✅ Login successful (delayed detection)")
                         return True
@@ -280,7 +280,7 @@ class FaucetCryptoBot(FaucetBot):
             except TimeoutError as e:
                 logger.warning(f"[{self.faucet_name}] Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
+                    await self.human_wait(retry_delay)
                     continue
                 return ClaimResult(
                     success=False, 
@@ -291,7 +291,7 @@ class FaucetCryptoBot(FaucetBot):
             except Exception as e:
                 logger.error(f"[{self.faucet_name}] Claim error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
+                    await self.human_wait(retry_delay)
                     continue
                 return ClaimResult(
                     success=False, 

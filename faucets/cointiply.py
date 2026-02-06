@@ -345,7 +345,7 @@ class CointiplyBot(FaucetBot):
                                     next_claim_minutes=30,
                                     balance=balance
                                 )
-                            await asyncio.sleep(5)
+                            await self.human_wait(5)
                             continue
                         
                         # Manually enable submit button (CAPTCHA callback may not enable it)
@@ -371,7 +371,7 @@ class CointiplyBot(FaucetBot):
                             await self.human_like_click(roll)
                         
                         # Wait for result
-                        await asyncio.sleep(3)
+                        await self.human_wait(3)
                         
                         # Check for success indicators
                         success_selectors = [".md-snackbar-content", ".toast-success", ".alert-success"]
@@ -429,7 +429,7 @@ class CointiplyBot(FaucetBot):
                         status="Timeout after retries", 
                         next_claim_minutes=30
                     )
-                await asyncio.sleep(5)
+                await self.human_wait(5)
                 
             except Exception as e:
                 logger.error(f"[{self.faucet_name}] ❌ Claim failed: {e}")
@@ -440,7 +440,7 @@ class CointiplyBot(FaucetBot):
                         status=f"Error: {str(e)[:50]}", 
                         next_claim_minutes=30
                     )
-                await asyncio.sleep(5)
+                await self.human_wait(5)
 
     def get_jobs(self):
         """Returns Cointiply-specific jobs for the scheduler."""
