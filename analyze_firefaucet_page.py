@@ -18,6 +18,9 @@ async def analyze_firefaucet():
     browser_manager = BrowserManager(settings)
     
     try:
+        # Launch browser first
+        await browser_manager.launch()
+        
         # Create fresh context
         context = await browser_manager.create_context(profile_name=None)
         page = await context.new_page()
