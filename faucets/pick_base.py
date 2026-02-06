@@ -574,8 +574,8 @@ class PickFaucetBase(FaucetBot):
             # Try to wait for button to be visible
             try:
                 await claim_btn.first.wait_for(state="visible", timeout=5000)
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"[{self.faucet_name}] Claim button wait timeout: {e}")
             
             if not await claim_btn.first.is_visible():
                 logger.warning(f"[{self.faucet_name}] Claim button not visible")
