@@ -847,29 +847,61 @@ class FreeBitcoinBot(FaucetBot):
 
                     # Double check visibility after potential captcha delay
                     if await roll_btn.is_visible():
+                        logger.debug("[FreeBitcoin] About to click roll button")
                         await self.human_like_click(roll_btn)
+                        logger.debug("[FreeBitcoin] Roll button clicked")
                         await self.idle_mouse(1.0)  # Read result naturally
+                        
+                        # Wait for any navigation/reload
+                        logger.debug("[FreeBitcoin] Waiting for page stabilization...")
+                        try:
+                            await self.page.wait_for_navigation(timeout=8000)
+                            logger.debug("[FreeBitcoin] Page navigated")
+                        except:
+                            logger.debug("[FreeBitcoin] No navigation detected")
                         
                         # Wait longer for result - FreeBitcoin can take 10-15 seconds
                         logger.debug("[FreeBitcoin] Waiting for claim result...")
-                        await asyncio.sleep(8)
+                        await asyncio.sleep(3)
                         await self.close_popups()
-
-                        # Poll for result with timeout
-                        result = self.page.locator(
-                            "#winnings, .winning-amount, .result-amount, .btc-won, span:has-text('BTC'), .win_amount"
-                        ).first
-
-                        try:
-                            await result.wait_for(state="visible", timeout=12000)
-                            is_visible = True
-                        except:
-                            is_visible = await result.is_visible()
                         
-                        if is_visible:
-                            won = await result.text_content()
+                        # Log current page URL to verify we're still on the right page
+                        current_url = self.page.url
+                        logger.debug(f"[FreeBitcoin] Current page URL after click: {current_url}")
+
+                        # Try multiple result selectors with logging
+                        result_selectors = [
+                            "#winnings",
+                            ".winning-amount", 
+                            ".result-amount",
+                            ".btc-won",
+                            "span:has-text('BTC')",
+                            ".win_amount",
+                            ".claim-result",
+                            "[data-result]"
+                        ]
+                        
+                        is_visible = False
+                        won_text = None
+                        
+                        for selector in result_selectors:
+                            try:
+                                loc = self.page.locator(selector)
+                                count = await loc.count()
+                                if count > 0:
+                                    is_element_visible = await loc.first.is_visible()
+                                    logger.debug(f"[FreeBitcoin] Selector '{selector}': found {count}, visible={is_element_visible}")
+                                    if is_element_visible:
+                                        won_text = await loc.first.text_content()
+                                        is_visible = True
+                                        logger.debug(f"[FreeBitcoin] Result found with selector '{selector}': {won_text}")
+                                        break
+                            except Exception as e:
+                                logger.debug(f"[FreeBitcoin] Error checking selector '{selector}': {e}")
+                        
+                        if is_visible and won_text:
                             # Use DataExtractor for consistent parsing
-                            clean_amount = DataExtractor.extract_balance(won)
+                            clean_amount = DataExtractor.extract_balance(won_text)
 
                             # Confirm claim by checking timer and/or balance update
                             new_balance = await self.get_balance(
@@ -884,7 +916,7 @@ class FreeBitcoinBot(FaucetBot):
                             confirmed = bool(clean_amount and clean_amount != "0") and (timer_after > 0 or balance_changed)
 
                             if confirmed:
-                                logger.info(f"FreeBitcoin Claimed! Won: {won} ({clean_amount})")
+                                logger.info(f"FreeBitcoin Claimed! Won: {won_text} ({clean_amount})")
                                 return ClaimResult(
                                     success=True,
                                     status="Claimed",
@@ -900,6 +932,24 @@ class FreeBitcoinBot(FaucetBot):
                                 next_claim_minutes=10,
                                 amount=clean_amount,
                                 balance=new_balance or balance
+                            )
+                        else:
+                            # Result not found - log what we see on the page
+                            logger.warning("[FreeBitcoin] Claim result not found on page")
+                            logger.debug(f"[FreeBitcoin] Page content length: {len(await self.page.content())}")
+                            
+                            # Try to find ANY text on the page that might indicate success
+                            try:
+                                page_text = await self.page.text_content()
+                                logger.debug(f"[FreeBitcoin] Page text preview: {page_text[:500] if page_text else 'empty'}")
+                            except:
+                                pass
+                            
+                            return ClaimResult(
+                                success=False,
+                                status="Result Not Found",
+                                next_claim_minutes=15,
+                                balance=balance
                             )
                     else:
                         logger.warning(
