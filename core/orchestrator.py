@@ -177,6 +177,7 @@ class JobScheduler:
         
         # Daily summary scheduling
         self.last_daily_summary_time = 0
+        self.last_daily_summary_date = None  # Track date to prevent duplicates
         self.daily_summary_scheduled = False
         
         # Queue stall detection
@@ -2158,9 +2159,13 @@ class JobScheduler:
             
             # Check if it's time for daily summary (23:30 daily)
             current_time = datetime.now()
-            if (current_time.hour == 23 and current_time.minute == 30 and 
-                now - self.last_daily_summary_time > 3600):  # Only once per hour to avoid multiple runs
+            current_date = current_time.date()
+            
+            # Only run once per day at 23:30 (within 1 minute window)
+            if (current_time.hour == 23 and 30 <= current_time.minute < 31 and 
+                self.last_daily_summary_date != current_date):
                 await self.generate_and_send_daily_summary()
+                self.last_daily_summary_date = current_date
             
             # Maintenance tasks (heartbeat and session persistence)
             if now - self.last_heartbeat_time >= HEARTBEAT_INTERVAL_SECONDS:

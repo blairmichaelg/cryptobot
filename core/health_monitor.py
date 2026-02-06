@@ -715,12 +715,13 @@ class HealthMonitor:
                 'heartbeat_age': heartbeat_age,
                 'crash_count': crash_count,
                 'uptime_seconds': uptime_seconds,
-                'uptime_hours': uptime_seconds / 3600.0,
+                'uptime_hours': uptime_seconds / 3600.0 if uptime_seconds > 0 else 0.0,
             }
         )
         
         # Log result
-        logger.info(f"Health check complete: {status.value} (uptime: {uptime_seconds/3600:.1f}h)")
+        uptime_str = f"{uptime_seconds/3600:.1f}h" if uptime_seconds > 0 else "unknown"
+        logger.info(f"Health check complete: {status.value} (uptime: {uptime_str})")
         if alerts:
             for alert in alerts:
                 logger.warning(f"Alert: {alert}")

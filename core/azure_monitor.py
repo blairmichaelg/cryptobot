@@ -141,6 +141,7 @@ class MetricRetentionStore:
     """
     
     RETENTION_DAYS = 30
+    SECONDS_PER_DAY = 86400  # Seconds in a day for readability
     
     def __init__(self, storage_dir: Optional[Path] = None):
         """
@@ -166,7 +167,7 @@ class MetricRetentionStore:
                 with open(self.metrics_file, 'r') as f:
                     data = json.load(f)
                     # Only keep metrics within retention period
-                    cutoff = time.time() - (self.RETENTION_DAYS * 86400)
+                    cutoff = time.time() - (self.RETENTION_DAYS * self.SECONDS_PER_DAY)
                     self.metrics = [
                         m for m in data 
                         if m.get('timestamp', 0) > cutoff
@@ -203,7 +204,7 @@ class MetricRetentionStore:
         
         # Cleanup old metrics periodically (every 100 records)
         if len(self.metrics) % 100 == 0:
-            cutoff = time.time() - (self.RETENTION_DAYS * 86400)
+            cutoff = time.time() - (self.RETENTION_DAYS * self.SECONDS_PER_DAY)
             self.metrics = [m for m in self.metrics if m['timestamp'] > cutoff]
         
         self._save_metrics()
@@ -237,7 +238,7 @@ class MetricRetentionStore:
         Returns:
             Dictionary with metric summaries
         """
-        cutoff = time.time() - (days * 86400)
+        cutoff = time.time() - (days * self.SECONDS_PER_DAY)
         recent = [m for m in self.metrics if m['timestamp'] > cutoff]
         
         summary = {
