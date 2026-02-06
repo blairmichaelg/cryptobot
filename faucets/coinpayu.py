@@ -155,6 +155,9 @@ class CoinPayUBot(FaucetBot):
                 # Accept cookies if present
                 await self.close_popups()
 
+                # Warm up page with natural browsing behavior
+                await self.warm_up_page()
+                
                 # Add human-like delay before interaction
                 await self.idle_mouse(duration=1.0)
                 

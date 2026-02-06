@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import time
 from playwright.async_api import Page
 from faucets.base import FaucetBot, ClaimResult
@@ -257,6 +258,9 @@ class PickFaucetBase(FaucetBot):
                 # Wait up to 30 seconds for Cloudflare challenges (sufficient for most CF)
                 await self.handle_cloudflare(max_wait_seconds=30)
                 await self.close_popups()
+                
+                # Warm up page to establish organic behavioral baseline
+                await self.warm_up_page()
 
                 if await self.is_logged_in():
                     logger.info(f"[{self.faucet_name}] Already logged in")
@@ -505,6 +509,11 @@ class PickFaucetBase(FaucetBot):
             return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=15)
         await self.handle_cloudflare()
         await self.close_popups()
+        
+        # Warm up and simulate natural browsing before claim
+        await self.warm_up_page()
+        if random.random() < 0.3:
+            await self.simulate_tab_activity()
 
         # Check for existing timer
         timer_text = None

@@ -116,6 +116,9 @@ class CointiplyBot(FaucetBot):
                 logger.error(f"[{self.faucet_name}] Page became unresponsive after Cloudflare check")
                 return False
             
+            # Warm up page with natural browsing behavior
+            await self.warm_up_page()
+            
             # Use human_type for stealth - enhanced selectors with HTML5 autocomplete
             email_selectors = [
                 'input[autocomplete="email"]:not([form*="signup"]):not([form*="register"])',

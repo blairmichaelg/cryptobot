@@ -476,6 +476,9 @@ class FreeBitcoinBot(FaucetBot):
                 await self.close_popups()
                 await asyncio.sleep(1)
                 
+                # Warm up page with natural browsing behavior
+                await self.warm_up_page()
+                
                 # Log current state
                 current_url = self.page.url
                 page_title = await self.page.title()

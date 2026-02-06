@@ -239,6 +239,9 @@ class DutchyBot(FaucetBot):
                     logger.info(f"[{self.faucet_name}] Already logged in")
                     return True
 
+                # Warm up page with natural browsing behavior
+                await self.warm_up_page()
+                
                 # Stealth: Idle mouse before interaction
                 await self.idle_mouse(1.5)
                 

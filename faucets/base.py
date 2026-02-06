@@ -1736,6 +1736,9 @@ class FaucetBot:
         except Exception:
             pass
         
+        # Warm up the page to establish behavioral baseline before any actions
+        await self.warm_up_page()
+        
         self.last_error_type = None
         failure = await self.check_failure_states()
         if failure:
@@ -2014,6 +2017,14 @@ class FaucetBot:
                 ).validate(self.faucet_name)
             
             await self.think_pause("pre_claim")
+            
+            # Simulate natural tab switching behavior (~40% of the time)
+            if random.random() < 0.4:
+                await self.simulate_tab_activity()
+            
+            # Warm up the page again before claim action (may have navigated)
+            await self.warm_up_page()
+            
             # Structured logging: claim_submit (executing)
             logger.info(f"[LIFECYCLE] claim_submit | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
             result = await self.claim()

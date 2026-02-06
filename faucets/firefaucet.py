@@ -299,6 +299,9 @@ class FireFaucetBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] This shouldn't happen with image_bypass enabled. Check config.")
                 return False
             
+            # Warm up the page to establish organic behavioral baseline
+            await self.warm_up_page()
+            
             # Wait for login form to appear - reduced timeout for faster failure detection
             try:
                 await self.page.wait_for_selector('#username', timeout=20000)
@@ -600,6 +603,9 @@ class FireFaucetBot(FaucetBot):
         try:
             # First, check Daily Bonus
             await self.page.goto(f"{self.base_url}/daily")
+            
+            # Warm up page with natural browsing behavior
+            await self.warm_up_page()
             
             # Check for Cloudflare on daily page
             cf_blocked = await self.detect_cloudflare_block()

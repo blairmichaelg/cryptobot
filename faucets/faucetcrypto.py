@@ -57,6 +57,9 @@ class FaucetCryptoBot(FaucetBot):
                 # Simulate human behavior before interacting
                 await self.idle_mouse(duration=random.uniform(0.5, 1.5))
                 
+                # Warm up page with natural browsing behavior
+                await self.warm_up_page()
+                
                 # v4.0+ may use different input names - try multiple selectors
                 email_input = self.page.locator('input[name="email"], input[type="email"], #email')
                 password_input = self.page.locator('input[name="password"], input[type="password"], #password')
