@@ -13,7 +13,13 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def check_balance_selectors():
-    """Verify that balance selectors are correctly configured."""
+    """
+    Verify that balance selectors are correctly configured.
+    
+    Note: This validation uses exact string matching which is simple but brittle.
+    If code formatting changes, the validation may need updating. This is acceptable
+    for a one-time fix validation script. For production validation, consider AST parsing.
+    """
     print("=" * 70)
     print("FreeBitcoin Balance Selector Validation")
     print("=" * 70)
@@ -138,8 +144,8 @@ def main():
     
     if selectors_ok and (test_ok is None or test_ok):
         print("✅ All validations passed! Ready to test on Azure VM.")
-        print("\nTo test on VM:")
-        print("  ssh <username>@<azure-vm-ip>  # Use your Azure VM credentials")
+        print("\nTo test on VM (replace placeholders with actual values):")
+        print("  ssh <username>@<azure-vm-ip>  # Example: ssh azureuser@192.0.2.1")
         print("  cd ~/Repositories/cryptobot")
         print("  git pull")
         print("  HEADLESS=true python3 test_freebitcoin_claim_detailed.py")
