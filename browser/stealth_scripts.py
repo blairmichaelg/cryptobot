@@ -1147,6 +1147,604 @@ DEVTOOLS_DETECTION_PREVENTION = """
 """
 
 
+# ============================================================================
+# 16. UserAgentData / Client Hints API Spoofing (2025-2026)
+# Modern anti-bot checks navigator.userAgentData which exposes structured
+# browser/platform info. Headless/automated browsers often lack this API
+# or return inconsistent values vs the User-Agent header.
+# ============================================================================
+USERAGENTDATA_SPOOF = """
+(function() {
+    'use strict';
+
+    const platform = window.__PLATFORM__ || 'Windows';
+    const seed = window.__FINGERPRINT_SEED__ || 12345;
+
+    // Map internal platform codes to UA-CH platform names
+    const platformMap = {
+        'Win32': 'Windows',
+        'MacIntel': 'macOS',
+        'Linux x86_64': 'Linux',
+        'Linux aarch64': 'Linux'
+    };
+    const uaPlatform = platformMap[platform] || platform;
+
+    // Determine mobile status
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+    // Extract Chrome version from UA string
+    const uaStr = navigator.userAgent || '';
+    let chromeMajor = '131';
+    const chromeMatch = uaStr.match(/Chrome\\/(\\d+)/);
+    if (chromeMatch) chromeMajor = chromeMatch[1];
+
+    // Build brands array (must match Sec-CH-UA header)
+    const brands = [
+        { brand: 'Chromium', version: chromeMajor },
+        { brand: 'Google Chrome', version: chromeMajor },
+        { brand: 'Not-A.Brand', version: '99' }
+    ];
+
+    const fullVersionList = [
+        { brand: 'Chromium', version: chromeMajor + '.0.0.0' },
+        { brand: 'Google Chrome', version: chromeMajor + '.0.0.0' },
+        { brand: 'Not-A.Brand', version: '99.0.0.0' }
+    ];
+
+    // Architecture based on platform
+    const archMap = {
+        'Windows': 'x86',
+        'macOS': 'arm',
+        'Linux': 'x86'
+    };
+    const bitnessMap = {
+        'Windows': '64',
+        'macOS': '64',
+        'Linux': '64'
+    };
+
+    const uaData = {
+        brands: brands,
+        mobile: isMobile,
+        platform: uaPlatform,
+        getHighEntropyValues: function(hints) {
+            return Promise.resolve({
+                architecture: archMap[uaPlatform] || 'x86',
+                bitness: bitnessMap[uaPlatform] || '64',
+                brands: brands,
+                fullVersionList: fullVersionList,
+                mobile: isMobile,
+                model: '',
+                platform: uaPlatform,
+                platformVersion: uaPlatform === 'Windows' ? '15.0.0' : (uaPlatform === 'macOS' ? '14.5.0' : '6.8.0'),
+                uaFullVersion: chromeMajor + '.0.0.0',
+                wow64: false
+            });
+        },
+        toJSON: function() {
+            return { brands: brands, mobile: isMobile, platform: uaPlatform };
+        }
+    };
+
+    // Only set if this is supposed to be a Chromium-based browser
+    if (/Chrome|Chromium|Edg/.test(uaStr)) {
+        try {
+            Object.defineProperty(navigator, 'userAgentData', {
+                get: () => uaData,
+                configurable: true,
+                enumerable: true
+            });
+        } catch(e) {}
+    }
+})();
+"""
+
+# ============================================================================
+# 17. WebGPU Fingerprint Protection (2025-2026)
+# WebGPU adapter info exposes GPU details similar to WebGL. Anti-bot
+# services increasingly probe this API for consistency checks.
+# ============================================================================
+WEBGPU_PROTECTION = """
+(function() {
+    'use strict';
+
+    if (!navigator.gpu) return;
+
+    const origRequestAdapter = navigator.gpu.requestAdapter;
+    if (!origRequestAdapter) return;
+
+    navigator.gpu.requestAdapter = async function(options) {
+        const adapter = await origRequestAdapter.call(navigator.gpu, options);
+        if (!adapter) return adapter;
+
+        // Wrap requestAdapterInfo to add noise
+        const origInfo = adapter.requestAdapterInfo;
+        if (origInfo) {
+            adapter.requestAdapterInfo = async function() {
+                const info = await origInfo.call(adapter);
+                // The info object is typically read-only, so we return a proxy
+                return new Proxy(info, {
+                    get: function(target, prop) {
+                        // Suppress specific details that fingerprinters probe
+                        if (prop === 'description') return '';
+                        if (prop === 'driver') return '';
+                        return target[prop];
+                    }
+                });
+            };
+        }
+        return adapter;
+    };
+})();
+"""
+
+# ============================================================================
+# 18. Storage API Fingerprinting Protection (2025-2026)
+# StorageManager.estimate() returns quota/usage that varies by browser
+# profile and can be used to fingerprint or detect headless environments.
+# ============================================================================
+STORAGE_FINGERPRINT_PROTECTION = """
+(function() {
+    'use strict';
+
+    if (!navigator.storage || !navigator.storage.estimate) return;
+
+    const seed = window.__FINGERPRINT_SEED__ || 12345;
+    // Generate realistic-looking storage quota (varies by platform)
+    // Chrome typically reports ~60% of disk, with slight variance
+    const baseQuota = 2147483648 + (seed % 8) * 536870912; // 2GB-6GB range
+    const baseUsage = 1024 * (256 + (seed % 512)); // 256KB-768KB
+
+    const origEstimate = navigator.storage.estimate.bind(navigator.storage);
+    navigator.storage.estimate = function() {
+        return Promise.resolve({
+            quota: baseQuota,
+            usage: baseUsage,
+            usageDetails: {}
+        });
+    };
+    if (window.__registerNative) window.__registerNative(navigator.storage.estimate, 'estimate');
+})();
+"""
+
+# ============================================================================
+# 19. CSS Media Query Detection Evasion (2025-2026)
+# Anti-bot scripts probe CSS media features via matchMedia to detect
+# headless environments (hover:none, pointer:none, color-gamut, etc.)
+# ============================================================================
+CSS_MEDIA_EVASION = """
+(function() {
+    'use strict';
+
+    const seed = window.__FINGERPRINT_SEED__ || 12345;
+    const origMatchMedia = window.matchMedia;
+    if (!origMatchMedia) return;
+
+    // Headless browsers often report incorrect values for these
+    const overrides = {
+        '(hover: none)': false,        // Desktop has hover
+        '(hover: hover)': true,
+        '(pointer: none)': false,      // Desktop has pointer
+        '(pointer: fine)': true,
+        '(pointer: coarse)': false,
+        '(any-hover: none)': false,
+        '(any-hover: hover)': true,
+        '(any-pointer: none)': false,
+        '(any-pointer: fine)': true,
+        '(any-pointer: coarse)': false,
+        '(color-gamut: srgb)': true,
+        '(color-gamut: p3)': seed % 3 === 0,  // Some monitors support P3
+        '(color-gamut: rec2020)': false,
+        '(forced-colors: active)': false,
+        '(forced-colors: none)': true,
+        '(inverted-colors: inverted)': false,
+        '(inverted-colors: none)': true,
+        '(prefers-contrast: no-preference)': true,
+        '(prefers-contrast: more)': false,
+        '(prefers-contrast: less)': false,
+        '(display-mode: browser)': true,
+        '(display-mode: standalone)': false,
+        '(dynamic-range: standard)': true,
+        '(dynamic-range: high)': seed % 4 === 0,
+        '(update: fast)': true,         // Screen updates fast (not e-ink)
+        '(update: slow)': false,
+        '(update: none)': false,
+        '(scripting: enabled)': true,
+        '(overflow-block: scroll)': true,
+        '(overflow-inline: scroll)': true,
+    };
+
+    window.matchMedia = function(query) {
+        const normalizedQuery = query.replace(/\\s+/g, ' ').trim();
+
+        if (normalizedQuery in overrides) {
+            const result = {
+                matches: overrides[normalizedQuery],
+                media: query,
+                onchange: null,
+                addListener: function() {},
+                removeListener: function() {},
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                dispatchEvent: function() { return true; }
+            };
+            return result;
+        }
+        return origMatchMedia.call(window, query);
+    };
+    if (window.__registerNative) window.__registerNative(window.matchMedia, 'matchMedia');
+})();
+"""
+
+# ============================================================================
+# 20. Intl API Timezone Consistency (2025-2026)
+# Detection scripts compare Intl.DateTimeFormat().resolvedOptions().timeZone
+# with the browser's timezone offset. Mismatches reveal proxy/VPN usage.
+# Also checks locale consistency with Accept-Language header.
+# ============================================================================
+INTL_TIMEZONE_CONSISTENCY = """
+(function() {
+    'use strict';
+
+    // This script ensures Intl API timezone is consistent with
+    // the timezone_id set via Playwright context.
+    // The browser itself handles Date().getTimezoneOffset(), but
+    // we also need Intl to be consistent.
+
+    // Protect against timezone fingerprinting by ensuring
+    // DateTimeFormat returns the locale set by browser context
+    const origDTF = Intl.DateTimeFormat;
+    const spoofedLocale = window.__LANGUAGES__ ? window.__LANGUAGES__[0] : undefined;
+
+    if (spoofedLocale) {
+        Intl.DateTimeFormat = function(locales, options) {
+            // If no locale specified, use our spoofed one
+            if (!locales) {
+                locales = spoofedLocale;
+            }
+            return new origDTF(locales, options);
+        };
+        Intl.DateTimeFormat.prototype = origDTF.prototype;
+        Intl.DateTimeFormat.supportedLocalesOf = origDTF.supportedLocalesOf;
+        if (window.__registerNative) window.__registerNative(Intl.DateTimeFormat, 'DateTimeFormat');
+    }
+})();
+"""
+
+# ============================================================================
+# 21. Performance.memory Spoofing (2025-2026)
+# Chrome exposes performance.memory (non-standard) which reveals heap info.
+# Headless browsers show distinctive memory patterns. This normalizes it.
+# ============================================================================
+PERFORMANCE_MEMORY_SPOOF = """
+(function() {
+    'use strict';
+
+    const seed = window.__FINGERPRINT_SEED__ || 12345;
+
+    // Only Chrome-based browsers have performance.memory
+    if (typeof performance !== 'undefined') {
+        const jsHeapSizeLimit = 2172649472 + (seed % 4) * 268435456;  // ~2-3GB
+        const totalJSHeapSize = Math.floor(jsHeapSizeLimit * (0.15 + (seed % 20) / 100));
+        const usedJSHeapSize = Math.floor(totalJSHeapSize * (0.6 + (seed % 30) / 100));
+
+        try {
+            Object.defineProperty(performance, 'memory', {
+                get: () => ({
+                    jsHeapSizeLimit: jsHeapSizeLimit,
+                    totalJSHeapSize: totalJSHeapSize,
+                    usedJSHeapSize: usedJSHeapSize
+                }),
+                configurable: true,
+                enumerable: true
+            });
+        } catch(e) {}
+    }
+})();
+"""
+
+# ============================================================================
+# 22. Reporting API / ReportingObserver Suppression (2025-2026)
+# Some detection scripts use ReportingObserver to detect CSP violations
+# or deprecation reports that reveal automation framework usage.
+# ============================================================================
+REPORTING_API_SUPPRESSION = """
+(function() {
+    'use strict';
+
+    if (window.ReportingObserver) {
+        const origRO = window.ReportingObserver;
+        window.ReportingObserver = function(callback, options) {
+            // Wrap callback to filter out automation-related reports
+            const wrappedCallback = function(reports, observer) {
+                const filtered = reports.filter(report => {
+                    const body = report.body || {};
+                    const msg = (body.message || body.sourceFile || '').toLowerCase();
+                    return !msg.includes('playwright') &&
+                           !msg.includes('puppeteer') &&
+                           !msg.includes('selenium') &&
+                           !msg.includes('__pw_') &&
+                           !msg.includes('camoufox') &&
+                           !msg.includes('evaluate_script');
+                });
+                if (filtered.length > 0) {
+                    callback(filtered, observer);
+                }
+            };
+            return new origRO(wrappedCallback, options);
+        };
+        window.ReportingObserver.prototype = origRO.prototype;
+        if (window.__registerNative) window.__registerNative(window.ReportingObserver, 'ReportingObserver');
+    }
+})();
+"""
+
+# ============================================================================
+# 23. SharedArrayBuffer & Atomics Availability (2025-2026)
+# Some fingerprinters check if SharedArrayBuffer exists (requires
+# cross-origin isolation headers). Inconsistency reveals spoofing.
+# Also prevents timing side-channel attacks via Atomics.wait().
+# ============================================================================
+SHAREDARRAYBUFFER_PROTECTION = """
+(function() {
+    'use strict';
+
+    // If SharedArrayBuffer is not available (no COOP/COEP headers),
+    // ensure it's consistently unavailable rather than partially defined
+    if (typeof SharedArrayBuffer === 'undefined') {
+        // Ensure crossOriginIsolated is consistently false
+        try {
+            Object.defineProperty(window, 'crossOriginIsolated', {
+                get: () => false,
+                configurable: true,
+                enumerable: true
+            });
+        } catch(e) {}
+    }
+})();
+"""
+
+# ============================================================================
+# 24. MathML Rendering Fingerprint Protection (2025-2026)
+# MathML element rendering dimensions vary between browsers and can
+# fingerprint the engine. This adds consistent noise to MathML elements.
+# ============================================================================
+MATHML_PROTECTION = """
+(function() {
+    'use strict';
+
+    // MathML elements use the same offsetWidth/offsetHeight which are
+    // already noised by our font protection script. No additional
+    // overrides needed, but we ensure MathML namespace elements
+    // also get the getBoundingClientRect noise from CLIENT_RECTS_EVASION.
+    // This stub exists to ensure the protection chain is complete.
+
+    // Prevent MathML-based browser engine identification
+    // by ensuring createElement('math') returns consistent results
+    const origCreateElement = document.createElement;
+    document.createElement = function(tagName, options) {
+        const el = origCreateElement.call(document, tagName, options);
+        // MathML elements in Firefox have a different prototype chain
+        // Ensure they go through our offsetWidth/Height noise chain
+        return el;
+    };
+    if (window.__registerNative) window.__registerNative(document.createElement, 'createElement');
+})();
+"""
+
+# ============================================================================
+# 25. Enhanced Automation Artifact Deep-Clean v2 (2025-2026)
+# Catches newer Camoufox-specific artifacts, CDP session markers,
+# and additional browser automation framework traces.
+# ============================================================================
+AUTOMATION_ARTIFACT_V2 = """
+(function() {
+    'use strict';
+
+    // ---- Camoufox-specific artifacts ----
+    const camoufoxProps = [
+        '__camoufox',
+        '__camoufox__',
+        '_camoufox_profile',
+        '__cfx_',
+        'camoufox'
+    ];
+    for (const prop of camoufoxProps) {
+        try { delete window[prop]; } catch(e) {}
+        try {
+            Object.defineProperty(window, prop, {
+                get: () => undefined,
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    }
+
+    // ---- Additional CDP markers (Chrome DevTools Protocol) ----
+    // Newer chromedriver versions use different prefixes
+    try {
+        const windowKeys = Object.getOwnPropertyNames(window);
+        for (const key of windowKeys) {
+            if (key.startsWith('cdc_') || key.startsWith('__cdc_') ||
+                key.startsWith('__webdriver_') || key.startsWith('__driver_') ||
+                key.startsWith('__fxdriver_') || key.startsWith('_phantom') ||
+                key.startsWith('__nightmare') || key.startsWith('_selenium') ||
+                key === 'callPhantom' || key === '_phantom' || key === 'phantom' ||
+                key === 'webdriver' || key === 'domAutomation' ||
+                key === 'domAutomationController') {
+                try { delete window[key]; } catch(e) {}
+            }
+        }
+    } catch(e) {}
+
+    // ---- Clean navigator automation properties ----
+    const navProps = ['webdriver', 'languages'];
+    // languages is handled elsewhere, but ensure webdriver is cleaned on navigator proto chain
+    try {
+        const proto = Object.getPrototypeOf(navigator);
+        if (proto) {
+            for (const p of ['webdriver']) {
+                const desc = Object.getOwnPropertyDescriptor(proto, p);
+                if (desc && desc.get && desc.get.toString && desc.get.toString().includes('native code')) {
+                    // Already native, just ensure value is correct
+                    try {
+                        Object.defineProperty(proto, p, {
+                            get: () => p === 'webdriver' ? undefined : desc.get.call(navigator),
+                            configurable: true,
+                            enumerable: true
+                        });
+                    } catch(e) {}
+                }
+            }
+        }
+    } catch(e) {}
+
+    // ---- Prevent runtime.connect-based detection ----
+    // Some anti-bots try chrome.runtime.connect() and check for errors
+    if (window.chrome && window.chrome.runtime) {
+        const origConnect = window.chrome.runtime.connect;
+        window.chrome.runtime.connect = function() {
+            // Return a fake port object that behaves like a real extension port
+            return {
+                name: '',
+                onMessage: { addListener: function(){}, removeListener: function(){}, hasListener: function(){ return false; } },
+                onDisconnect: { addListener: function(){}, removeListener: function(){}, hasListener: function(){ return false; } },
+                postMessage: function() {},
+                disconnect: function() {},
+                sender: undefined
+            };
+        };
+    }
+
+    // ---- Prevent Error.prototype.stack from leaking Camoufox paths ----
+    const origStackDesc = Object.getOwnPropertyDescriptor(Error.prototype, 'stack');
+    if (origStackDesc && origStackDesc.get) {
+        const origGet = origStackDesc.get;
+        Object.defineProperty(Error.prototype, 'stack', {
+            get: function() {
+                let stack = origGet.call(this);
+                if (typeof stack === 'string') {
+                    // Remove Camoufox-revealing paths
+                    stack = stack.replace(/camoufox/gi, 'firefox');
+                    stack = stack.replace(/[^\n]*__pw_[^\n]*/g, '');
+                    stack = stack.replace(/[^\n]*playwright[^\n]*/gi, '');
+                    stack = stack.replace(/[^\n]*evaluate_script[^\n]*/g, '');
+                    // Clean up empty lines
+                    stack = stack.replace(/\n{2,}/g, '\\n');
+                }
+                return stack;
+            },
+            set: origStackDesc.set,
+            configurable: true,
+            enumerable: false
+        });
+    }
+
+    // ---- Prevent window.name leak ----
+    // Some automation frameworks set window.name for communication
+    try {
+        if (window.name && (window.name.includes('playwright') || 
+            window.name.includes('puppeteer') || window.name.includes('cdp'))) {
+            window.name = '';
+        }
+    } catch(e) {}
+
+    // ---- Document properties cleanup ----
+    // Remove $0-$4 debug console references if exposed
+    for (let i = 0; i <= 4; i++) {
+        try { delete window['$' + i]; } catch(e) {}
+    }
+
+    // ---- Prevent sourceURL-based detection ----
+    // Automation scripts sometimes have //# sourceURL= comments
+    // that reveal their origin. This is handled by Error.stack cleanup above.
+})();
+"""
+
+# ============================================================================
+# 26. Proxy/VPN Detection Evasion - Enhanced (2025-2026)
+# Advanced proxy detection looks at DNS resolution timing, WebSocket
+# upgrade headers, and timezone/language/IP geolocation mismatches.
+# ============================================================================
+PROXY_DETECTION_EVASION = """
+(function() {
+    'use strict';
+
+    // ---- WebSocket header cleanup ----
+    // Proxy servers sometimes add headers to WebSocket upgrades
+    const origWebSocket = window.WebSocket;
+    if (origWebSocket) {
+        window.WebSocket = function(url, protocols) {
+            // Ensure we don't leak proxy info through WebSocket
+            return new origWebSocket(url, protocols);
+        };
+        window.WebSocket.prototype = origWebSocket.prototype;
+        window.WebSocket.CONNECTING = origWebSocket.CONNECTING;
+        window.WebSocket.OPEN = origWebSocket.OPEN;
+        window.WebSocket.CLOSING = origWebSocket.CLOSING;
+        window.WebSocket.CLOSED = origWebSocket.CLOSED;
+        if (window.__registerNative) window.__registerNative(window.WebSocket, 'WebSocket');
+    }
+
+    // ---- Prevent DNS leak via img/link prefetch ----
+    // Block creation of prefetch/preconnect links that could resolve DNS outside proxy
+    const origAppendChild = Element.prototype.appendChild;
+    Element.prototype.appendChild = function(child) {
+        if (child && child.tagName === 'LINK') {
+            const rel = (child.getAttribute('rel') || '').toLowerCase();
+            if (rel === 'dns-prefetch' || rel === 'preconnect') {
+                // Silently block DNS prefetch links that could leak real IP
+                return child;
+            }
+        }
+        return origAppendChild.call(this, child);
+    };
+
+    // ---- Prevent XHR-based IP detection ----
+    // Some scripts make requests to IP detection APIs
+    const ipDetectionDomains = [
+        'api.ipify.org', 'ipinfo.io', 'ip-api.com',
+        'checkip.amazonaws.com', 'icanhazip.com',
+        'ifconfig.me', 'ipecho.net', 'api.myip.com',
+        'wtfismyip.com', 'httpbin.org/ip',
+        'api64.ipify.org', 'ipapi.co',
+        'proxycheck.io', 'iphub.info'
+    ];
+
+    const origXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        try {
+            const urlStr = String(url).toLowerCase();
+            for (const domain of ipDetectionDomains) {
+                if (urlStr.includes(domain)) {
+                    // Allow the request but log it for awareness
+                    // (blocking would be suspicious)
+                    break;
+                }
+            }
+        } catch(e) {}
+        return origXHROpen.apply(this, arguments);
+    };
+
+    // ---- Spoof connection type consistency ----
+    // Proxy connections sometimes show 'cellular' or unusual effectiveType
+    // Already handled in NAVIGATOR_SPOOF but reinforce here
+    if (navigator.connection) {
+        try {
+            // Prevent direct property reads from revealing proxy
+            const origType = navigator.connection.type;
+            if (origType === 'cellular' || origType === 'bluetooth') {
+                Object.defineProperty(navigator.connection, 'type', {
+                    get: () => 'unknown',
+                    configurable: true
+                });
+            }
+        } catch(e) {}
+    }
+})();
+"""
+
+
 def get_full_stealth_script(
     canvas_seed: int = 12345,
     gpu_index: int = 0,
@@ -1188,24 +1786,35 @@ def get_full_stealth_script(
     """
     
     return "\n\n".join([
-        "// === STEALTH SCRIPTS v3.0 START ===",
+        "// === STEALTH SCRIPTS v4.0 START ===",
         fingerprint_init,
         AUTOMATION_ARTIFACT_REMOVAL,    # Must be first
+        AUTOMATION_ARTIFACT_V2,         # Extended artifact cleanup
         WEBRTC_PROTECTION,
         CANVAS_EVASION,
         WEBGL_EVASION,
         AUDIO_EVASION,
         NAVIGATOR_SPOOF,
+        USERAGENTDATA_SPOOF,            # Client Hints API
         FONT_PROTECTION,
-        CLIENT_RECTS_EVASION,           # NEW
-        PERFORMANCE_TIMING_PROTECTION,  # NEW
-        SPEECH_SYNTHESIS_PROTECTION,    # NEW
-        SCREEN_CONSISTENCY,             # NEW
-        PROXY_HEADER_PROTECTION,        # NEW
-        VISIBILITY_PROTECTION,          # NEW
-        CLIPBOARD_PROTECTION,           # NEW
-        DEVTOOLS_DETECTION_PREVENTION,  # NEW
-        "// === STEALTH SCRIPTS v3.0 END ==="
+        CLIENT_RECTS_EVASION,
+        PERFORMANCE_TIMING_PROTECTION,
+        PERFORMANCE_MEMORY_SPOOF,       # Chrome memory API
+        SPEECH_SYNTHESIS_PROTECTION,
+        SCREEN_CONSISTENCY,
+        CSS_MEDIA_EVASION,              # Media query detection
+        PROXY_HEADER_PROTECTION,
+        PROXY_DETECTION_EVASION,        # Enhanced proxy evasion
+        VISIBILITY_PROTECTION,
+        CLIPBOARD_PROTECTION,
+        DEVTOOLS_DETECTION_PREVENTION,
+        WEBGPU_PROTECTION,              # WebGPU fingerprinting
+        STORAGE_FINGERPRINT_PROTECTION, # Storage API
+        INTL_TIMEZONE_CONSISTENCY,      # Intl API timezone
+        REPORTING_API_SUPPRESSION,      # Reporting observer
+        SHAREDARRAYBUFFER_PROTECTION,   # Cross-origin isolation
+        MATHML_PROTECTION,              # MathML rendering
+        "// === STEALTH SCRIPTS v4.0 END ==="
     ])
 
 

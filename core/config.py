@@ -180,7 +180,7 @@ class BotSettings(BaseSettings):
     withdrawal_max_retries: int = 3  # Maximum retry attempts before marking as failed
 
     # Performance / Concurrency
-    max_concurrent_bots: int = 3
+    max_concurrent_bots: int = 1  # TEMPORARILY SET TO 1 TO TEST CONCURRENCY ISSUE
     max_concurrent_per_profile: int = 1
     scheduler_tick_rate: float = 1.0
     exploration_frequency_minutes: int = 30

@@ -520,6 +520,63 @@ class FaucetBot:
         
         await asyncio.sleep(delay)
 
+    async def warm_up_page(self):
+        """
+        Simulate natural browsing behavior after page load but before any automated actions.
+        
+        This creates a behavioral baseline that makes the session look organic:
+        - Scrolls the page naturally (humans always scroll to see content)
+        - Generates mouse movement events
+        - Adds realistic reading delays
+        
+        Call this after navigating to a faucet page and waiting for load,
+        but before interacting with login/claim buttons.
+        """
+        try:
+            from browser.stealth_hub import StealthHub
+            warmup_script = StealthHub.get_pre_navigation_warmup_script()
+            await self.page.evaluate(warmup_script)
+            
+            # Additional page-level engagement: move mouse across viewport
+            vp = self.page.viewport_size
+            if vp:
+                # Simulate a few natural mouse positions (reading behavior)
+                for _ in range(random.randint(2, 4)):
+                    x = random.randint(100, max(200, vp['width'] - 100))
+                    y = random.randint(80, max(200, vp['height'] - 100))
+                    await self.page.mouse.move(x, y, steps=random.randint(5, 15))
+                    await asyncio.sleep(random.uniform(0.3, 1.2))
+            
+            # Brief reading pause
+            await asyncio.sleep(random.uniform(0.5, 2.0))
+            logger.debug(f"[{self.faucet_name}] Page warm-up complete")
+        except Exception as e:
+            # Non-critical - don't fail the faucet if warmup fails
+            logger.debug(f"[{self.faucet_name}] Warm-up skipped: {e}")
+
+    async def simulate_tab_activity(self):
+        """
+        Simulate tab switching / background-foreground transitions.
+        
+        Anti-bot systems track visibility state changes. Real users frequently
+        switch tabs. This simulates that pattern by briefly blurring and
+        re-focusing the page, creating natural visibilitychange events.
+        """
+        try:
+            # Simulate losing focus (user switches to another tab)
+            await self.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+            await asyncio.sleep(random.uniform(1.0, 5.0))
+            
+            # Simulate regaining focus (user comes back)
+            await self.page.evaluate("""() => {
+                window.dispatchEvent(new Event('focus'));
+                document.dispatchEvent(new Event('visibilitychange'));
+            }""")
+            await asyncio.sleep(random.uniform(0.3, 1.0))
+            logger.debug(f"[{self.faucet_name}] Tab activity simulated")
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Tab activity simulation skipped: {e}")
+
     def load_human_profile(self, profile_name: str) -> str:
         """
         Load or assign human timing profile for this account.
@@ -703,7 +760,7 @@ class FaucetBot:
             overlays.forEach(el => el.remove());
         }""")
 
-    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None):
+    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None, simulate_typos: bool = False):
         """
         Type text into a field with human-like keystroke dynamics.
         
@@ -712,12 +769,14 @@ class FaucetBot:
         - Occasional brief pauses (thinking mid-word)
         - Burst typing followed by short pauses
         - Different speed for different character types
+        - Optional typo simulation with backspace correction
         
         Args:
             selector: CSS selector or Playwright Locator
             text: Text to type
             delay_min: Minimum delay in ms (optional)
             delay_max: Maximum delay in ms (optional)
+            simulate_typos: If True, occasionally make and correct typos (for non-credential fields)
         """
         locator = self.page.locator(selector) if isinstance(selector, str) else selector
         
@@ -738,7 +797,32 @@ class FaucetBot:
         # Common letter pairs that are typed faster (muscle memory)
         fast_pairs = {'th', 'he', 'in', 'er', 'an', 'on', 'en', 'at', 'es', 'or', 'ti', 'te', 'st', 'io', 'ar', 'le', 'nd', 'ou', 'it', 'se'}
         
+        # Adjacent keyboard keys for realistic typos
+        adjacent_keys = {
+            'a': 'sq', 'b': 'vn', 'c': 'xv', 'd': 'sf', 'e': 'wr', 'f': 'dg',
+            'g': 'fh', 'h': 'gj', 'i': 'uo', 'j': 'hk', 'k': 'jl', 'l': 'k',
+            'm': 'n', 'n': 'bm', 'o': 'ip', 'p': 'o', 'q': 'w', 'r': 'et',
+            's': 'ad', 't': 'ry', 'u': 'yi', 'v': 'cb', 'w': 'qe', 'x': 'zc',
+            'y': 'tu', 'z': 'x'
+        }
+        
         for i, char in enumerate(text):
+            # Simulate occasional typo (2-4% chance, only for non-credential simulate_typos mode)
+            if simulate_typos and char.isalpha() and random.random() < 0.03 and i > 2 and i < len(text) - 2:
+                # Type a wrong adjacent key
+                wrong_char = random.choice(adjacent_keys.get(char.lower(), char.lower()))
+                if char.isupper():
+                    wrong_char = wrong_char.upper()
+                await self.page.keyboard.type(wrong_char, delay=0)
+                await asyncio.sleep(random.uniform(0.08, 0.2))
+                
+                # Brief pause (noticing the mistake)
+                await asyncio.sleep(random.uniform(0.15, 0.5))
+                
+                # Backspace to correct
+                await self.page.keyboard.press("Backspace")
+                await asyncio.sleep(random.uniform(0.05, 0.15))
+            
             # Calculate delay for this keystroke
             delay = base_delay_ms
             
@@ -750,6 +834,10 @@ class FaucetBot:
             if char.isupper() or char in '!@#$%^&*()_+-=[]{}|;:,.<>?/~`':
                 delay = int(delay * random.uniform(1.2, 1.6))
             
+            # Numbers typed slightly faster (numpad muscle memory)
+            if char.isdigit():
+                delay = int(delay * random.uniform(0.8, 1.1))
+            
             # Spaces often have a tiny pause (between words)
             if char == ' ':
                 delay = int(delay * random.uniform(1.1, 1.8))
@@ -757,6 +845,11 @@ class FaucetBot:
             # Occasional "thinking" micro-pause (2-5% of keystrokes)
             if random.random() < 0.035 and i > 2:
                 await asyncio.sleep(random.uniform(0.3, 0.9))
+            
+            # Burst typing: consecutive keys sometimes come faster
+            if i > 1 and i % random.randint(4, 8) == 0:
+                # Short burst at higher speed
+                delay = int(delay * random.uniform(0.4, 0.6))
             
             # Add natural variance (±30%)
             delay = int(delay * random.uniform(0.7, 1.3))

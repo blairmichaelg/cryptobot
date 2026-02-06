@@ -181,6 +181,8 @@ class BrowserManager:
             "media.peerconnection.ice.default_address_only": True,  # Prevent local IP leak
             "media.peerconnection.ice.no_host": True,  # No host candidate in ICE
             "media.peerconnection.ice.proxy_only": True,  # Force ICE through proxy
+            "media.peerconnection.ice.relay_only": True,  # Only TURN relay candidates
+            "media.peerconnection.turn.disable": True,  # Disable TURN entirely
             # Disable battery API (Firefox doesn't expose it anyway, but be safe)
             "dom.battery.enabled": False,
             # Enable DRM for maximum compatibility (sites check this)
@@ -191,8 +193,38 @@ class BrowserManager:
             # Avoid DNS prefetch leaking real IP
             "network.dns.disablePrefetch": True,
             "network.prefetch-next": False,
+            "network.dns.disablePrefetchFromHTTPS": True,  # Also block HTTPS DNS prefetch
             # Proper referrer policy  
             "network.http.referer.XOriginPolicy": 0,  # Send referrer (blocking is suspicious)
+            # Canvas fingerprinting protection (Camoufox handles this, reinforce)
+            "privacy.resistFingerprinting": False,  # DON'T enable - makes fingerprint too uniform
+            "canvas.poisondata": False,  # Camoufox-specific; we inject our own noise
+            # Font fingerprinting protection
+            "browser.display.use_document_fonts": 1,  # Allow document fonts (blocking is detectable)
+            "layout.css.font-visibility.level": 1,  # Standard font visibility
+            # Disable WebGL debug extension info leak (reinforces our JS spoof)
+            "webgl.enable-debug-renderer-info": True,  # Must be true or sites detect blocking
+            # Proxy connection settings
+            "network.proxy.socks_remote_dns": True,  # DNS through proxy (prevents DNS leak)
+            "network.trr.mode": 3 if self.proxy else 0,  # DoH through proxy when using proxy
+            # Prevent speculative connections that bypass proxy
+            "network.http.speculative-parallel-limit": 0,
+            "browser.urlbar.speculativeConnect.enabled": False,
+            # Disable features that reveal automation
+            "dom.webnotifications.enabled": True,  # Notifications API (blocking is suspicious)
+            "permissions.default.desktop-notification": 0,  # Don't auto-deny
+            # Prevent memory-based fingerprinting
+            "dom.maxHardwareConcurrency": 0,  # Let our JS spoof handle this
+            # Disable user activity monitoring
+            "dom.event.clipboardevents.enabled": True,  # Required for some sites
+            # Connection pooling (prevents proxy fingerprinting via connection patterns)
+            "network.http.max-persistent-connections-per-server": 6,
+            "network.http.max-persistent-connections-per-proxy": 8,
+            # Disable telemetry beacons that add unique requests
+            "beacon.enabled": True,  # Blocking is detectable
+            "dom.enable_performance": True,  # Required for legitimate sites
+            # Enable SharedWorker (blocking is suspicious)
+            "dom.workers.sharedWorkers.enabled": True,
         }
         kwargs["config"] = firefox_prefs
 
@@ -269,7 +301,8 @@ class BrowserManager:
 
         if not locale or not timezone_id:
             locale = random.choice(["en-US", "en-GB", "en-CA", "en-AU"])
-            timezone_id = random.choice(["America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"])
+            # Use geo-consistent timezone for the chosen locale
+            timezone_id = StealthHub.get_consistent_locale_timezone(locale)
 
             if not languages:
                 languages = [locale, locale.split("-")[0]]
@@ -406,8 +439,19 @@ class BrowserManager:
             "en-GB": "en-GB,en;q=0.9",
             "en-CA": "en-CA,en;q=0.9,en-US;q=0.8",
             "en-AU": "en-AU,en;q=0.9,en-US;q=0.8",
+            "de-DE": "de-DE,de;q=0.9,en;q=0.8",
+            "fr-FR": "fr-FR,fr;q=0.9,en;q=0.8",
+            "ja-JP": "ja-JP,ja;q=0.9,en;q=0.8",
+            "ko-KR": "ko-KR,ko;q=0.9,en;q=0.8",
+            "zh-CN": "zh-CN,zh;q=0.9,en;q=0.8",
+            "pt-BR": "pt-BR,pt;q=0.9,en;q=0.8",
+            "es-ES": "es-ES,es;q=0.9,en;q=0.8",
         }
         ua = context_args.get("user_agent", "")
+        
+        # Ensure platform_name is consistent with the chosen User-Agent
+        if ua and not platform_name:
+            platform_name = StealthHub.get_consistent_platform_for_ua(ua)
         
         extra_headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -428,11 +472,13 @@ class BrowserManager:
             extra_headers["Sec-CH-UA"] = f'"Chromium";v="{chrome_match}", "Google Chrome";v="{chrome_match}", "Not-A.Brand";v="99"'
             extra_headers["Sec-CH-UA-Mobile"] = "?0"
             extra_headers["Sec-CH-UA-Platform"] = f'"{platform_name or "Windows"}"'
+            extra_headers["Sec-CH-UA-Full-Version-List"] = f'"Chromium";v="{chrome_match}.0.0.0", "Google Chrome";v="{chrome_match}.0.0.0", "Not-A.Brand";v="99.0.0.0"'
         elif "Edg/" in ua:
             edge_match = ua.split("Edg/")[-1].split(".")[0] if "Edg/" in ua else "133"
             extra_headers["Sec-CH-UA"] = f'"Chromium";v="{edge_match}", "Microsoft Edge";v="{edge_match}", "Not-A.Brand";v="99"'
             extra_headers["Sec-CH-UA-Mobile"] = "?0"
             extra_headers["Sec-CH-UA-Platform"] = f'"Windows"'
+            extra_headers["Sec-CH-UA-Full-Version-List"] = f'"Chromium";v="{edge_match}.0.0.0", "Microsoft Edge";v="{edge_match}.0.0.0", "Not-A.Brand";v="99.0.0.0"'
         
         # Remove None values (e.g., DNT)
         extra_headers = {k: v for k, v in extra_headers.items() if v is not None}
@@ -481,7 +527,7 @@ class BrowserManager:
                 hardware_concurrency=hardware_concurrency
             )
         )
-        logger.debug("🎨 Injected stealth v3.0: canvas_seed=%s, gpu=%s, cores=%s", 
+        logger.debug("🎨 Injected stealth v4.0: canvas_seed=%s, gpu=%s, cores=%s", 
                      canvas_seed, gpu_index, hardware_concurrency)
 
         # Apply Resource Blocker using instance settings or overrides

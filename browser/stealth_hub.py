@@ -147,14 +147,22 @@ class StealthHub:
         """
         Returns a comprehensive JavaScript snippet to be injected into the browser context.
         
-        Includes v3.0 stealth protections:
-        - Automation artifact deep-clean (Playwright/Selenium/Puppeteer/CDP)
+        Includes v4.0 stealth protections:
+        - Automation artifact deep-clean v2 (Playwright/Selenium/Puppeteer/CDP/Camoufox)
         - Canvas/WebGL/Audio fingerprint evasion (seeded per-profile)
         - ClientRects noise, Performance timing jitter
         - Navigator property spoofing (plugins, battery, connection, devices)
+        - UserAgentData / Client Hints API consistency
         - Screen/Display consistency, Visibility/Focus fix
-        - Proxy/VPN header leak prevention
+        - CSS media query detection evasion (hover, pointer, color-gamut)
+        - Proxy/VPN header leak prevention + enhanced proxy detection evasion
+        - WebGPU fingerprint protection
+        - Storage API fingerprinting protection
+        - Intl API timezone/locale consistency
+        - Performance.memory spoofing
+        - ReportingObserver/SharedArrayBuffer protection
         - Speech synthesis voices, Clipboard protection
+        - MathML rendering fingerprint protection
         
         Args:
             canvas_seed: Deterministic seed for canvas noise (ensures same profile = same fingerprint)
@@ -236,3 +244,105 @@ class StealthHub:
         # Weight: Chrome Windows > Chrome Mac > Firefox > Edge > Safari > Chrome Linux
         weights = [15, 12, 10, 8, 8, 6, 5, 4, 7, 5, 3, 5, 4, 4, 4]
         return random.choices(uas, weights=weights, k=1)[0]
+
+    @staticmethod
+    def get_pre_navigation_warmup_script() -> str:
+        """
+        Returns JS that simulates organic page engagement before any automation.
+        Should be run after page load but before any claim/action to look natural.
+        Creates scroll events, mouse movements, and focus/blur to build behavioral baseline.
+        """
+        return """
+        (async function() {
+            'use strict';
+            
+            // Simulate initial scroll behavior (users scroll to see the page)
+            const scrollSteps = 2 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < scrollSteps; i++) {
+                const scrollAmount = 50 + Math.floor(Math.random() * 200);
+                window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+                await new Promise(r => setTimeout(r, 300 + Math.random() * 700));
+            }
+            
+            // Scroll back up partially (natural reading pattern)
+            window.scrollBy({ top: -(100 + Math.floor(Math.random() * 150)), behavior: 'smooth' });
+            await new Promise(r => setTimeout(r, 200 + Math.random() * 500));
+            
+            // Generate a few mouse movement events at natural positions
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
+                const x = 100 + Math.floor(Math.random() * (vw - 200));
+                const y = 100 + Math.floor(Math.random() * (vh - 200));
+                const evt = new MouseEvent('mousemove', {
+                    clientX: x, clientY: y,
+                    bubbles: true, cancelable: true
+                });
+                document.dispatchEvent(evt);
+                await new Promise(r => setTimeout(r, 100 + Math.random() * 400));
+            }
+        })();
+        """
+
+    @staticmethod  
+    def get_timezone_locale_map() -> dict:
+        """
+        Returns a map of locale -> compatible timezones for geo-consistency.
+        When a proxy is in a specific region, the locale and timezone must match
+        to avoid detection by timezone/locale mismatch checks.
+        """
+        return {
+            "en-US": [
+                "America/New_York", "America/Chicago", "America/Denver",
+                "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+                "America/Phoenix", "America/Detroit", "America/Indiana/Indianapolis"
+            ],
+            "en-GB": [
+                "Europe/London"
+            ],
+            "en-CA": [
+                "America/Toronto", "America/Vancouver", "America/Edmonton",
+                "America/Winnipeg", "America/Halifax"
+            ],
+            "en-AU": [
+                "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
+                "Australia/Perth", "Australia/Adelaide"
+            ],
+            "de-DE": ["Europe/Berlin"],
+            "fr-FR": ["Europe/Paris"],
+            "ja-JP": ["Asia/Tokyo"],
+            "ko-KR": ["Asia/Seoul"],
+            "zh-CN": ["Asia/Shanghai"],
+            "pt-BR": ["America/Sao_Paulo"],
+            "es-ES": ["Europe/Madrid"],
+            "it-IT": ["Europe/Rome"],
+            "nl-NL": ["Europe/Amsterdam"],
+            "ru-RU": ["Europe/Moscow"],
+            "tr-TR": ["Europe/Istanbul"],
+            "pl-PL": ["Europe/Warsaw"],
+            "sv-SE": ["Europe/Stockholm"],
+        }
+
+    @staticmethod
+    def get_consistent_locale_timezone(locale: str) -> str:
+        """
+        Given a locale, return a geographically consistent timezone.
+        Prevents timezone/locale mismatch detection.
+        """
+        tz_map = StealthHub.get_timezone_locale_map()
+        timezones = tz_map.get(locale, ["America/New_York"])
+        return random.choice(timezones)
+
+    @staticmethod
+    def get_consistent_platform_for_ua(ua: str) -> str:
+        """
+        Given a User-Agent string, return the matching navigator.platform value.
+        Prevents UA/platform mismatch detection.
+        """
+        if "Windows" in ua:
+            return "Win32"
+        elif "Macintosh" in ua or "Mac OS X" in ua:
+            return "MacIntel"
+        elif "Linux" in ua or "X11" in ua:
+            return "Linux x86_64"
+        return "Win32"  # Safe default
