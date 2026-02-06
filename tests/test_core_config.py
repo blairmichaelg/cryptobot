@@ -81,8 +81,9 @@ class TestBotSettingsConfiguration:
         assert settings.exploration_frequency_minutes == 30
         assert len(settings.user_agents) == 100  # fake_useragent generates 100 UAs
         # Check enabled_faucets includes core ones
-        expected_faucets = ["fire_faucet", "cointiply", "dutchy", "litepick", "tronpick", 
-                           "dogepick", "solpick", "binpick", "bchpick", "tonpick", 
+        expected_faucets = ["fire_faucet", "cointiply", "dutchy", "freebitcoin", "coinpayu", "faucetcrypto",
+                           "litepick", "tronpick",
+                           "dogepick", "solpick", "binpick", "bchpick", "tonpick",
                            "polygonpick", "dashpick", "ethpick", "usdpick"]
         assert settings.enabled_faucets == expected_faucets
     
