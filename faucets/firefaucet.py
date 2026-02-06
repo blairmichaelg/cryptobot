@@ -642,7 +642,19 @@ class FireFaucetBot(FaucetBot):
             
             # Now, Faucet Claim
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
-            await self.page.goto(f"{self.base_url}/faucet")
+            await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded")
+            
+            # Wait extra time for dynamic content to load
+            await asyncio.sleep(5)
+            
+            # Wait for faucet content to be present (with timeout)
+            try:
+                logger.info(f"[{self.faucet_name}] Waiting for faucet interface to load...")
+                await self.page.wait_for_selector("button, input[type='submit']", timeout=15000)
+                logger.info(f"[{self.faucet_name}] Faucet interface loaded")
+            except Exception as e:
+                logger.warning(f"[{self.faucet_name}] Timeout waiting for faucet interface: {e}")
+                # Don't fail yet, continue with a warning
             
             # Check for Cloudflare on faucet page
             cf_blocked = await self.detect_cloudflare_block()
@@ -747,6 +759,26 @@ class FireFaucetBot(FaucetBot):
                 "input[type='submit'][value*='reward']",
                 "input[type='submit']:visible"
             ]
+            
+            # Debug: Log all buttons and inputs on the page
+            all_buttons = await self.page.locator('button').count()
+            all_inputs = await self.page.locator('input[type="submit"], input[type="button"]').count()
+            logger.info(f"[{self.faucet_name}] Page has {all_buttons} buttons and {all_inputs} submit/button inputs")
+            
+            if all_buttons > 0:
+                logger.info(f"[{self.faucet_name}] Available buttons:")
+                for i in range(min(all_buttons, 20)):  # Log first 20 buttons
+                    try:
+                        btn = self.page.locator('button').nth(i)
+                        text = await btn.text_content()
+                        id_attr = await btn.get_attribute('id')
+                        class_attr = await btn.get_attribute('class')
+                        is_visible = await btn.is_visible()
+                        is_enabled = await btn.is_enabled()
+                        logger.debug(f"  [{i}] text='{text}', id='{id_attr}', class='{class_attr[:50]}', visible={is_visible}, enabled={is_enabled}")
+                    except Exception as debug_err:
+                        logger.debug(f"  [{i}] Error logging button: {debug_err}")
+            
             faucet_btn = None
             for selector in faucet_btn_selectors:
                 try:
