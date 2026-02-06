@@ -36,8 +36,8 @@ When the bot encounters the 0-buttons issue, it will:
 
 #### Option A: Run Diagnostic Tool
 ```bash
-# SSH to Azure VM
-ssh azureuser@4.155.230.212
+# SSH to Azure VM (see docs/azure/AZURE_VM_STATUS.md for connection details)
+ssh <user>@<vm-ip>
 
 # Navigate to repo
 cd ~/Repositories/cryptobot

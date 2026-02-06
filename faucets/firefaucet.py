@@ -773,9 +773,13 @@ class FireFaucetBot(FaucetBot):
                 logger.warning(f"[{self.faucet_name}] ⚠️ CRITICAL: 0 buttons found on /faucet page!")
                 logger.warning(f"[{self.faucet_name}] This suggests /faucet page may not support manual claims")
                 
-                # Save diagnostic screenshot
-                await self.page.screenshot(path=f"firefaucet_zero_buttons_debug.png", full_page=True)
-                logger.info(f"[{self.faucet_name}] Saved screenshot: firefaucet_zero_buttons_debug.png")
+                # Save diagnostic screenshot to firefaucet_analysis directory for consistency
+                from pathlib import Path
+                output_dir = Path("firefaucet_analysis")
+                output_dir.mkdir(exist_ok=True)
+                screenshot_path = output_dir / "firefaucet_zero_buttons_debug.png"
+                await self.page.screenshot(path=str(screenshot_path), full_page=True)
+                logger.info(f"[{self.faucet_name}] Saved screenshot: {screenshot_path}")
                 
                 # Try waiting longer for dynamic content to load
                 logger.info(f"[{self.faucet_name}] Attempting extended wait for JavaScript (10s)...")

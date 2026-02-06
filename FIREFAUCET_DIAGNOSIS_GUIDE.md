@@ -16,7 +16,8 @@ FireFaucet bot successfully logs in and navigates to `/faucet` page, but finds *
 ### Step 1: Run Diagnostic Tool
 ```bash
 # On Azure VM (Linux with Camoufox support)
-ssh azureuser@4.155.230.212
+# SSH to your deployment VM (see docs/azure/AZURE_VM_STATUS.md for details)
+ssh <user>@<vm-ip>
 cd ~/Repositories/cryptobot
 HEADLESS=true python analyze_firefaucet_page.py
 ```
