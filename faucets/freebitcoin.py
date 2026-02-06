@@ -505,7 +505,7 @@ class FreeBitcoinBot(FaucetBot):
                         if await locator.is_visible(timeout=3000):
                             logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
                             await self.human_like_click(locator)
-                            await asyncio.sleep(3)  # Wait longer for form to appear
+                            await asyncio.sleep(5)  # Increased wait time for form animation/rendering
                             login_trigger_clicked = True
                             break
                     except Exception:
