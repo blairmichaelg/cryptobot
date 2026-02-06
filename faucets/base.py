@@ -1515,6 +1515,7 @@ class FaucetBot:
         start_time = time.time()
         checks = 0
         consecutive_no_cf = 0  # Track consecutive checks with no CF detected
+        turnstile_error_detected = False  # Track if Turnstile is broken
         
         while (time.time() - start_time) < max_wait_seconds:
             checks += 1
@@ -1526,6 +1527,38 @@ class FaucetBot:
                     await self.page.reload()
                     await asyncio.sleep(5)
                     continue
+
+                # Check for broken Turnstile (sitekey misconfiguration)
+                # If Turnstile JavaScript threw an error, it won't complete - exit early
+                if checks == 2 and not turnstile_error_detected:
+                    try:
+                        # Check page for signs of broken Turnstile
+                        turnstile_broken = await self.page.evaluate('''() => {
+                            // Check if Turnstile iframe failed to load properly
+                            const iframes = document.querySelectorAll('iframe[src*="turnstile"], iframe[src*="challenges.cloudflare"]');
+                            for (const iframe of iframes) {
+                                // Empty iframe or error state
+                                if (!iframe.contentDocument && iframe.style.display !== 'none') {
+                                    return true;
+                                }
+                            }
+                            // Check for Turnstile error messages in page
+                            const pageText = document.body?.innerText || '';
+                            if (pageText.includes('TurnstileError') || pageText.includes('Invalid sitekey')) {
+                                return true;
+                            }
+                            return false;
+                        }''')
+                        if turnstile_broken:
+                            turnstile_error_detected = True
+                            logger.warning(f"[{self.faucet_name}] ⚠️ Broken Turnstile detected (sitekey error). Site misconfigured.")
+                    except Exception:
+                        pass  # Evaluation failed, continue normal flow
+
+                # If Turnstile is broken, wait max 10s then proceed (site issue, not ours)
+                if turnstile_error_detected and (time.time() - start_time) > 10:
+                    logger.info(f"[{self.faucet_name}] Proceeding despite broken Turnstile (site misconfiguration)")
+                    return True
 
                 # Check page title for Cloudflare indicators
                 title = (await self.page.title()).lower()

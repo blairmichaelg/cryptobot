@@ -44,9 +44,9 @@ class PickFaucetBase(FaucetBot):
         Returns:
             True if navigation succeeded, False if all retries exhausted
         """
-        # Use longer timeout for Pick.io sites - they're consistently slow
-        # Use configured timeout with reasonable minimum for slow Pick.io sites
-        nav_timeout = max(getattr(self.settings, "timeout", 60000), 45000)  # At least 45s
+        # Use longer timeout for Pick.io sites - they're consistently slow behind Cloudflare
+        # Minimum 90s to account for CF challenges + slow page loads
+        nav_timeout = max(getattr(self.settings, "timeout", 60000), 90000)  # At least 90s for Pick.io
 
         for attempt in range(max_retries):
             try:
