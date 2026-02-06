@@ -26,7 +26,6 @@ balance = await self.get_balance(
 balance = await self.get_balance(
     "#balance_small",  # Primary selector - correct for FreeBitcoin
     fallback_selectors=[
-        "#balance_small span",  # Balance value inside #balance_small
         "#balance",             # Legacy fallback
         "span.balance",         # Generic balance span
         ".user-balance",        # Alternative class
@@ -187,7 +186,6 @@ The `diagnose_freebitcoin_selectors.py` script tests these specific selectors:
 - `span.balance`
 - `.user-balance`
 - `[data-balance]`
-- `#balance_small span` ✅ (now first fallback)
 
 **Timer selectors tested:**
 - `#time_remaining` ✅ (primary)
@@ -201,7 +199,7 @@ The `diagnose_freebitcoin_selectors.py` script tests these specific selectors:
 
 ### Reliability
 - **Correct selectors**: Uses `#balance_small` which actually exists on FreeBitcoin
-- **Multiple fallbacks**: 6 fallback selectors for balance, 6 for timer
+- **Multiple fallbacks**: 5 fallback selectors for balance, 6 for timer
 - **Auto-detection**: Falls back to DOM search if all selectors fail
 
 ### Maintainability
