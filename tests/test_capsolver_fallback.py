@@ -223,15 +223,25 @@ class TestCapSolverFallback:
         solver._record_provider_result("2captcha", "hcaptcha", success=False)
         solver._record_provider_result("capsolver", "hcaptcha", success=True)
         solver._record_provider_result("capsolver", "hcaptcha", success=True)
+        solver._record_provider_result("capsolver", "turnstile", success=True)
         
         stats = solver.get_provider_stats()
         
+        # Verify stats structure
         assert stats["primary"] == "2captcha"
         assert stats["fallback"] == "capsolver"
+        assert "providers" in stats
+        
+        # Verify 2captcha stats
         assert stats["providers"]["2captcha"]["failures"] == 1
         assert stats["providers"]["2captcha"]["solves"] == 0
-        assert stats["providers"]["capsolver"]["solves"] == 2
+        assert stats["providers"]["2captcha"]["cost"] == 0.0
+        
+        # Verify capsolver stats
+        assert stats["providers"]["capsolver"]["solves"] == 3
         assert stats["providers"]["capsolver"]["failures"] == 0
+        # 2 hcaptcha @ $0.003 + 1 turnstile @ $0.003 = $0.009
+        assert stats["providers"]["capsolver"]["cost"] == pytest.approx(0.009, rel=0.01)
 
 
 class TestFaucetBotFallbackConfiguration:

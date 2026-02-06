@@ -16,6 +16,9 @@ ERROR_ZERO_BALANCE_DELAY = 60  # Wait 60s if balance is zero
 MAX_POLL_ATTEMPTS = 24  # 24 * 5s = 2 minutes max wait
 DEFAULT_DAILY_BUDGET_USD = 5.0  # Default daily budget limit
 
+# Errors that should trigger fallback to secondary provider
+FALLBACK_ERRORS = ['NO_SLOT', 'ZERO_BALANCE', 'ERROR_METHOD_CALL']
+
 
 class CaptchaSolver:
     """
@@ -366,7 +369,7 @@ class CaptchaSolver:
                     self._record_provider_result(provider, captcha_type, success=False)
 
                     # If not fallback-worthy, propagate
-                    if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper() and "ERROR_METHOD_CALL" not in error_msg.upper():
+                    if not any(err in error_msg.upper() for err in FALLBACK_ERRORS):
                         raise
                     break  # Exit retry loop, try next provider
         
