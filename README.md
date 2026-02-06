@@ -425,20 +425,28 @@ Standardized utility for parsing timers and balances:
 
 ### Residential Proxy Configuration
 
-The bot supports automatic proxy fetching from 2Captcha residential proxy service.
+The bot supports **automatic proxy fetching** from 2Captcha residential proxy service with validation, latency filtering, and auto-refresh.
 
-**Setup**:
+**Quick Setup (Automatic)**:
 
 1. Purchase residential proxy traffic at [2Captcha Residential Proxies](https://2captcha.com/proxy/residential-proxies)
 2. Enable in `.env`:
-   ```
+   ```bash
    USE_2CAPTCHA_PROXIES=true
+   PROXY_AUTO_REFRESH_ENABLED=true
    ```
-3. The bot will automatically:
-   - Fetch proxy configuration from 2Captcha API
-   - Generate session-rotated proxies
-   - Save them to `config/proxies.txt`
-   - Assign proxies to accounts (sticky sessions)
+3. Run the fetch script:
+   ```bash
+   python3 fetch_proxies.py --count 100 --validate
+   ```
+
+The bot will automatically:
+- Fetch proxy configuration from 2Captcha API
+- Generate 50-100+ session-rotated proxies
+- Validate each proxy before adding to pool
+- Filter by latency (<3000ms by default)
+- Save to `config/proxies.txt`
+- Auto-refresh daily when healthy count is low
 
 **Manual Configuration** (if API fetch fails):
 
@@ -450,11 +458,26 @@ your-username:your-password@proxy.2captcha.com:8080
 
 **How It Works**:
 
-- The bot uses session-based rotation (appends `-session-XXXXX` to username)
-- Each account gets a sticky proxy assignment
+- 2Captcha provides ONE gateway endpoint with session rotation
+- Each unique session ID (e.g., `user-session-abc123`) gets a different residential IP
+- The bot generates 100+ unique sessions for maximum anonymity
+- Each account gets a sticky proxy assignment for consistent fingerprinting
+- Auto-refresh keeps the pool healthy (replaces dead/slow proxies)
 - Proxies respect cooldown (5 min for failures, 1 hour for detection/403) windows
 - Health monitoring tracks latency and failures
 - Dead proxies are automatically rotated out
+
+**Advanced Configuration**:
+
+Add to `.env` to customize:
+```bash
+PROXY_MIN_HEALTHY_COUNT=50      # Minimum before auto-refresh
+PROXY_TARGET_COUNT=100          # Target proxy pool size
+PROXY_MAX_LATENCY_MS=3000       # Maximum acceptable latency
+PROXY_AUTO_REFRESH_INTERVAL_HOURS=24  # How often to check
+```
+
+See [docs/2CAPTCHA_PROXY_INTEGRATION.md](docs/2CAPTCHA_PROXY_INTEGRATION.md) for complete documentation.
 
 ### Proxy Detection Issues
 
