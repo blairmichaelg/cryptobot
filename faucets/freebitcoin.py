@@ -767,7 +767,7 @@ class FreeBitcoinBot(FaucetBot):
                 logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
                     "#balance_small",
-                    fallback_selectors=["#balance_small span", "#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
+                    fallback_selectors=["#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
                 )
                 logger.info(f"[DEBUG] Balance: {balance}")
 
@@ -874,7 +874,7 @@ class FreeBitcoinBot(FaucetBot):
                             # Confirm claim by checking timer and/or balance update
                             new_balance = await self.get_balance(
                                 "#balance_small",
-                                fallback_selectors=["#balance_small span", "#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
+                                fallback_selectors=["#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
                             )
                             timer_after = await self.get_timer(
                                 "#time_remaining",
@@ -993,7 +993,7 @@ class FreeBitcoinBot(FaucetBot):
             # Get current balance
             balance = await self.get_balance(
                 "#balance_small",
-                fallback_selectors=["#balance_small span", "#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
+                fallback_selectors=["#balance", "span.balance", ".user-balance", "[data-balance]", ".balance"]
             )
             balance_sat = int(float(balance) * 100000000) if balance else 0
             
