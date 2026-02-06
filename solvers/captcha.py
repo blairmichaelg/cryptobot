@@ -990,13 +990,11 @@ class CaptchaSolver:
         # Handle proxy from proxy_context (preferred) or self.proxy_string (fallback)
         proxy_string_to_use = None
         if proxy_context and proxy_context.get("proxy_string"):
-            # proxy_context should already have formatted proxy string
-            proxy_string_to_use = proxy_context.get("proxy_string")
-            # Ensure we have proxy_type, default to HTTP if not provided
-            proxy_type = proxy_context.get("proxy_type", "HTTP").upper()
-            # Validate proxy_type
-            if proxy_type not in ["HTTP", "HTTPS", "SOCKS4", "SOCKS5"]:
-                proxy_type = "HTTP"
+            # Parse proxy URL to extract user:pass@host:port format (2Captcha doesn't want http:// prefix)
+            raw_proxy = proxy_context.get("proxy_string")
+            proxy_info = self._parse_proxy(raw_proxy)
+            proxy_string_to_use = proxy_info["proxy"]
+            proxy_type = proxy_info["proxytype"]
             params["proxytype"] = proxy_type
             logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_type}): {proxy_string_to_use[:40]}...")
         elif self.proxy_string:
