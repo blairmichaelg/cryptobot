@@ -139,7 +139,7 @@ def main():
     if selectors_ok and (test_ok is None or test_ok):
         print("✅ All validations passed! Ready to test on Azure VM.")
         print("\nTo test on VM:")
-        print("  ssh azureuser@4.155.230.212")
+        print("  ssh <username>@<azure-vm-ip>  # Use your Azure VM credentials")
         print("  cd ~/Repositories/cryptobot")
         print("  git pull")
         print("  HEADLESS=true python3 test_freebitcoin_claim_detailed.py")

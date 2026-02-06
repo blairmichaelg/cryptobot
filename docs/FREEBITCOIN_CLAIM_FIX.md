@@ -144,7 +144,7 @@ Expected output:
 To test the fix end-to-end:
 
 ```bash
-ssh azureuser@4.155.230.212
+ssh <username>@<azure-vm-ip>  # Use your Azure VM credentials
 cd ~/Repositories/cryptobot
 git pull origin copilot/debug-freebitcoin-claim-flow
 HEADLESS=true python3 test_freebitcoin_claim_detailed.py
