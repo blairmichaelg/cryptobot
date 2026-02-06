@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 ANALYTICS_FILE = os.path.join(os.path.dirname(__file__), "..", "earnings_analytics.json")
 TEST_ANALYTICS_FILE = os.path.join(os.path.dirname(__file__), "..", "test_analytics.json")
 
+# Test faucet names that should be filtered in production mode
+TEST_FAUCET_NAMES = [
+    "test_faucet",
+    "testfaucet", 
+    "faucet1",
+    "faucet2", 
+    "faucet3"
+]
+
 # Global test mode flag - can be set by main.py or tests
 _test_mode = False
 
@@ -339,10 +348,12 @@ class EarningsTracker:
         """
         # In test mode, always allow test faucets
         # In production mode, filter out test faucets unless explicitly allowed
-        if not is_test_mode() and not allow_test and (faucet == "test_faucet" or faucet.startswith("test_") or 
-                                                        faucet.lower() in ["testfaucet", "faucet1", "faucet2", "faucet3"]):
-            logger.debug(f"Skipping analytics for test faucet: {faucet}")
-            return
+        if not is_test_mode() and not allow_test:
+            faucet_lower = faucet.lower()
+            # Check against known test faucet names
+            if faucet_lower in TEST_FAUCET_NAMES or faucet.startswith("test_"):
+                logger.debug(f"Skipping analytics for test faucet: {faucet}")
+                return
         
         # Validate and sanitize inputs
         try:

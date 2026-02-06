@@ -71,7 +71,7 @@ Production analytics should only contain data from real faucet claims. To view p
 
 ```bash
 # View summary from production data
-python -c 'from core.analytics import Analytics; a = Analytics(); print(a.get_summary())'
+python -c 'from core.analytics import EarningsTracker; a = EarningsTracker(); print(a.get_daily_summary())'
 
 # Ensure test mode is disabled (default)
 python -c 'from core.analytics import is_test_mode; print(f"Test mode: {is_test_mode()}")'
@@ -92,16 +92,16 @@ If production analytics contains test data, you can clean it manually:
 
 ```python
 import json
+from core.analytics import TEST_FAUCET_NAMES
 
 # Load production analytics
 with open('earnings_analytics.json', 'r') as f:
     data = json.load(f)
 
 # Filter out test entries
-test_names = ['test_faucet', 'TestFaucet', 'Faucet1', 'Faucet2', 'Faucet3']
 data['claims'] = [
     c for c in data['claims'] 
-    if c['faucet'] not in test_names and not c['faucet'].startswith('test_')
+    if c['faucet'].lower() not in TEST_FAUCET_NAMES and not c['faucet'].startswith('test_')
 ]
 
 # Save cleaned data
