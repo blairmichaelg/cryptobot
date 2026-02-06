@@ -1362,9 +1362,9 @@ class JobScheduler:
                     # Fallback: comma/semicolon/space-delimited list
                     bypass_raw = [item for item in (token.strip() for token in raw.replace(";", ",").split(",")) if item]
 
-        if not bypass_raw:
-            bypass_raw = ["freebitcoin"]
-
+        # Don't apply a default if bypass_raw is explicitly set to empty list
+        # This allows users to enable proxies for all faucets including FreeBitcoin
+        
         bypass = {_normalize(name) for name in bypass_raw}
         return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
 
@@ -1392,9 +1392,8 @@ class JobScheduler:
                 except Exception:
                     bypass_raw = [item for item in (token.strip() for token in raw.replace(";", ",").split(",")) if item]
 
-        if not bypass_raw:
-            bypass_raw = ["freebitcoin"]
-
+        # Don't apply a default - allow explicit empty list to disable all bypasses
+        
         bypass = {_normalize(name) for name in bypass_raw}
         return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
 
