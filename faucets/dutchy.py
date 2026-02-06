@@ -344,13 +344,23 @@ class DutchyBot(FaucetBot):
             
             # Get final balance to calculate earnings
             final_balance = await self.get_balance(".user-balance, .balance-text, #balance, .balance")
-            
+
+            # Calculate earned amount from balance difference
+            earned = "0"
+            try:
+                initial = float(balance) if balance and balance != "0" else 0.0
+                final = float(final_balance) if final_balance and final_balance != "0" else 0.0
+                if final > initial:
+                    earned = str(round(final - initial, 8))
+            except (ValueError, TypeError):
+                pass
+
             return ClaimResult(
-                success=True, 
-                status="Dutchy cycle complete", 
+                success=True,
+                status="Dutchy cycle complete",
                 next_claim_minutes=min_wait_minutes,
                 balance=final_balance,
-                amount="0"  # Could calculate from balance diff if needed
+                amount=earned
             )
             
         except asyncio.TimeoutError as e:

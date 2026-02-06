@@ -132,7 +132,7 @@ class AdBTCBot(FaucetBot):
                  return True
             
             logger.warning(f"[{self.faucet_name}] Login verification unclear. URL: {self.page.url}")
-            return True
+            return False
             
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Login failed: {e}", exc_info=True)

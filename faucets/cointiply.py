@@ -171,7 +171,26 @@ class CointiplyBot(FaucetBot):
             await self.random_delay(0.5, 1.5)
             
             # Solve CAPTCHA if present
+            # Cointiply uses ALTCHA (proof-of-work captcha) which is solved
+            # locally for free - no API key needed. The captcha solver
+            # auto-detects the <altcha-widget> element.
             logger.debug(f"[{self.faucet_name}] Attempting CAPTCHA solve")
+
+            # Check if ALTCHA specifically is present
+            altcha_present = await self.page.query_selector("altcha-widget, [data-altcha], .altcha")
+            if altcha_present:
+                logger.info(f"[{self.faucet_name}] ALTCHA proof-of-work captcha detected (free to solve)")
+
+            # Legacy: Check for hCaptcha (site may switch back)
+            hcaptcha_present = await self.page.query_selector("iframe[src*='hcaptcha']")
+            if hcaptcha_present:
+                logger.info(f"[{self.faucet_name}] hCaptcha detected - requires CapSolver fallback")
+                if not self.solver.fallback_provider:
+                    logger.warning(
+                        f"[{self.faucet_name}] No fallback provider configured! "
+                        "Set CAPTCHA_FALLBACK_PROVIDER=capsolver and CAPSOLVER_API_KEY in .env"
+                    )
+
             captcha_solved = await self.solver.solve_captcha(self.page)
             if not captcha_solved:
                 logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not present")
@@ -238,10 +257,35 @@ class CointiplyBot(FaucetBot):
         while retry_count < max_retries:
             try:
                 logger.info(f"[{self.faucet_name}] Starting claim process (attempt {retry_count + 1}/{max_retries})")
-                
+
                 nav_timeout = getattr(self.settings, "timeout", 180000)
-                # Use safe_navigate for better proxy error handling
-                await self.safe_navigate(f"{self.base_url}/faucet", wait_until="domcontentloaded", timeout=nav_timeout)
+                # Try multiple faucet URLs - Cointiply may have restructured
+                faucet_urls = [
+                    f"{self.base_url}/faucet",
+                    f"{self.base_url}/dashboard",
+                    f"{self.base_url}/home",
+                ]
+                navigated = False
+                for faucet_url in faucet_urls:
+                    try:
+                        nav_result = await self.safe_navigate(faucet_url, wait_until="domcontentloaded", timeout=nav_timeout)
+                        if nav_result:
+                            # Check if we got a 404 or error page
+                            page_title = await self.page.title()
+                            if "404" not in page_title and "not found" not in page_title.lower():
+                                logger.info(f"[{self.faucet_name}] Navigated to: {faucet_url}")
+                                navigated = True
+                                break
+                            else:
+                                logger.warning(f"[{self.faucet_name}] {faucet_url} returned 404, trying next URL")
+                    except Exception:
+                        continue
+
+                if not navigated:
+                    logger.error(f"[{self.faucet_name}] Could not navigate to any faucet page")
+                    retry_count += 1
+                    continue
+
                 await self.handle_cloudflare()
                 
                 # Verify page health before proceeding

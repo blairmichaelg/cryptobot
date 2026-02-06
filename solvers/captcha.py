@@ -62,7 +62,8 @@ class CaptchaSolver:
             "turnstile": 0.003,
             "hcaptcha": 0.003,
             "userrecaptcha": 0.003,
-            "image": 0.001
+            "image": 0.001,
+            "altcha": 0.0  # Free - solved locally via proof-of-work
         }
         
         if not self.api_key:
@@ -366,7 +367,9 @@ class CaptchaSolver:
                     self._record_provider_result(provider, captcha_type, success=False)
 
                     # If not fallback-worthy, propagate
-                    if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
+                    # Note: Both 'ERROR_METHOD_CALL' and 'METHOD_CALL' are checked to handle
+                    # different error message formats from various providers
+                    if not any(err in error_msg.upper() for err in ["NO_SLOT", "ZERO_BALANCE", "ERROR_METHOD_CALL", "METHOD_CALL"]):
                         raise
                     break  # Exit retry loop, try next provider
         
@@ -523,6 +526,13 @@ class CaptchaSolver:
             except Exception:
                 pass
 
+        # ALTCHA Detection (Proof-of-Work captcha - e.g. Cointiply)
+        if not method:
+            altcha_widget = await page.query_selector("altcha-widget, [data-altcha], .altcha")
+            if altcha_widget:
+                method = "altcha"
+                logger.info("ALTCHA proof-of-work captcha detected.")
+
         # Image Captcha Detection (Fragmented/Custom)
         if not method:
              # Check for image captchas that might need coordinates (e.g. Cointiply/Freebitco.in custom ones)
@@ -596,6 +606,10 @@ class CaptchaSolver:
             logger.info(f"CAPTCHA Detected: {method} (SiteKey: {sitekey[:10] if sitekey else 'N/A'}...)")
         else:
             logger.info("CAPTCHA Detected: Image (Coordinates based)")
+
+        # 2a. ALTCHA (Proof-of-Work) - solve locally, no API key needed
+        if method == "altcha":
+            return await self._solve_altcha(page)
 
         # 2. Auto-Solve Path with Budget Check
         auto_solve_allowed = False
@@ -772,10 +786,114 @@ class CaptchaSolver:
             await asyncio.sleep(2)
             self._record_solve("image", True)
             return True
-            
+
         except Exception as e:
             logger.error(f"Error solving image captcha: {e}")
             return await self._wait_for_human(page, 120)
+
+    async def _solve_altcha(self, page) -> bool:
+        """Solve ALTCHA proof-of-work captcha locally (no API key needed).
+
+        ALTCHA works by:
+        1. Fetching a challenge (salt, algorithm, challenge hash, maxnumber)
+        2. Brute-forcing: find ``number`` where SHA-256(salt + number) == challenge
+        3. Submitting the solution back to the widget
+
+        This runs entirely in the browser via JavaScript ``crypto.subtle``.
+        """
+        try:
+            logger.info("Solving ALTCHA proof-of-work captcha...")
+
+            solved = await page.evaluate(r"""
+                async () => {
+                    // Find the altcha widget element
+                    const widget = document.querySelector('altcha-widget, [data-altcha], .altcha');
+                    if (!widget) return {ok: false, error: 'widget not found'};
+
+                    // Extract challengeurl from the widget attributes
+                    let challengeUrl = widget.getAttribute('challengeurl') ||
+                                         widget.getAttribute('data-challengeurl') ||
+                                         widget.getAttribute('challengeURL');
+                    if (!challengeUrl) {
+                        // Try to find it in script tags
+                        const scripts = document.querySelectorAll('script');
+                        for (const s of scripts) {
+                            const m = s.textContent.match(/challengeurl["\s:=]+["']([^"']+)["']/i);
+                            if (m) { challengeUrl = m[1]; break; }
+                        }
+                    }
+                    if (!challengeUrl) return {ok: false, error: 'challengeurl not found'};
+
+                    // Fetch the challenge
+                    let challenge;
+                    try {
+                        const resp = await fetch(challengeUrl);
+                        challenge = await resp.json();
+                    } catch(e) {
+                        return {ok: false, error: 'fetch challenge failed: ' + e.message};
+                    }
+
+                    const {algorithm, salt, maxnumber} = challenge;
+                    const targetHash = challenge.challenge;
+                    const max = maxnumber || 1000000;
+
+                    // Brute-force the number using crypto.subtle
+                    const encoder = new TextEncoder();
+                    for (let n = 0; n <= max; n++) {
+                        const data = encoder.encode(salt + n.toString());
+                        const hashBuf = await crypto.subtle.digest('SHA-256', data);
+                        const hashHex = Array.from(new Uint8Array(hashBuf))
+                            .map(b => b.toString(16).padStart(2, '0')).join('');
+                        if (hashHex === targetHash) {
+                            // Build the solution payload
+                            const payload = btoa(JSON.stringify({
+                                algorithm: algorithm || 'SHA-256',
+                                challenge: targetHash,
+                                number: n,
+                                salt: salt,
+                                signature: challenge.signature || ''
+                            }));
+
+                            // Inject the solution into the hidden input
+                            const input = widget.querySelector('input[name="altcha"]') ||
+                                          document.querySelector('input[name="altcha"]');
+                            if (input) {
+                                input.value = payload;
+                                input.dispatchEvent(new Event('change', {bubbles: true}));
+                                input.dispatchEvent(new Event('input', {bubbles: true}));
+                            }
+
+                            // Also try triggering the widget's verified state
+                            try {
+                                widget.dispatchEvent(new CustomEvent('statechange', {
+                                    detail: {state: 'verified', payload: payload}
+                                }));
+                            } catch(e) {}
+
+                            // Try calling the widget's verify method if it exists
+                            if (typeof widget.value !== 'undefined') {
+                                widget.value = payload;
+                            }
+
+                            return {ok: true, number: n, iterations: n + 1};
+                        }
+                    }
+                    return {ok: false, error: 'solution not found within ' + max + ' iterations'};
+                }
+            """)
+
+            if solved and solved.get("ok"):
+                logger.info(f"ALTCHA solved in {solved.get('iterations', '?')} iterations (free, no API cost)")
+                self._record_solve("altcha", True)
+                return True
+            else:
+                error = solved.get("error", "unknown") if solved else "evaluation failed"
+                logger.error(f"ALTCHA solve failed: {error}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error solving ALTCHA captcha: {e}")
+            return False
 
     async def solve_text_captcha(self, page, image_selector: str, timeout: int = 120) -> Optional[str]:
         """Solve a text-based captcha from an image element using 2Captcha.
@@ -904,6 +1022,9 @@ class CaptchaSolver:
                 logger.error(f"2Captcha Submit Error: {error_code}")
                 if error_code == "ERROR_IP_NOT_ALLOWED":
                     logger.error("❌ 2Captcha: IP not whitelisted. Triggering whitelist update.")
+                # Raise exception for errors that should trigger fallback to CapSolver
+                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
+                    raise Exception(f"2Captcha Error: {error_code}")
                 return None
                 
             request_id = data['request']
@@ -937,6 +1058,10 @@ class CaptchaSolver:
                     logger.error("🚫 Your IP is NOT whitelisted in 2Captcha. Please add it to the portal.")
                 elif error_code == "ERROR_ZERO_BALANCE":
                     logger.error("💸 2Captcha balance is ZERO!")
+                
+                # Raise exception for errors that should trigger fallback to CapSolver
+                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
+                    raise Exception(f"2Captcha Error: {error_code}")
                 
                 return None
         return None
@@ -1118,7 +1243,7 @@ class CaptchaSolver:
             const patterns = [
                 /sitekey["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /site-key["']\\s*:\\s*["']([^"']{20,})["']/i,
-                /siteKey["']\s*:\s*["']([^"']{20,})["']/i,
+                /siteKey["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /key["']\\s*:\\s*["']([^"']{20,})["']/i,
                 /render\\(.+?["']([^"']{20,})["']/i
             ];

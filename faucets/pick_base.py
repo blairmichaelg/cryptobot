@@ -103,7 +103,7 @@ class PickFaucetBase(FaucetBot):
             logger.error("Base URL not set for PickFaucetBase subclass")
             return False
 
-        register_url = f"{self.base_url}/register.php"
+        register_url = f"{self.base_url}/signup.php"
         logger.info(f"[{self.faucet_name}] Registering at {register_url}")
         
         try:
@@ -217,6 +217,7 @@ class PickFaucetBase(FaucetBot):
                 return None
 
             email_selectors = [
+                'input#user_email',
                 'input[type="email"]',
                 'input[name="email"]',
                 'input#email',
@@ -242,6 +243,7 @@ class PickFaucetBase(FaucetBot):
                 'button:has-text("Log in")',
                 'a[href*="login"]',
                 'button#login',
+                'button#process_login',
                 '.login-btn',
                 '.login-button',
             ]
@@ -281,6 +283,25 @@ class PickFaucetBase(FaucetBot):
             await self.random_delay(0.4, 0.9)
             await self.human_type(pass_target, creds['password'])
             
+            # Select preferred captcha type if dropdown exists
+            # Pick.io sites offer: hCaptcha, reCAPTCHA, Turnstile, IconCaptcha, pCaptcha
+            # We prefer hCaptcha/Turnstile as the solver supports them
+            captcha_dropdown = self.page.locator('#select_captcha, select[name="captcha"]')
+            try:
+                if await captcha_dropdown.count() > 0 and await captcha_dropdown.first.is_visible():
+                    if self.solver.api_key:
+                        # Prefer hCaptcha (value typically "hcaptcha" or "0")
+                        try:
+                            await captcha_dropdown.first.select_option(label="hCaptcha")
+                        except Exception:
+                            try:
+                                await captcha_dropdown.first.select_option(label="Turnstile")
+                            except Exception:
+                                pass
+                        await self.random_delay(0.5, 1.0)
+            except Exception:
+                pass
+
             # Check for hCaptcha or Turnstile
             captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
             try:
@@ -321,7 +342,7 @@ class PickFaucetBase(FaucetBot):
                     return False
 
             login_btn = self.page.locator(
-                'button.btn, button.process_btn, button:has-text("Login"), '
+                'button#process_login, button.btn, button.process_btn, button:has-text("Login"), '
                 'button:has-text("Log in"), button[type="submit"], input[type="submit"], '
                 '#login_button, .login-btn, .login-button'
             )
@@ -487,6 +508,22 @@ class PickFaucetBase(FaucetBot):
                 return ClaimResult(success=True, status="Cooldown", next_claim_minutes=minutes, balance=await self.get_balance())
 
         try:
+            # Select preferred captcha type if dropdown exists on faucet page
+            captcha_dropdown = self.page.locator('#select_captcha, select[name="captcha"]')
+            try:
+                if await captcha_dropdown.count() > 0 and await captcha_dropdown.first.is_visible():
+                    if self.solver.api_key:
+                        try:
+                            await captcha_dropdown.first.select_option(label="hCaptcha")
+                        except Exception:
+                            try:
+                                await captcha_dropdown.first.select_option(label="Turnstile")
+                            except Exception:
+                                pass
+                        await self.random_delay(0.5, 1.0)
+            except Exception:
+                pass
+
             # Check for hCaptcha or Turnstile in the faucet page
             captcha_loc = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
             try:
