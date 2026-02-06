@@ -111,8 +111,6 @@ class WithdrawalAnalytics:
                     CREATE INDEX IF NOT EXISTS idx_crypto 
                     ON withdrawals(cryptocurrency)
                 """)
-                
-                conn.commit()
             logger.info("Withdrawal analytics database schema initialized")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -185,7 +183,6 @@ class WithdrawalAnalytics:
                 ))
                 
                 record_id = cursor.lastrowid
-                conn.commit()
             
             total_fee = network_fee + platform_fee
             net_amount = amount - total_fee
