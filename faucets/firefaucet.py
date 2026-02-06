@@ -765,6 +765,45 @@ class FireFaucetBot(FaucetBot):
             all_inputs = await self.page.locator('input[type="submit"], input[type="button"]').count()
             logger.info(f"[{self.faucet_name}] Page has {all_buttons} buttons and {all_inputs} submit/button inputs")
             
+            # Special case: If page has 0 buttons, this might indicate:
+            # 1. JavaScript hasn't loaded yet - try waiting longer
+            # 2. Manual faucet removed - need to use auto-faucet instead
+            # 3. Wrong endpoint - try alternative pages
+            if all_buttons == 0 and all_inputs == 0:
+                logger.warning(f"[{self.faucet_name}] ⚠️ CRITICAL: 0 buttons found on /faucet page!")
+                logger.warning(f"[{self.faucet_name}] This suggests /faucet page may not support manual claims")
+                
+                # Save diagnostic screenshot
+                await self.page.screenshot(path=f"firefaucet_zero_buttons_debug.png", full_page=True)
+                logger.info(f"[{self.faucet_name}] Saved screenshot: firefaucet_zero_buttons_debug.png")
+                
+                # Try waiting longer for dynamic content to load
+                logger.info(f"[{self.faucet_name}] Attempting extended wait for JavaScript (10s)...")
+                await asyncio.sleep(10)
+                
+                # Recheck button count
+                all_buttons_retry = await self.page.locator('button').count()
+                all_inputs_retry = await self.page.locator('input[type="submit"], input[type="button"]').count()
+                logger.info(f"[{self.faucet_name}] After extended wait: {all_buttons_retry} buttons, {all_inputs_retry} inputs")
+                
+                if all_buttons_retry == 0 and all_inputs_retry == 0:
+                    # Still no buttons - manual faucet may not be available
+                    logger.error(f"[{self.faucet_name}] ❌ Manual faucet page has no interactive elements")
+                    logger.error(f"[{self.faucet_name}] FireFaucet may have removed manual claiming")
+                    logger.error(f"[{self.faucet_name}] Consider using /start endpoint (auto-faucet) instead")
+                    
+                    # Return with instruction to user
+                    return ClaimResult(
+                        success=False, 
+                        status="Manual faucet page has 0 buttons - manual claiming may be removed. Check /start endpoint for auto-faucet.", 
+                        next_claim_minutes=30, 
+                        balance=balance
+                    )
+                else:
+                    # Buttons appeared after wait - update count for normal processing
+                    all_buttons = all_buttons_retry
+                    all_inputs = all_inputs_retry
+            
             if all_buttons > 0:
                 logger.info(f"[{self.faucet_name}] Available buttons:")
                 for i in range(min(all_buttons, 20)):  # Log first 20 buttons
