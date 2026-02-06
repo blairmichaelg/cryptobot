@@ -72,7 +72,7 @@ Fixed in **3 critical locations** in `faucets/freebitcoin.py`:
    - Checks balance and timer after claim
    - Used to confirm claim succeeded
 
-3. **Withdrawal balance check** (line 994-999)
+3. **Withdrawal balance check** (line 994-997)
    - Checks balance before withdrawal
    - Used to verify minimum balance for withdrawal
 
