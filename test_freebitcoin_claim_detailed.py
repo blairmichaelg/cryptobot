@@ -27,13 +27,25 @@ async def test_freebitcoin_claim():
     load_dotenv()
     
     settings = BotSettings()
-    browser_manager = BrowserManager(settings)
+    
+    # Initialize BrowserManager with proper parameters from settings
+    headless = os.getenv("HEADLESS", "true").lower() == "true"
+    browser_manager = BrowserManager(
+        headless=headless,
+        block_images=settings.block_images,
+        block_media=settings.block_media,
+        timeout=settings.timeout,
+        use_encrypted_cookies=True
+    )
     
     try:
         logger.info("🚀 Starting FreeBitcoin claim test...")
         
+        # Launch browser first
+        await browser_manager.launch()
+        
         # Create browser context
-        context = await browser_manager.get_or_create_context(account_key="freebitcoin")
+        context = await browser_manager.create_context(profile_name="freebitcoin")
         page = await context.new_page()
         
         # Create bot instance
@@ -56,14 +68,20 @@ async def test_freebitcoin_claim():
         logger.info("\n" + "="*60)
         logger.info("STEP 2: BALANCE EXTRACTION")
         logger.info("="*60)
-        balance = await bot.get_balance("#balance", fallback_selectors=["span.balance", ".user-balance"])
+        balance = await bot.get_balance(
+            "#balance",
+            fallback_selectors=["#balance_small", "span.balance", ".user-balance", "[data-balance]"]
+        )
         logger.info(f"Balance: {balance}")
         
         # Test timer extraction
         logger.info("\n" + "="*60)
         logger.info("STEP 3: TIMER EXTRACTION")
         logger.info("="*60)
-        timer = await bot.get_timer("#time_remaining", fallback_selectors=["span#timer", ".countdown"])
+        timer = await bot.get_timer(
+            "#time_remaining",
+            fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]
+        )
         logger.info(f"Timer (minutes): {timer}")
         
         # Test full claim
