@@ -366,6 +366,8 @@ class CaptchaSolver:
                     self._record_provider_result(provider, captcha_type, success=False)
 
                     # If not fallback-worthy, propagate
+                    # Note: Both 'ERROR_METHOD_CALL' and 'METHOD_CALL' are checked to handle
+                    # different error message formats from various providers
                     if not any(err in error_msg.upper() for err in ["NO_SLOT", "ZERO_BALANCE", "ERROR_METHOD_CALL", "METHOD_CALL"]):
                         raise
                     break  # Exit retry loop, try next provider

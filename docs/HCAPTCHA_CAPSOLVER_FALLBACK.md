@@ -228,12 +228,14 @@ HEADLESS=true python3 test_cointiply.py
 
 ## Cost Optimization
 
-### Provider Pricing (as of 2024)
+### Provider Pricing (February 2026)
 
-- **2Captcha hCaptcha**: $0.003 per solve
-- **CapSolver hCaptcha**: $0.003 per solve
+**Note**: Pricing information may change. Check provider websites for current rates.
 
-Both providers have similar pricing, so fallback doesn't increase costs.
+- **2Captcha hCaptcha**: ~$0.003 per solve
+- **CapSolver hCaptcha**: ~$0.003 per solve
+
+Both providers have similar pricing, so fallback doesn't significantly increase costs.
 
 ### Budget Management
 

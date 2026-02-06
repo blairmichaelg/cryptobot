@@ -87,7 +87,7 @@ class TestHCaptchaFallback:
     
     @pytest.mark.asyncio
     async def test_hcaptcha_no_fallback_on_timeout(self):
-        """Test that timeout (None return) doesn't immediately trigger fallback, but retries."""
+        """Test that timeout (None return) retries the same provider before fallback."""
         solver = CaptchaSolver(
             api_key="2captcha_key",
             provider="2captcha",
@@ -98,14 +98,14 @@ class TestHCaptchaFallback:
         page = AsyncMock()
         page.url = "https://cointiply.com/login"
         
-        # Mock _solve_2captcha to return None (timeout) twice, then succeed
+        # Mock _solve_2captcha to return None (timeout) once, then succeed
         call_count = 0
         def mock_2captcha_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count < 2:
-                return None  # Timeout
-            return "2captcha_token_success"
+            if call_count == 1:
+                return None  # First call: timeout
+            return "2captcha_token_success"  # Second call: success
         
         with patch.object(solver, '_solve_2captcha',
                          side_effect=mock_2captcha_side_effect) as mock_2captcha:
@@ -119,7 +119,7 @@ class TestHCaptchaFallback:
                     url="https://cointiply.com/login"
                 )
                 
-                # Should retry 2Captcha and succeed
+                # Should retry 2Captcha and succeed on second attempt
                 assert call_count == 2
                 assert result == "2captcha_token_success"
                 
