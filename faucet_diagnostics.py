@@ -140,7 +140,7 @@ async def test_basic_navigation():
         if browser_mgr:
             try:
                 await browser_mgr.close()
-            except:
+            except Exception:
                 pass
         return False
 
