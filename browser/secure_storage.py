@@ -300,7 +300,7 @@ class SecureCookieStorage:
             # Add some random cookies for extra domains
             for domain in random.sample(extra_domains, min(len(extra_domains), 10)):
                 selected_templates.append({
-                    "name": secrets.choice(["session_id", "user_id", "pref", "lang", "theme"]),
+                    "name": random.choice(["session_id", "user_id", "pref", "lang", "theme"]),
                     "domain": domain,
                     "value": self._generate_random_id(secrets.randbelow(17) + 16)
                 })
@@ -313,7 +313,7 @@ class SecureCookieStorage:
                 created_time = now - timedelta(days=days_old)
                 
                 # Some cookies are session, some persistent
-                is_session = secrets.randbelow(10) < 3  # 30% session cookies
+                is_session = random.random() < 0.3  # 30% session cookies
                 
                 cookie = {
                     "name": template["name"],
@@ -321,8 +321,8 @@ class SecureCookieStorage:
                     "domain": template["domain"],
                     "path": "/",
                     "secure": True,
-                    "httpOnly": secrets.choice([True, False]),
-                    "sameSite": secrets.choice(["Lax", "None", "Strict"]),
+                    "httpOnly": random.choice([True, False]),
+                    "sameSite": random.choice(["Lax", "None", "Strict"]),
                 }
                 
                 if not is_session:
