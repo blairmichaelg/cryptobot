@@ -66,7 +66,7 @@ class CoinPayUBot(FaucetBot):
                     if await links.count() <= i:
                         break
                     
-                    await links.nth(i).click()
+                    await self.human_like_click(links.nth(i))
                     await page.wait_for_load_state()
                     
                     # Handle Cloudflare and captchas
@@ -224,6 +224,7 @@ class CoinPayUBot(FaucetBot):
                 # CRITICAL FIX: After CAPTCHA solve, DOM may have been rebuilt.
                 # Re-query the login button with extended selectors and a fresh DOM check.
                 # Also wait briefly for any DOM updates from the CAPTCHA callback.
+                await self.thinking_pause()
                 await asyncio.sleep(1)
 
                 # Click Login - use multiple fallback selectors for robustness
@@ -345,6 +346,12 @@ class CoinPayUBot(FaucetBot):
             await self.safe_navigate(f"{self.base_url}/dashboard/faucet", timeout=30000)
             await self.random_delay(1.0, 2.0)
             
+            # Simulate natural page engagement before claiming
+            await self.simulate_reading(duration=random.uniform(2.0, 3.5))
+            if random.random() < 0.4:
+                await self.natural_scroll(distance=random.randint(100, 250), direction=1)
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+            
             # Check for timer first
             timer_minutes = await self.get_timer(".timer, .countdown, [id*='timer'], [class*='timer']", 
                                                   fallback_selectors=["[data-time]", ".time-left"])
@@ -396,8 +403,9 @@ class CoinPayUBot(FaucetBot):
                     # Secondary claim page
                     final_btn = self.page.locator("#claim-now, .btn-primary:has-text('Claim Now')")
                     if await final_btn.count() > 0:
-                        # Simulate reading the page
-                        await self.idle_mouse(duration=1.0)
+                        # Simulate reading the page before claiming
+                        await self.simulate_reading(duration=random.uniform(1.0, 2.0))
+                        await self.thinking_pause()
                         
                         await self.human_like_click(final_btn)
                         await self.random_delay(2.0, 4.0)

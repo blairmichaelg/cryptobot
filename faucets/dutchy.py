@@ -7,6 +7,7 @@ DutchyCorp faucet, including claims, shortlinks, and withdrawals.
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
+import random
 from typing import Optional
 from solvers.shortlink import ShortlinkSolver
 
@@ -134,7 +135,7 @@ class DutchyBot(FaucetBot):
                     if await links.count() <= i:
                         break
                     
-                    await links.nth(i).click()
+                    await self.human_like_click(links.nth(i))
                     await page.wait_for_load_state()
                     
                     # Solve any captchas
@@ -269,7 +270,8 @@ class DutchyBot(FaucetBot):
                 if not captcha_solved:
                     logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not required")
                 
-                # Submit with human-like behavior
+                # Simulate thinking before submitting login
+                await self.thinking_pause()
                 await self.random_delay(0.5, 1.2)
                 submit = self.page.locator('button[type="submit"]')
                 await self.human_like_click(submit)
@@ -289,12 +291,12 @@ class DutchyBot(FaucetBot):
             except asyncio.TimeoutError as e:
                 logger.warning(f"[{self.faucet_name}] Login timeout on attempt {attempt}: {e}")
                 if attempt < self.max_retries:
-                    await asyncio.sleep(self.retry_delay)
+                    await self.human_wait(self.retry_delay)
                     continue
             except Exception as e:
                 logger.error(f"[{self.faucet_name}] Login error on attempt {attempt}: {e}")
                 if attempt < self.max_retries:
-                    await asyncio.sleep(self.retry_delay)
+                    await self.human_wait(self.retry_delay)
                     continue
                     
         logger.error(f"[{self.faucet_name}] ❌ Login failed after {self.max_retries} attempts")
@@ -404,6 +406,13 @@ class DutchyBot(FaucetBot):
             # Close interfering popups
             await self.close_popups()
             
+            # Warm up page and simulate natural browsing before roll
+            await self.warm_up_page()
+            await self.simulate_reading(duration=random.uniform(1.5, 3.0))
+            if random.random() < 0.4:
+                await self.natural_scroll(distance=random.randint(80, 200), direction=1)
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+            
             # Check for timer/cooldown using DataExtractor pattern
             timer_selectors = ["#timer", ".count_down_timer", ".timer", "#countdown", ".cooldown"]
             wait_min = await self.get_timer(timer_selectors[0], fallback_selectors=timer_selectors[1:])
@@ -412,7 +421,9 @@ class DutchyBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] {roll_name} on cooldown: {wait_min:.1f}m")
                 return wait_min
             
-            # Stealth: Idle mouse to simulate reading
+            # Stealth: Simulate reading and thinking before roll
+            await self.simulate_reading(duration=random.uniform(1.0, 2.0))
+            await self.thinking_pause()
             await self.idle_mouse(1.0)
             
             # Handle "Unlock" button if present

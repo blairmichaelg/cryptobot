@@ -114,14 +114,14 @@ class FireFaucetBot(FaucetBot):
                     turnstile_solved = await self.solver.solve_captcha(self.page, timeout=120)
                     if turnstile_solved:
                         logger.info(f"[{self.faucet_name}] ✅ Turnstile solved successfully")
-                        await asyncio.sleep(random.uniform(2.0, 4.0))  # Wait for token submission
+                        await self.human_wait(random.uniform(2.0, 4.0))  # Wait for token submission
                     else:
                         logger.warning(f"[{self.faucet_name}] ⚠️ Turnstile solving failed")
                         if attempt < self.max_cloudflare_retries:
                             # Retry with page refresh
                             logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
                             await self.page.reload()
-                            await asyncio.sleep(3)
+                            await self.human_wait(3)
                             continue
                 
                 # Enhanced wait with human-like activity
@@ -144,15 +144,15 @@ class FireFaucetBot(FaucetBot):
                 
                 # If not last attempt, refresh page with enhanced stealth
                 if attempt < self.max_cloudflare_retries:
-                    await asyncio.sleep(random.uniform(3.0, 6.0))  # Longer delay between retries
+                    await self.human_wait(random.uniform(3.0, 6.0))  # Longer delay between retries
                     logger.info(f"[{self.faucet_name}] Refreshing page for retry...")
                     await self.page.reload()
-                    await asyncio.sleep(random.uniform(4.0, 7.0))
+                    await self.human_wait(random.uniform(4.0, 7.0))
                     
             except Exception as e:
                 logger.error(f"[{self.faucet_name}] Error during Cloudflare bypass attempt {attempt}: {e}")
                 if attempt < self.max_cloudflare_retries:
-                    await asyncio.sleep(random.uniform(5.0, 10.0))
+                    await self.human_wait(random.uniform(5.0, 10.0))
                     continue
         
         logger.error(f"[{self.faucet_name}] ❌ Cloudflare bypass failed after {self.max_cloudflare_retries} attempts")
@@ -197,7 +197,7 @@ class FireFaucetBot(FaucetBot):
                 
                 logger.info(f"[{self.faucet_name}] 🎥 Watching PTC Ad {processed + 1}/{limit}...")
                 await self.idle_mouse(duration=random.uniform(0.5, 1.0))
-                await ad_button.first.click()
+                await self.human_like_click(ad_button.first)
                 await self.page.wait_for_load_state()
                 logger.debug(f"[{self.faucet_name}] Loaded PTC ad page: {self.page.url}")
                 
@@ -762,6 +762,13 @@ class FireFaucetBot(FaucetBot):
                 logger.info(f"[{self.faucet_name}] Manually enabled submit button")
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] Could not manually enable button: {e}")
+            
+            # Simulate human reading the faucet page before acting on claim button
+            await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+            if random.random() < 0.4:
+                await self.natural_scroll(distance=random.randint(80, 200), direction=1)
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+            await self.thinking_pause()
             
             # Faucet Claim Button with fallback selectors (updated 2026-02)
             # CRITICAL: #get_reward_button is the confirmed FireFaucet button ID.

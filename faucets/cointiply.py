@@ -1,6 +1,7 @@
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
+import random
 import re
 from typing import Optional
 
@@ -199,6 +200,7 @@ class CointiplyBot(FaucetBot):
                 logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not present")
             
             # Simulate human behavior before submitting
+            await self.thinking_pause()
             await self.idle_mouse(1.0)
             
             submit_selectors = [
@@ -297,6 +299,14 @@ class CointiplyBot(FaucetBot):
                     retry_count += 1
                     continue
                 
+                # Simulate natural page engagement before claim
+                await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+                if random.random() < 0.5:
+                    await self.natural_scroll(distance=random.randint(100, 300), direction=1)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
+                if random.random() < 0.3:
+                    await self.simulate_tab_activity()
+                
                 # Extract current balance
                 balance = await self.get_current_balance()
                 logger.debug(f"[{self.faucet_name}] Balance before claim: {balance}")
@@ -328,7 +338,9 @@ class CointiplyBot(FaucetBot):
                     if timer_mins < 1.0:
                         logger.info(f"[{self.faucet_name}] Timer ready, proceeding with claim")
                         
-                        # Simulate human behavior before solving CAPTCHA
+                        # Simulate human reading the page before acting
+                        await self.simulate_reading(duration=random.uniform(1.5, 3.0))
+                        await self.thinking_pause()
                         await self.idle_mouse(1.5)
                         
                         # Solve CAPTCHA

@@ -182,10 +182,10 @@ class TronPickBot(PickFaucetBase):
                             captcha_solved = True
                             logger.info(f"[{self.faucet_name}] CAPTCHA solved on attempt {attempt + 1}")
                             break
-                        await asyncio.sleep(2)
+                        await self.human_wait(2)
                     except Exception as e:
                         logger.warning(f"[{self.faucet_name}] CAPTCHA attempt {attempt + 1} failed: {e}")
-                        await asyncio.sleep(3)
+                        await self.human_wait(3)
                 
                 if not captcha_solved:
                     logger.error(f"[{self.faucet_name}] CAPTCHA solving failed after 3 attempts")
@@ -198,6 +198,10 @@ class TronPickBot(PickFaucetBase):
                 
                 # Post-CAPTCHA delay
                 await self.random_delay(2, 4)
+            
+            # Simulate reading page before claiming
+            await self.simulate_reading(duration=random.uniform(1.5, 3.0))
+            await self.thinking_pause()
             
             # Find and click claim button with stealth
             claim_btn = self.page.locator(

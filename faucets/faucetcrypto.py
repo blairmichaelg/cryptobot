@@ -80,6 +80,7 @@ class FaucetCryptoBot(FaucetBot):
                 
                 # Click login button with human-like behavior
                 logger.info(f"[{self.faucet_name}] Clicking login button...")
+                await self.thinking_pause()  # Brief hesitation before submitting
                 login_btn = self.page.locator('button:has-text("Login"), button:has-text("Sign In"), input[type="submit"]')
                 await self.human_like_click(login_btn.first)
                 
@@ -178,7 +179,10 @@ class FaucetCryptoBot(FaucetBot):
                     await self.handle_cloudflare()
                     await self.random_delay(1, 3)
                 
-                # Simulate human reading behavior
+                # Simulate human reading/browsing the page
+                await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+                if random.random() < 0.4:
+                    await self.natural_scroll()
                 await self.idle_mouse(duration=random.uniform(1.0, 2.0))
                 
                 # Extract balance with fallback selectors
@@ -206,6 +210,10 @@ class FaucetCryptoBot(FaucetBot):
                         next_claim_minutes=wait_min, 
                         balance=balance
                     )
+                
+                # Simulate reading before clicking claim
+                await self.simulate_reading(duration=random.uniform(1.5, 3.0))
+                await self.thinking_pause()
                 
                 # Click claim button
                 logger.info(f"[{self.faucet_name}] Clicking claim button...")
@@ -243,6 +251,8 @@ class FaucetCryptoBot(FaucetBot):
                 reward_btn = self.page.locator("button:has-text('Get Reward'), button:has-text('Collect'), .reward-button")
                 if await reward_btn.is_visible(timeout=5000):
                     logger.info(f"[{self.faucet_name}] Clicking reward button...")
+                    await self.simulate_reading(duration=random.uniform(1.0, 2.0))
+                    await self.thinking_pause()
                     await self.human_like_click(reward_btn.first)
                     await self.random_delay(2, 4)
                     
@@ -352,6 +362,7 @@ class FaucetCryptoBot(FaucetBot):
         try:
             logger.info(f"[{self.faucet_name}] Checking PTC Ads...")
             await self.page.goto(f"{self.base_url}/ptc/list")
+            await self.warm_up_page()  # Natural browsing behavior on page load
             
             # Find "Watch" buttons
             # Selector for available PTC ads
@@ -370,6 +381,7 @@ class FaucetCryptoBot(FaucetBot):
                 if not await watch_btn.is_visible(): break
 
                 logger.info(f"[{self.faucet_name}] Opening Ad {processed+1}...")
+                await self.simulate_reading(duration=random.uniform(1.0, 2.0))
                 await self.human_like_click(watch_btn)
 
                 # 1. Intermediate Page (Step 1)
@@ -382,6 +394,7 @@ class FaucetCryptoBot(FaucetBot):
                     # We look for turnstile/recaptcha first
                     await self.solver.solve_captcha(self.page)
 
+                    await self.thinking_pause()  # Brief hesitation before clicking reward
                     await self.human_like_click(reward_btn)
                 except Exception as e:
                     logger.warning(f"[{self.faucet_name}] Intermediate page failed: {e}")
@@ -477,9 +490,10 @@ class FaucetCryptoBot(FaucetBot):
             # Look for confirmation switch if present
             confirm_switch = self.page.locator("input[type='checkbox'].confirm-switch, .confirm-checkbox")
             if await confirm_switch.is_visible():
-                await confirm_switch.click()
+                await self.human_like_click(confirm_switch)
             
             # Submit withdrawal
+            await self.thinking_pause()  # Brief pause before submitting withdrawal
             submit_btn = self.page.locator("button:has-text('Submit Withdrawal'), button.submit-btn")
             await self.human_like_click(submit_btn)
             

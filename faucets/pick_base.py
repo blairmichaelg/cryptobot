@@ -337,10 +337,10 @@ class PickFaucetBase(FaucetBot):
                                 pass
                             
                             break
-                        await asyncio.sleep(2)
+                        await self.human_wait(2)
                     except Exception as captcha_err:
                         logger.warning(f"[{self.faucet_name}] Captcha attempt {attempt + 1} failed: {captcha_err}")
-                        await asyncio.sleep(3)
+                        await self.human_wait(3)
                 if not solved:
                     logger.error(f"[{self.faucet_name}] Captcha solve failed on login")
                     return False
@@ -374,6 +374,8 @@ class PickFaucetBase(FaucetBot):
                 logger.error(f"[{self.faucet_name}] No visible login button found")
                 return False
             
+            # Thinking pause before login submission
+            await self.thinking_pause()
             await self.human_like_click(login_btn)
 
             try:
@@ -586,18 +588,25 @@ class PickFaucetBase(FaucetBot):
                                 pass
                             
                             break
-                        await asyncio.sleep(2)
+                        await self.human_wait(2)
                     except Exception as captcha_err:
                         logger.warning(f"[{self.faucet_name}] Captcha attempt {attempt + 1} failed: {captcha_err}")
-                        await asyncio.sleep(3)
+                        await self.human_wait(3)
                 if not solved:
                     return ClaimResult(success=False, status="CAPTCHA Failed", next_claim_minutes=10)
 
                 await self.random_delay(2, 5)
 
+            # Simulate reading page content before clicking claim
+            await self.simulate_reading(duration=random.uniform(1.5, 3.0))
+            if random.random() < 0.4:
+                await self.natural_scroll(distance=random.randint(50, 150), direction=1)
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+            await self.thinking_pause()
+            
             # The button is often 'Claim' or 'Roll' or has class 'btn-primary'
             # Wait a bit after CAPTCHA for page to update
-            await asyncio.sleep(2)
+            await self.human_wait(2)
             
             claim_btn = self.page.locator(
                 'button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), '
@@ -718,7 +727,7 @@ class PickFaucetBase(FaucetBot):
                 logger.error(f"[{self.faucet_name}] Withdrawal address field not found")
                 return ClaimResult(success=False, status="No Address Field", next_claim_minutes=1440)
             
-            await address_field.fill(withdraw_address)
+            await self.human_type(address_field, withdraw_address)
             
             # Solve Captcha
             await self.solver.solve_captcha(self.page)

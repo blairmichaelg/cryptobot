@@ -2,6 +2,7 @@ from .base import FaucetBot, ClaimResult
 from core.extractor import DataExtractor
 import logging
 import asyncio
+import random
 import time
 
 logger = logging.getLogger(__name__)
@@ -474,7 +475,7 @@ class FreeBitcoinBot(FaucetBot):
                     logger.debug(f"[FreeBitcoin] Cloudflare handling: {cf_err}")
                 
                 await self.close_popups()
-                await asyncio.sleep(1)
+                await self.human_wait(1)
                 
                 # Warm up page with natural browsing behavior
                 await self.warm_up_page()
@@ -554,7 +555,7 @@ class FreeBitcoinBot(FaucetBot):
                             logger.error("[FreeBitcoin] Landing page CAPTCHA solve failed")
                             continue
                         logger.info("✅ [FreeBitcoin] Landing page CAPTCHA solved")
-                        await asyncio.sleep(2)
+                        await self.human_wait(2)
                 except Exception as captcha_err:
                     logger.debug(f"[FreeBitcoin] Landing CAPTCHA check: {captcha_err}")
                 
@@ -646,7 +647,7 @@ class FreeBitcoinBot(FaucetBot):
                             logger.error("[FreeBitcoin] Login form CAPTCHA solve failed")
                             continue
                         logger.info("✅ [FreeBitcoin] Login form CAPTCHA solved")
-                        await asyncio.sleep(2)
+                        await self.human_wait(2)
                 except Exception as captcha_err:
                     logger.debug(f"[FreeBitcoin] Login form CAPTCHA check: {captcha_err}")
                 
@@ -664,6 +665,7 @@ class FreeBitcoinBot(FaucetBot):
                 
                 if submit_btn:
                     logger.debug("[FreeBitcoin] Clicking submit button...")
+                    await self.thinking_pause()  # Brief hesitation before submitting
                     await self.human_like_click(submit_btn)
                 else:
                     logger.warning("[FreeBitcoin] Submit button not found, trying Enter key...")
@@ -767,6 +769,11 @@ class FreeBitcoinBot(FaucetBot):
                 await self.handle_cloudflare(max_wait_seconds=60)
                 await self.close_popups()
                 await self.random_delay(2, 4)
+                
+                # Simulate natural browsing after page load
+                await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+                if random.random() < 0.4:
+                    await self.natural_scroll()
 
                 # Extract Balance with fallback selectors
                 # FreeBitcoin uses #balance_small (visible in nav bar) as the reliable
@@ -860,7 +867,8 @@ class FreeBitcoinBot(FaucetBot):
                         except Exception:
                             pass
                         
-                        await asyncio.sleep(1)
+                        await self.human_wait(1)
+                        await self.thinking_pause()  # Brief hesitation before clicking roll
                         
                     except Exception as captcha_err:
                         logger.error(f"[DEBUG] CAPTCHA solve failed: {captcha_err}")
@@ -874,6 +882,7 @@ class FreeBitcoinBot(FaucetBot):
                     # Double check visibility after potential captcha delay
                     if await roll_btn.is_visible():
                         logger.debug("[FreeBitcoin] About to click roll button")
+                        await self.simulate_reading(duration=random.uniform(1.0, 2.0))
                         await self.human_like_click(roll_btn)
                         logger.debug("[FreeBitcoin] Roll button clicked")
                         await self.idle_mouse(1.0)  # Read result naturally
@@ -1091,7 +1100,7 @@ class FreeBitcoinBot(FaucetBot):
                 await self.human_like_click(max_btn)
                 logger.debug(f"[{self.faucet_name}] Clicked max withdrawal button")
             elif await amount_field.is_visible():
-                await amount_field.fill(str(float(balance)))
+                await self.human_type(amount_field, str(float(balance)))
                 logger.debug(f"[{self.faucet_name}] Filled withdrawal amount: {balance}")
             
             logger.debug(f"[{self.faucet_name}] Filling withdrawal address with human-like typing")
@@ -1114,6 +1123,7 @@ class FreeBitcoinBot(FaucetBot):
                 return ClaimResult(success=False, status="CAPTCHA Failed", next_claim_minutes=60)
             
             # Submit
+            await self.thinking_pause()  # Brief pause before submitting withdrawal
             submit_btn = self.page.locator("button#withdraw_button, button:has-text('Withdraw')")
             await self.human_like_click(submit_btn)
             
