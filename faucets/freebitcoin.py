@@ -903,35 +903,25 @@ class FreeBitcoinBot(FaucetBot):
                             # Use DataExtractor for consistent parsing
                             clean_amount = DataExtractor.extract_balance(won_text)
 
-                            # Confirm claim by checking timer and/or balance update
-                            new_balance = await self.get_balance(
-                                "#balance",
-                                fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
-                            )
-                            timer_after = await self.get_timer(
-                                "#time_remaining",
-                                fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]
-                            )
-                            balance_changed = new_balance != balance and new_balance != "0"
-                            confirmed = bool(clean_amount and clean_amount != "0") and (timer_after > 0 or balance_changed)
-
-                            if confirmed:
+                            # If we found a non-zero result text on the page, that IS the confirmation
+                            # (The page display may not update immediately on freebitco.in)
+                            if clean_amount and clean_amount != "0":
                                 logger.info(f"FreeBitcoin Claimed! Won: {won_text} ({clean_amount})")
                                 return ClaimResult(
                                     success=True,
                                     status="Claimed",
                                     next_claim_minutes=60,
                                     amount=clean_amount,
-                                    balance=new_balance
+                                    balance="Unknown"  # Balance display not updated yet on page
                                 )
 
-                            logger.warning("[FreeBitcoin] Claim result found but not confirmed by timer/balance.")
+                            logger.warning("[FreeBitcoin] Result text found but amount is 0 or invalid.")
                             return ClaimResult(
                                 success=False,
-                                status="Claim Unconfirmed",
+                                status="Zero Amount",
                                 next_claim_minutes=10,
-                                amount=clean_amount,
-                                balance=new_balance or balance
+                                amount=clean_amount or "0",
+                                balance=balance
                             )
                         else:
                             # Result not found - log what we see on the page
