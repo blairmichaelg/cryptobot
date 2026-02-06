@@ -248,6 +248,7 @@ class SecureCookieStorage:
             True if cookies injected successfully
         """
         import random
+        import secrets
         from datetime import datetime, timedelta
         
         try:
@@ -260,9 +261,9 @@ class SecureCookieStorage:
             # Common cookie templates
             templates = [
                 # Google Analytics
-                {"name": "_ga", "domain": ".google.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
-                {"name": "_gid", "domain": ".google.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
-                {"name": "_ga", "domain": ".youtube.com", "value": f"GA1.2.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                {"name": "_ga", "domain": ".google.com", "value": f"GA1.2.{secrets.randbelow(900000000) + 100000000}.{int(datetime.now().timestamp())}"},
+                {"name": "_gid", "domain": ".google.com", "value": f"GA1.2.{secrets.randbelow(900000000) + 100000000}.{int(datetime.now().timestamp())}"},
+                {"name": "_ga", "domain": ".youtube.com", "value": f"GA1.2.{secrets.randbelow(900000000) + 100000000}.{int(datetime.now().timestamp())}"},
                 
                 # Advertising cookies
                 {"name": "IDE", "domain": ".doubleclick.net", "value": self._generate_random_id(32)},
@@ -270,7 +271,7 @@ class SecureCookieStorage:
                 {"name": "NID", "domain": ".google.com", "value": self._generate_random_id(64)},
                 
                 # Social media
-                {"name": "_fbp", "domain": ".facebook.com", "value": f"fb.1.{int(datetime.now().timestamp() * 1000)}.{random.randint(100000000, 999999999)}"},
+                {"name": "_fbp", "domain": ".facebook.com", "value": f"fb.1.{int(datetime.now().timestamp() * 1000)}.{secrets.randbelow(900000000) + 100000000}"},
                 {"name": "fr", "domain": ".facebook.com", "value": self._generate_random_id(48)},
                 {"name": "personalization_id", "domain": ".twitter.com", "value": f"\"{self._generate_random_id(22)}=="},
                 
@@ -283,7 +284,7 @@ class SecureCookieStorage:
                 {"name": "CONSENT", "domain": ".google.com", "value": f"YES+cb.20{random.randint(200101, 251231)}-11-p0.en+FX+{random.randint(100, 999)}"},
                 
                 # Generic tracking
-                {"name": "_gcl_au", "domain": ".google.com", "value": f"1.1.{random.randint(100000000, 999999999)}.{int(datetime.now().timestamp())}"},
+                {"name": "_gcl_au", "domain": ".google.com", "value": f"1.1.{secrets.randbelow(900000000) + 100000000}.{int(datetime.now().timestamp())}"},
                 {"name": "_gat_gtag", "domain": ".google.com", "value": "1"},
             ]
             
@@ -299,9 +300,9 @@ class SecureCookieStorage:
             # Add some random cookies for extra domains
             for domain in random.sample(extra_domains, min(len(extra_domains), 10)):
                 selected_templates.append({
-                    "name": random.choice(["session_id", "user_id", "pref", "lang", "theme"]),
+                    "name": secrets.choice(["session_id", "user_id", "pref", "lang", "theme"]),
                     "domain": domain,
-                    "value": self._generate_random_id(random.randint(16, 32))
+                    "value": self._generate_random_id(secrets.randbelow(17) + 16)
                 })
             
             # Generate aged cookies with realistic timestamps
@@ -312,7 +313,7 @@ class SecureCookieStorage:
                 created_time = now - timedelta(days=days_old)
                 
                 # Some cookies are session, some persistent
-                is_session = random.random() < 0.3  # 30% session cookies
+                is_session = secrets.randbelow(10) < 3  # 30% session cookies
                 
                 cookie = {
                     "name": template["name"],
@@ -320,8 +321,8 @@ class SecureCookieStorage:
                     "domain": template["domain"],
                     "path": "/",
                     "secure": True,
-                    "httpOnly": random.choice([True, False]),
-                    "sameSite": random.choice(["Lax", "None", "Strict"]),
+                    "httpOnly": secrets.choice([True, False]),
+                    "sameSite": secrets.choice(["Lax", "None", "Strict"]),
                 }
                 
                 if not is_session:
@@ -349,9 +350,9 @@ class SecureCookieStorage:
     def _generate_random_id(self, length: int) -> str:
         """Generate random alphanumeric ID for cookie values."""
         import string
-        import random
+        import secrets
         chars = string.ascii_letters + string.digits
-        return ''.join(random.choice(chars) for _ in range(length))
+        return ''.join(secrets.choice(chars) for _ in range(length))
     
     @staticmethod
     def generate_key() -> str:

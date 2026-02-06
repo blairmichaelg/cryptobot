@@ -10,6 +10,7 @@ from .stealth_hub import StealthHub
 from core.config import CONFIG_DIR
 import logging
 import random
+import secrets
 import time
 import os
 import json
@@ -532,7 +533,7 @@ class BrowserManager:
                 expires = int(now + (max_age_days * 86400))
             cookies.append({
                 "name": f"pref_{i}",
-                "value": f"{random.randint(1000, 9999)}",
+                "value": f"{secrets.randbelow(9000) + 1000}",
                 "domain": domain,
                 "path": "/",
                 "expires": expires,
