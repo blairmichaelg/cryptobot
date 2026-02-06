@@ -219,12 +219,24 @@ class CoinPayUBot(FaucetBot):
                     logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully.")
                     await self.random_delay(0.5, 1.0)
                 
-                # Click Login
-                login_btn = self.page.locator("button.btn-primary:has-text('Login')")
+                # Click Login - use multiple fallback selectors for robustness
+                # After CAPTCHA solve, button selector may vary
+                login_btn = self.page.locator(
+                    'button.btn-primary:has-text("Login"), '
+                    'button.btn-primary:has-text("Log in"), '
+                    'button:has-text("Login"), '
+                    'button:has-text("Log in"), '
+                    'button[type="submit"], '
+                    'input[type="submit"], '
+                    '#login-button, '
+                    '.login-btn, '
+                    'form button.btn-primary'
+                )
                 if await login_btn.count() > 0:
-                    await self.human_like_click(login_btn)
+                    logger.info(f"[{self.faucet_name}] Clicking login button...")
+                    await self.human_like_click(login_btn.first)
                 else:
-                    logger.warning(f"[{self.faucet_name}] Login button not found.")
+                    logger.warning(f"[{self.faucet_name}] Login button not found with any selector.")
                     continue
                 
                 # Check for "Proxy detected" error
