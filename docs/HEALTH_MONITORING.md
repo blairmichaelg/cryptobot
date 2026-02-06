@@ -505,12 +505,69 @@ sudo journalctl -u health_monitor | grep "Sent metrics"
 
 ## Future Enhancements
 
-- [ ] Email notifications via SMTP
-- [ ] Slack/Discord webhook integration
+- [x] Email notifications via SMTP
+- [x] Slack/Discord webhook integration
 - [ ] Grafana dashboard integration
 - [ ] Predictive failure detection
 - [ ] Auto-scaling based on load
 - [ ] Integration with Azure Logic Apps for complex workflows
+
+## Enhanced Monitoring Features (v2.0)
+
+The following enhanced features were added in version 2.0:
+
+### 30-Day Metric Retention
+
+- **Local Storage**: Metrics stored in `config/metrics/retained_metrics.json`
+- **Auto-Cleanup**: Metrics older than 30 days automatically removed
+- **Historical Analysis**: Support for trend analysis and reporting
+
+### Enhanced Proxy Health Monitoring
+
+- **Configurable Thresholds**: 
+  - Minimum 50 healthy proxies
+  - Maximum 5000ms average latency
+- **Detailed Health Status**: Active count, latency, cooldowns, dead proxies
+- **Automated Alerts**: Critical alerts when thresholds breached
+
+### Queue Stall Detection
+
+- **Detection Window**: 10 minutes of no progress
+- **Smart Tracking**: Monitors queue size changes and running jobs
+- **Automatic Alerts**: Notifies when queue appears stalled
+
+### Error Rate Tracking
+
+- **Sliding Window**: 10-minute error tracking window
+- **Threshold Alerts**: Alert when >5 errors in window
+- **Auto-Cleanup**: Expired errors automatically removed
+
+### Daily Summary Reports
+
+- **Scheduled Generation**: Automatic reports at 23:30 daily
+- **Comprehensive Data**:
+  - Claims attempted and success rate
+  - Earnings by currency
+  - Per-faucet performance
+  - Proxy health status
+- **Multi-Channel Delivery**: Webhook, email, and Azure Monitor
+
+### Service Event Tracking
+
+All service lifecycle events now tracked with 30-day retention:
+- Service starts
+- Service restarts (with attempt count)
+- Restart successes/failures
+- Crash events
+
+Access metrics programmatically:
+```python
+from core.azure_monitor import get_metric_store
+
+store = get_metric_store()
+summary = store.get_daily_summary(days=7)
+restarts = store.get_metrics(name="service.restart", hours=24)
+```
 
 ## Support
 
@@ -522,5 +579,5 @@ For issues or questions:
 
 ---
 
-**Last Updated:** January 24, 2026  
-**Version:** 1.0
+**Last Updated:** February 6, 2026  
+**Version:** 2.0 (Enhanced Monitoring)
