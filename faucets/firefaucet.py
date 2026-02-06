@@ -644,17 +644,32 @@ class FireFaucetBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
             await self.page.goto(f"{self.base_url}/faucet", wait_until="domcontentloaded")
             
-            # Wait extra time for dynamic content to load
-            await asyncio.sleep(5)
-            
             # Wait for faucet content to be present (with timeout)
             try:
                 logger.info(f"[{self.faucet_name}] Waiting for faucet interface to load...")
-                await self.page.wait_for_selector("button, input[type='submit']", timeout=15000)
-                logger.info(f"[{self.faucet_name}] Faucet interface loaded")
+                await self.page.wait_for_selector("#get_reward_button", timeout=15000)
+                logger.info(f"[{self.faucet_name}] Faucet interface loaded - button found")
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] Timeout waiting for faucet interface: {e}")
                 # Don't fail yet, continue with a warning
+            
+            # Wait for countdown timer to complete (FireFaucet has 9-second timer)
+            # The button text changes from "Please Wait (9)" to "Get Reward"
+            logger.info(f"[{self.faucet_name}] Waiting for countdown timer to complete...")
+            try:
+                await self.page.wait_for_function(
+                    """() => {
+                        const btn = document.getElementById('get_reward_button');
+                        if (!btn) return false;
+                        const text = btn.textContent || btn.innerText;
+                        return text.includes('Get Reward') && !btn.disabled;
+                    }""",
+                    timeout=15000
+                )
+                logger.info(f"[{self.faucet_name}] ✅ Countdown timer completed - button enabled")
+            except Exception as timer_err:
+                logger.warning(f"[{self.faucet_name}] Timeout waiting for countdown timer: {timer_err}")
+                # Continue anyway, button may already be ready
             
             # Check for Cloudflare on faucet page
             cf_blocked = await self.detect_cloudflare_block()
@@ -736,20 +751,22 @@ class FireFaucetBot(FaucetBot):
             except Exception as e:
                 logger.warning(f"[{self.faucet_name}] Could not manually enable button: {e}")
             
-            # Faucet Claim Button with fallback selectors (updated 2026-01-30)
+            # Faucet Claim Button with fallback selectors (updated 2026-02-06)
+            # FireFaucet uses #get_reward_button with 9-second countdown timer
             faucet_btn_selectors = [
-                "button:has-text('Get reward')",  # Primary FireFaucet button text
-                "button:has-text('Get Reward')",
+                "#get_reward_button",         # Primary FireFaucet button (has countdown timer)
+                "button:has-text('Get Reward')",  # Button after timer completes
+                "button:has-text('Get reward')",
+                "form#faucetform button[type='submit']",  # Form submit button
+                "button[type='submit']:visible",
                 "button:has-text('Claim')",
                 "button:has-text('claim')",
-                "button:text('Get reward')",
                 "button:text('Get Reward')",
-                "#get_reward_button",
+                "button:text('Get reward')",
                 "#claim-button",
                 "#faucet_btn",
                 "button.btn.btn-primary:visible",
                 "button.btn:visible",
-                "button[type='submit']:visible",
                 ".btn.btn-primary:visible",
                 ".claim-button",
                 "form button[type='submit']:visible",
@@ -803,20 +820,13 @@ class FireFaucetBot(FaucetBot):
                     continue
             
             if faucet_btn and await faucet_btn.count() > 0:
-                # Check button state before clicking for debugging
+                # Button should already be enabled after waiting for countdown timer
                 try:
                     btn_text_before = await faucet_btn.first.text_content()
                     is_enabled = await faucet_btn.first.is_enabled()
                     is_disabled_attr = await faucet_btn.first.get_attribute("disabled")
-                    logger.info(f"[{self.faucet_name}] Button text before click: '{btn_text_before}'")
+                    logger.info(f"[{self.faucet_name}] Button text: '{btn_text_before}'")
                     logger.info(f"[{self.faucet_name}] Button enabled: {is_enabled}, disabled attr: {is_disabled_attr}")
-                    
-                    # If button is disabled, wait a bit more for it to enable
-                    if not is_enabled or is_disabled_attr is not None:
-                        logger.info(f"[{self.faucet_name}] Button is disabled, waiting for it to enable...")
-                        await asyncio.sleep(3)
-                        is_enabled_after = await faucet_btn.first.is_enabled()
-                        logger.info(f"[{self.faucet_name}] Button enabled after wait: {is_enabled_after}")
                 except Exception as btn_check_err:
                     logger.warning(f"[{self.faucet_name}] Could not check button state: {btn_check_err}")
                 
