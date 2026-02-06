@@ -254,11 +254,18 @@ class CointiplyBot(FaucetBot):
                 balance = await self.get_current_balance()
                 logger.debug(f"[{self.faucet_name}] Balance before claim: {balance}")
                 
-                # Check for Roll Button
-                roll = self.page.locator("#claim_button, button.faucet-claim-btn, button:has-text('Roll & Win')")
+                # Check for Roll Button with expanded selectors
+                roll = self.page.locator(
+                    "#claim_button, button.faucet-claim-btn, button:has-text('Roll & Win'), "
+                    "button:has-text('Roll'), button.roll-button, .faucet-button, "
+                    "button[onclick*='roll'], input[type='submit'][value*='Roll']"
+                )
                 roll_count = await roll.count()
                 
-                if roll_count > 0 and await roll.is_visible():
+                # Log what we found
+                logger.debug(f"[{self.faucet_name}] Found {roll_count} potential roll buttons")
+                
+                if roll_count > 0 and await roll.first.is_visible():
                     logger.debug(f"[{self.faucet_name}] Roll button found and visible")
                     
                     # Extract timer using DataExtractor

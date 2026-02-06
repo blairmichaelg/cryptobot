@@ -849,15 +849,24 @@ class FreeBitcoinBot(FaucetBot):
                     if await roll_btn.is_visible():
                         await self.human_like_click(roll_btn)
                         await self.idle_mouse(1.0)  # Read result naturally
-                        await asyncio.sleep(5)
+                        
+                        # Wait longer for result - FreeBitcoin can take 10-15 seconds
+                        logger.debug("[FreeBitcoin] Waiting for claim result...")
+                        await asyncio.sleep(8)
                         await self.close_popups()
 
-                        # Check result with fallback selectors
+                        # Poll for result with timeout
                         result = self.page.locator(
-                            "#winnings, .winning-amount, .result-amount, .btc-won, span:has-text('BTC')"
+                            "#winnings, .winning-amount, .result-amount, .btc-won, span:has-text('BTC'), .win_amount"
                         ).first
 
-                        if await result.is_visible():
+                        try:
+                            await result.wait_for(state="visible", timeout=12000)
+                            is_visible = True
+                        except:
+                            is_visible = await result.is_visible()
+                        
+                        if is_visible:
                             won = await result.text_content()
                             # Use DataExtractor for consistent parsing
                             clean_amount = DataExtractor.extract_balance(won)

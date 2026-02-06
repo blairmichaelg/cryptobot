@@ -526,11 +526,26 @@ class PickFaucetBase(FaucetBot):
                 await self.random_delay(2, 5)
 
             # The button is often 'Claim' or 'Roll' or has class 'btn-primary'
-            claim_btn = self.page.locator('button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), button#claim')
+            # Wait a bit after CAPTCHA for page to update
+            await asyncio.sleep(2)
             
-            if not await claim_btn.is_visible():
-                logger.warning(f"[{self.faucet_name}] Claim button not found, checking if already claimed")
-                return ClaimResult(success=True, status="Already Claimed", next_claim_minutes=60, balance=await self.get_balance())
+            claim_btn = self.page.locator(
+                'button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), '
+                'button#claim, button[type="submit"], .btn-success, button.get-reward'
+            )
+            
+            # Try to wait for button to be visible
+            try:
+                await claim_btn.first.wait_for(state="visible", timeout=5000)
+            except:
+                pass
+            
+            if not await claim_btn.first.is_visible():
+                logger.warning(f"[{self.faucet_name}] Claim button not visible")
+                # Log what buttons we can find
+                all_buttons = await self.page.query_selector_all("button")
+                logger.debug(f"[{self.faucet_name}] Found {len(all_buttons)} total buttons on page")
+                return ClaimResult(success=False, status="Button Not Found", next_claim_minutes=15, balance=await self.get_balance())
 
             await self.human_like_click(claim_btn)
             await self.random_delay(3, 6)
