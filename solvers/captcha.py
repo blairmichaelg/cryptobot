@@ -366,7 +366,7 @@ class CaptchaSolver:
                     self._record_provider_result(provider, captcha_type, success=False)
 
                     # If not fallback-worthy, propagate
-                    if "NO_SLOT" not in error_msg.upper() and "ZERO_BALANCE" not in error_msg.upper():
+                    if not any(err in error_msg.upper() for err in ["NO_SLOT", "ZERO_BALANCE", "ERROR_METHOD_CALL", "METHOD_CALL"]):
                         raise
                     break  # Exit retry loop, try next provider
         
@@ -904,6 +904,9 @@ class CaptchaSolver:
                 logger.error(f"2Captcha Submit Error: {error_code}")
                 if error_code == "ERROR_IP_NOT_ALLOWED":
                     logger.error("❌ 2Captcha: IP not whitelisted. Triggering whitelist update.")
+                # Raise exception for errors that should trigger fallback to CapSolver
+                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
+                    raise Exception(f"2Captcha Error: {error_code}")
                 return None
                 
             request_id = data['request']
@@ -937,6 +940,10 @@ class CaptchaSolver:
                     logger.error("🚫 Your IP is NOT whitelisted in 2Captcha. Please add it to the portal.")
                 elif error_code == "ERROR_ZERO_BALANCE":
                     logger.error("💸 2Captcha balance is ZERO!")
+                
+                # Raise exception for errors that should trigger fallback to CapSolver
+                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
+                    raise Exception(f"2Captcha Error: {error_code}")
                 
                 return None
         return None
