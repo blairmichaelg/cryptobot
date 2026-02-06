@@ -880,8 +880,8 @@ class FreeBitcoinBot(FaucetBot):
                         try:
                             await self.page.wait_for_navigation(timeout=8000)
                             logger.debug("[FreeBitcoin] Page navigated")
-                        except:
-                            logger.debug("[FreeBitcoin] No navigation detected")
+                        except Exception as e:
+                            logger.debug(f"[FreeBitcoin] No navigation detected: {e}")
                         
                         # Wait longer for result - FreeBitcoin can take 10-15 seconds
                         logger.debug("[FreeBitcoin] Waiting for claim result...")
@@ -955,8 +955,8 @@ class FreeBitcoinBot(FaucetBot):
                             try:
                                 page_text = await self.page.text_content()
                                 logger.debug(f"[FreeBitcoin] Page text preview: {page_text[:500] if page_text else 'empty'}")
-                            except:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"[FreeBitcoin] Error getting page text: {e}")
                             
                             return ClaimResult(
                                 success=False,
