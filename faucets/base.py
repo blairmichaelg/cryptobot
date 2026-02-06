@@ -1245,8 +1245,8 @@ class FaucetBot:
             if cf_challenge_element > 0:
                 logger.info(f"[{self.faucet_name}] Cloudflare challenge element detected")
                 return "Site Maintenance / Blocked"
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Error checking CF challenge element: {e}")
         
         # Only treat as CF block if challenge indicators are in visible text, not scripts
         try:
@@ -1255,8 +1255,8 @@ class FaucetBot:
                 if indicator in visible_text:
                     logger.info(f"[{self.faucet_name}] Cloudflare challenge pattern in visible text: '{indicator}'")
                     return "Site Maintenance / Blocked"
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Error checking visible text for CF indicators: {e}")
         
         # Proxy/VPN Detection Patterns
         proxy_patterns = [

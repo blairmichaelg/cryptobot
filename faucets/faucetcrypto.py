@@ -110,7 +110,8 @@ class FaucetCryptoBot(FaucetBot):
                             if await self.page.locator(indicator).count() > 0:
                                 logger.info(f"[{self.faucet_name}] ✅ Login successful (detected: {indicator})")
                                 return True
-                        except:
+                        except Exception as e:
+                            logger.debug(f"[{self.faucet_name}] Error checking indicator {indicator}: {e}")
                             continue
                     
                     # Check if we're still on login page (failure)
@@ -123,7 +124,8 @@ class FaucetCryptoBot(FaucetBot):
                                     error_text = await self.page.locator(sel).first.text_content()
                                     logger.error(f"[{self.faucet_name}] Login error: {error_text}")
                                     break
-                            except:
+                            except Exception as e:
+                                logger.debug(f"[{self.faucet_name}] Error checking error selector {sel}: {e}")
                                 continue
                         raise TimeoutError(f"Still on login page after submit")
                     
