@@ -155,7 +155,7 @@ class AdBTCBot(FaucetBot):
             await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
-            await self.handle_cloudflare(max_wait_seconds=20)
+            await self.handle_cloudflare(max_wait_seconds=60)  # Increased from 20s for better reliability
             
             # Add human-like idle behavior for stealth
             await self.idle_mouse(duration=1.5)
@@ -281,7 +281,7 @@ class AdBTCBot(FaucetBot):
             await self.page.goto(f"{self.base_url}/surf/browse", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
-            await self.handle_cloudflare(max_wait_seconds=20)
+            await self.handle_cloudflare(max_wait_seconds=60)  # Increased from 20s for better reliability
             
             ads_viewed = 0
             max_ads = 15  # Limit to prevent infinite loops
@@ -410,7 +410,7 @@ class AdBTCBot(FaucetBot):
             await self.page.goto(f"{self.base_url}/index/withdraw", wait_until="domcontentloaded", timeout=getattr(self.settings, "timeout", 180000))
             
             # Handle Cloudflare if present
-            await self.handle_cloudflare(max_wait_seconds=20)
+            await self.handle_cloudflare(max_wait_seconds=60)  # Increased from 20s for better reliability
             
             # Add human-like behavior
             await self.idle_mouse(duration=1.5)
