@@ -313,8 +313,8 @@ class FireFaucetBot(FaucetBot):
                             logger.info(f"[{self.faucet_name}] Found login field with selector: {sel}")
                             found = True
                             break
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Error checking selector {sel}: {e}")
                 if not found:
                     # Log page info for debugging
                     try:
@@ -324,8 +324,8 @@ class FireFaucetBot(FaucetBot):
                         # Check if we hit adblock page
                         if "/adblock" in url:
                             logger.error(f"[{self.faucet_name}] Site detected us as using adblock!")
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Error logging page info: {e}")
                     raise e
             
             # Updated selectors (as of 2026-01)
@@ -1023,8 +1023,8 @@ class FireFaucetBot(FaucetBot):
                         if not button_still_present:
                             logger.info(f"[{self.faucet_name}] ✅ Claim button disappeared - assuming success")
                             success_found = True
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Error checking claim button presence: {e}")
                 
                 if success_found:
                     # Get updated balance
@@ -1058,8 +1058,8 @@ class FireFaucetBot(FaucetBot):
                 try:
                     visible_text = await self.page.evaluate("() => document.body.innerText")
                     logger.info(f"[{self.faucet_name}] Page visible text (first 500 chars): {visible_text[:500]}")
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[{self.faucet_name}] Error getting visible text: {e}")
                 
                 await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)
             else:
