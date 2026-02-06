@@ -1540,8 +1540,10 @@ class FaucetBot:
         max_attempts = 2  # Reduced from 3 - fail faster
         for attempt in range(1, max_attempts + 1):
             try:
-                # Use shorter timeout on retry attempts
-                attempt_timeout = timeout if attempt == 1 else min(timeout // 2, 30000)
+                # On retry, use half timeout but respect configured minimum (no hardcoded 30s cap)
+                # With 120s timeout: attempt 1 = 120s, attempt 2 = 60s
+                # With 180s timeout: attempt 1 = 180s, attempt 2 = 90s
+                attempt_timeout = timeout if attempt == 1 else max(timeout // 2, 60000)
                 logger.debug(f"[{self.faucet_name}] Navigating to {url} (attempt {attempt}/{max_attempts}, timeout={attempt_timeout}ms)")
                 await self.page.goto(url, wait_until=wait_until, timeout=attempt_timeout)
                 logger.debug(f"[{self.faucet_name}] Navigation succeeded")
