@@ -1,9 +1,25 @@
+"""Base faucet bot and claim result definitions for Cryptobot Gen 3.0.
+
+This module defines the abstract :class:`FaucetBot` superclass that all site-
+specific bots inherit from, and the :class:`ClaimResult` dataclass returned by
+every claim attempt.
+
+:class:`FaucetBot` provides:
+    * Humanised browser interaction helpers (``human_type``, ``human_like_click``,
+      ``idle_mouse``, ``random_delay``).
+    * Configurable behaviour profiles (``fast`` / ``balanced`` / ``cautious``).
+    * CAPTCHA solver integration (Turnstile, hCaptcha, reCAPTCHA, image).
+    * Cloudflare challenge detection and bypass.
+    * Credential resolution from settings or per-instance overrides.
+    * Automatic error-type classification for the scheduler.
+"""
+
 import asyncio
 import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Optional, Union, TYPE_CHECKING, Dict, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from playwright.async_api import Page, Locator
 from solvers.captcha import CaptchaSolver
 from core.config import BotSettings
@@ -19,12 +35,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ClaimResult:
+    """Outcome of a single faucet claim attempt.
+
+    Attributes:
+        success: Whether the claim was successful.
+        status: Human-readable status / error description.
+        next_claim_minutes: Suggested delay (minutes) before the next attempt.
+        amount: Claimed amount as a string (in the faucet's native unit).
+        balance: Current account balance as a string.
+        error_type: Optional :class:`ErrorType` for scheduler retry decisions.
+    """
+
     success: bool
     status: str
     next_claim_minutes: float = 0
     amount: str = "0"
     balance: str = "0"
-    error_type: Optional['ErrorType'] = None  # Add error type classification
+    error_type: Optional['ErrorType'] = None
     
     def validate(self, faucet_name: str = "Unknown") -> 'ClaimResult':
         """
@@ -73,7 +100,25 @@ class ClaimResult:
         return self
 
 class FaucetBot:
-    """Base class for Faucet Bots."""
+    """Abstract base class for all faucet bots.
+
+    Subclasses **must** implement:
+        * ``async login() -> bool``
+        * ``async get_balance() -> str``
+        * ``async get_timer() -> float``
+        * ``async claim() -> ClaimResult``
+
+    And should define ``faucet_name`` and ``base_url`` in ``__init__``.
+
+    Attributes:
+        settings: Global :class:`BotSettings` configuration.
+        page: Active Playwright ``Page`` for browser interaction.
+        solver: :class:`CaptchaSolver` instance (auto-configured from settings).
+        faucet_name: Human-readable faucet identifier (set by subclass).
+        base_url: Root URL of the faucet site.
+        behavior_profile_name: Current humanisation profile name.
+        human_profile: Optional :class:`HumanProfile` for advanced timing.
+    """
 
     BEHAVIOR_PROFILES: Dict[str, Dict[str, Tuple[float, float]]] = {
         "fast": {
@@ -160,9 +205,17 @@ class FaucetBot:
         self.human_profile = None  # Will be loaded from fingerprint or set on first use
         self.last_error_type = None
 
-    def set_behavior_profile(self, profile_name: Optional[str] = None, profile_hint: Optional[str] = None):
-        """
-        Set a timing profile for humanization based on profile name or explicit hint.
+    def set_behavior_profile(self, profile_name: Optional[str] = None, profile_hint: Optional[str] = None) -> None:
+        """Select a humanisation timing profile.
+
+        If *profile_hint* is given and matches a known profile key it is used
+        directly.  Otherwise a deterministic pseudo-random choice is made
+        based on the hash of *profile_name*, ensuring the same account always
+        receives the same profile.
+
+        Args:
+            profile_name: Seed for deterministic profile selection (e.g. username).
+            profile_hint: Explicit profile key (``fast`` / ``balanced`` / ``cautious``).
         """
         profile_key = None
         if profile_hint and profile_hint in self.BEHAVIOR_PROFILES:
@@ -180,33 +233,43 @@ class FaucetBot:
         self._behavior_rng = random.Random(hash(seed_basis))
 
     def _resolve_delay_range(self, min_s: Optional[float], max_s: Optional[float]) -> Tuple[float, float]:
+        """Return an explicit or profile-default delay range in seconds."""
         if min_s is None or max_s is None:
             min_s, max_s = self.behavior_profile.get("delay_range", (2.0, 5.0))
         return float(min_s), float(max_s)
 
     def _resolve_typing_range(self, delay_min: Optional[int], delay_max: Optional[int]) -> Tuple[int, int]:
+        """Return an explicit or profile-default per-key typing delay range (ms)."""
         if delay_min is None or delay_max is None:
             delay_min, delay_max = self.behavior_profile.get("typing_ms", (60, 160))
         return int(delay_min), int(delay_max)
 
     def _resolve_idle_duration(self, duration: Optional[float]) -> float:
+        """Return an explicit or profile-default idle pause duration (seconds)."""
         if duration is None:
             min_s, max_s = self.behavior_profile.get("idle_seconds", (1.5, 3.5))
             return self._behavior_rng.uniform(min_s, max_s)
         return float(duration)
 
     def _resolve_reading_duration(self, duration: Optional[float]) -> float:
+        """Return an explicit or profile-default simulated reading duration (seconds)."""
         if duration is None:
             min_s, max_s = self.behavior_profile.get("reading_seconds", (2.0, 5.0))
             return self._behavior_rng.uniform(min_s, max_s)
         return float(duration)
 
     def _resolve_focus_blur_delay(self) -> float:
+        """Return a profile-derived delay for simulated focus / blur events."""
         min_s, max_s = self.behavior_profile.get("focus_blur_seconds", (0.6, 2.6))
         return self._behavior_rng.uniform(min_s, max_s)
 
-    async def think_pause(self, reason: str = ""):
-        """Small pause to simulate user thinking before critical actions."""
+    async def think_pause(self, reason: str = "") -> None:
+        """Small pause simulating user thinking before critical actions.
+
+        Args:
+            reason: Context hint -- ``"pre_login"`` or ``"pre_claim"`` add
+                extra delay.
+        """
         delay = self._behavior_rng.uniform(0.2, 0.6)
         if reason in {"pre_login", "pre_claim"}:
             delay += self._behavior_rng.uniform(0.6, 1.4)
@@ -222,8 +285,12 @@ class FaucetBot:
         if self.solver:
             self.solver.set_faucet_name(value)
 
-    def set_proxy(self, proxy_string: str):
-        """Pass the proxy string to the underlying solver."""
+    def set_proxy(self, proxy_string: str) -> None:
+        """Forward proxy configuration to the underlying CAPTCHA solver.
+
+        Args:
+            proxy_string: ``user:pass@host:port`` formatted proxy string.
+        """
         if self.solver:
             self.solver.set_proxy(proxy_string)
     
@@ -387,15 +454,18 @@ class FaucetBot:
         
         return email
 
-    def get_credentials(self, faucet_name: str):
-        """
-        Centralized credential retrieval with override support.
-        
+    def get_credentials(self, faucet_name: str) -> Optional[Dict[str, str]]:
+        """Retrieve login credentials for a faucet.
+
+        Checks :attr:`settings_account_override` first (set by the
+        scheduler when injecting per-profile credentials), then falls
+        back to :meth:`BotSettings.get_account`.
+
         Args:
-            faucet_name: The name of the faucet to get credentials for.
-        
+            faucet_name: Faucet identifier (e.g. ``"firefaucet"``).
+
         Returns:
-            Credentials dict or None if not found.
+            Dict with ``username`` / ``password`` keys, or ``None``.
         """
         if hasattr(self, 'settings_account_override') and self.settings_account_override:
             return self.settings_account_override
@@ -480,14 +550,16 @@ class FaucetBot:
         return None
 
 
-    async def random_delay(self, min_s: Optional[float] = None, max_s: Optional[float] = None):
-        """
-        Wait for a random amount of time to mimic human behavior.
-        Uses human timing profile if available, otherwise falls back to parameters.
+    async def random_delay(self, min_s: Optional[float] = None, max_s: Optional[float] = None) -> None:
+        """Wait a random duration to mimic human inter-action pauses.
+
+        When a :class:`HumanProfile` is active and no explicit bounds are
+        supplied, timings are drawn from the profile's ``click`` action
+        range.  An idle-pause (simulated distraction) may also occur.
 
         Args:
-            min_s: Minimum wait time in seconds (optional).
-            max_s: Maximum wait time in seconds (optional).
+            min_s: Override minimum wait in seconds.
+            max_s: Override maximum wait in seconds.
         """
         # Use human profile timing if available and no explicit override
         if self.human_profile and min_s is None and max_s is None:
@@ -506,10 +578,11 @@ class FaucetBot:
         
         await asyncio.sleep(delay)
 
-    async def thinking_pause(self):
-        """
-        Realistic \"thinking\" pause before important actions.
-        Uses human profile if available.
+    async def thinking_pause(self) -> None:
+        """Insert a "thinking" pause before important actions.
+
+        Draws the delay from the active :class:`HumanProfile` ``thinking``
+        range, or falls back to ``uniform(1.0, 3.0)`` seconds.
         """
         if self.human_profile:
             delay = HumanProfile.get_thinking_pause(self.human_profile)
@@ -520,17 +593,18 @@ class FaucetBot:
         
         await asyncio.sleep(delay)
 
-    async def warm_up_page(self):
-        """
-        Simulate natural browsing behavior after page load but before any automated actions.
-        
-        This creates a behavioral baseline that makes the session look organic:
-        - Scrolls the page naturally (humans always scroll to see content)
-        - Generates mouse movement events
-        - Adds realistic reading delays
-        
-        Call this after navigating to a faucet page and waiting for load,
-        but before interacting with login/claim buttons.
+    async def warm_up_page(self) -> None:
+        """Simulate organic browsing behaviour after page load.
+
+        Creates a behavioural baseline that makes the session look natural
+        before any login/claim interaction:
+
+        * Scroll events (humans always scroll to see the page).
+        * Mouse-move events at random viewport positions.
+        * Short reading delays.
+
+        Call **after** :meth:`safe_navigate` but **before** interacting
+        with login / claim buttons.
         """
         try:
             from browser.stealth_hub import StealthHub
@@ -626,14 +700,21 @@ class FaucetBot:
         
         return self.human_profile
 
-    async def human_like_click(self, locator: Locator):
-        """
-        Simulate a human-like click with Bézier-curve mouse movement,
-        randomized delays, scrolling, offset clicks, and realistic
-        mouse acceleration/deceleration profiles.
-        
-        Uses proper cubic Bézier curves with control points that follow
-        natural hand movement patterns.
+    async def human_like_click(self, locator: Locator) -> None:
+        """Click an element with Bezier-curve mouse movement.
+
+        Simulates a realistic human click by:
+
+        * Scrolling the element into view.
+        * Pre-click aiming delay (profile-based).
+        * Removing transparent overlay divs that capture clicks.
+        * Moving the cursor along a cubic Bezier curve with
+          acceleration/deceleration.
+        * Clicking at a Gaussian-distributed offset within the
+          element's bounding box.
+
+        Args:
+            locator: Playwright ``Locator`` targeting the element.
         """
         if await locator.is_visible():
             await locator.scroll_into_view_if_needed()
@@ -745,10 +826,13 @@ class FaucetBot:
             speed_factor = max(0.3, 1.0 - t * 0.7)
             await asyncio.sleep(random.uniform(0.003, 0.015) * speed_factor)
 
-    async def remove_overlays(self):
-        """
-        Removes transparent or semi-transparent divs that often layer 
-        over buttons to trigger pop-unders.
+    async def remove_overlays(self) -> None:
+        """Remove transparent/fixed overlay divs that steal clicks.
+
+        Faucet sites often layer invisible ``<div>``/``<ins>``/``<iframe>``
+        elements over buttons to trigger pop-unders.  This JS snippet
+        removes elements matching ``position:fixed|absolute`` with
+        ``zIndex > 100`` and near-zero opacity.
         """
         await self.page.evaluate("""() => {
             const overlays = Array.from(document.querySelectorAll('div, ins, iframe')).filter(el => {
@@ -760,23 +844,23 @@ class FaucetBot:
             overlays.forEach(el => el.remove());
         }""")
 
-    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None, simulate_typos: bool = False):
-        """
-        Type text into a field with human-like keystroke dynamics.
-        
-        Simulates realistic typing patterns including:
-        - Variable inter-key delay (faster for common sequences, slower after spaces)
-        - Occasional brief pauses (thinking mid-word)
-        - Burst typing followed by short pauses
-        - Different speed for different character types
-        - Optional typo simulation with backspace correction
-        
+    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int] = None, delay_max: Optional[int] = None, simulate_typos: bool = False) -> None:
+        """Type text with realistic keystroke dynamics.
+
+        Simulates human typing patterns:
+
+        * Variable inter-key delays (faster for common digraphs).
+        * Occasional mid-word pauses.
+        * Burst-then-pause rhythm.
+        * Optional typo injection with backspace correction.
+
         Args:
-            selector: CSS selector or Playwright Locator
-            text: Text to type
-            delay_min: Minimum delay in ms (optional)
-            delay_max: Maximum delay in ms (optional)
-            simulate_typos: If True, occasionally make and correct typos (for non-credential fields)
+            selector: CSS selector string or Playwright ``Locator``.
+            text: The text to type.
+            delay_min: Per-key minimum delay in **ms** (overrides profile).
+            delay_max: Per-key maximum delay in **ms** (overrides profile).
+            simulate_typos: If ``True``, occasionally mis-type and correct.
+                Use only for non-credential fields.
         """
         locator = self.page.locator(selector) if isinstance(selector, str) else selector
         
@@ -915,9 +999,16 @@ class FaucetBot:
             return None
     
     async def safe_click(self, selector: Union[str, Locator], **kwargs) -> bool:
-        """
-        Safely click an element with health checks.
-        Returns False if operation fails.
+        """Click an element with page-health pre-checks.
+
+        Wraps :meth:`safe_page_operation` around ``locator.click()``.
+
+        Args:
+            selector: CSS selector string or Playwright ``Locator``.
+            **kwargs: Forwarded to ``locator.click()``.
+
+        Returns:
+            ``True`` if the click succeeded, ``False`` on any error.
         """
         locator = self.page.locator(selector) if isinstance(selector, str) else selector
         result = await self.safe_page_operation(
@@ -928,9 +1019,15 @@ class FaucetBot:
         return result is not None
     
     async def safe_fill(self, selector: Union[str, Locator], text: str, **kwargs) -> bool:
-        """
-        Safely fill an input field with health checks.
-        Returns False if operation fails.
+        """Fill an input field with page-health pre-checks.
+
+        Args:
+            selector: CSS selector string or Playwright ``Locator``.
+            text: Value to fill.
+            **kwargs: Forwarded to ``locator.fill()``.
+
+        Returns:
+            ``True`` if the fill succeeded, ``False`` on any error.
         """
         locator = self.page.locator(selector) if isinstance(selector, str) else selector
         result = await self.safe_page_operation(
@@ -942,9 +1039,14 @@ class FaucetBot:
         return result is not None
     
     async def safe_goto(self, url: str, **kwargs) -> bool:
-        """
-        Safely navigate to a URL with health checks.
-        Returns False if operation fails.
+        """Navigate to *url* with page-health pre-checks.
+
+        Args:
+            url: Target URL.
+            **kwargs: Forwarded to ``page.goto()``.
+
+        Returns:
+            ``True`` if the navigation succeeded, ``False`` otherwise.
         """
         result = await self.safe_page_operation(
             f"goto({url})",
@@ -1596,10 +1698,13 @@ class FaucetBot:
         # If we get here, all attempts failed (shouldn't reach this)
         return False
 
-    async def close_popups(self):
-        """
-        Generic handler for common crypto-site popups, cookie consents, 
-        and notification requests that block view or interaction.
+    async def close_popups(self) -> None:
+        """Dismiss common crypto-site popups and cookie-consent banners.
+
+        Iterates over a built-in list of CSS selectors for cookie
+        consent, notification permission, Bootstrap modals, and
+        Google consent dialogs.  Each visible match is clicked with a
+        short timeout; failures are silently ignored.
         """
         selectors = [
             ".cc-btn.cc-dismiss",         # Cookie Consent
@@ -1630,27 +1735,50 @@ class FaucetBot:
                 continue
     
     async def login(self) -> bool:
-        """
-        Perform the login process for the faucet.
+        """Authenticate with the faucet site.
+
+        Subclasses **must** override this method with site-specific
+        login logic (navigate to login page, fill credentials, solve
+        CAPTCHA, verify success).
 
         Returns:
-            True if login was successful, False otherwise.
+            ``True`` if login succeeded, ``False`` otherwise.
+
+        Raises:
+            NotImplementedError: Always, in the base class.
         """
         raise NotImplementedError
 
     async def claim(self) -> Union[bool, ClaimResult]:
-        """
-        Execute the claim process.
+        """Execute the faucet claim action.
+
+        Subclasses **must** override this with site-specific claim
+        logic (navigate to claim page, solve CAPTCHA, click claim
+        button, parse result).
 
         Returns:
-            True/False or ClaimResult object.
+            A :class:`ClaimResult` (preferred) or a bare ``bool``.
+
+        Raises:
+            NotImplementedError: Always, in the base class.
         """
         raise NotImplementedError
         
     async def get_timer(self, selector: str, fallback_selectors: list = None) -> float:
-        """
-        Extract timer value from a selector and convert to minutes.
-        With automatic fallback to DOM auto-detection if selector fails.
+        """Extract the countdown timer from the page and convert to minutes.
+
+        Tries the primary *selector* first; if invisible or absent, tries
+        each entry in *fallback_selectors*; finally falls back to
+        :meth:`DataExtractor.find_timer_selector_in_dom` for automatic
+        discovery.
+
+        Args:
+            selector: Primary CSS selector for the timer element.
+            fallback_selectors: Optional list of alternative selectors.
+
+        Returns:
+            Remaining wait time in **minutes**, or ``0.0`` if the timer
+            could not be found (claim assumed ready).
         """
         # Structured logging: timer_check start
         logger.debug(f"[LIFECYCLE] timer_check_start | faucet={self.faucet_name} | selector={selector} | timestamp={time.time():.0f}")
@@ -1745,15 +1873,30 @@ class FaucetBot:
         
     async def is_logged_in(self) -> bool:
         """
-        Check if the session is still active. 
-        Subclasses should override this with specific checks.
+        Check if the session is still active.
+
+        Subclasses should override with site-specific indicators
+        (e.g. presence of a logout button, dashboard elements).
+
+        Returns:
+            ``True`` if logged in, ``False`` otherwise.
         """
         return False
 
     async def check_failure_states(self) -> Optional[str]:
-        """
-        Check for common failure states like IP ban, proxy detection, or maintenance.
-        Returns a string describing the state if failure detected, else None.
+        """Detect common failure conditions on the current page.
+
+        Inspects page content, URL, and title for patterns indicating:
+
+        * **Cloudflare challenge** -- interstitial, Turnstile, DDoS page.
+        * **Proxy / VPN detection** -- "proxy detected", "vpn detected".
+        * **Account ban / suspension**.
+        * **Site maintenance**.
+        * **HTTP error pages** (403, 404, 500).
+
+        Returns:
+            A human-readable failure description string if a problem is
+            detected, or ``None`` when the page appears healthy.
         """
         content = (await self.page.content()).lower()
         url = self.page.url.lower()
@@ -1853,9 +1996,17 @@ class FaucetBot:
         return None
 
     async def login_wrapper(self) -> bool:
-        """
-        Ensure we are logged in, with failure state checking.
-        Automatically loads human timing profile if not already loaded.
+        """High-level login orchestrator with anti-detection warmup.
+
+        1. Loads the human timing profile (if not already assigned).
+        2. Handles Cloudflare challenges pre-emptively.
+        3. Warms up the page (:meth:`warm_up_page`).
+        4. Checks for failure states (proxy detection, bans, maintenance).
+        5. Verifies existing session via :meth:`is_logged_in`.
+        6. Calls :meth:`login` if needed, with a single retry.
+
+        Returns:
+            ``True`` if authenticated (existing or new session).
         """
         # Load human profile if not already loaded
         if self.human_profile is None:
@@ -1956,20 +2107,29 @@ class FaucetBot:
 
         return logged_in
 
-    async def view_ptc_ads(self):
-        """
-        Generic PTC Ad viewing logic.
-        1. Finds ad links (selector provided by subclass)
-        2. Clicks and handles new tab
-        3. Waits for timer (time provided by subclass or element)
-        4. Solves captcha if needed
+    async def view_ptc_ads(self) -> None:
+        """View Paid-to-Click advertisements for bonus earnings.
+
+        Subclasses that support PTC (e.g. CoinPayU, AdBTC) should
+        override to implement ad-link discovery, tab management,
+        timer waiting, and optional CAPTCHA solving.
         """
         logger.warning(f"[{self.faucet_name}] PTC logic not fully implemented in subclass.")
         await asyncio.sleep(1)
 
-    def get_earning_tasks(self):
-        """
-        Returns a list of async methods (tasks) to execute for earnings.
+    def get_earning_tasks(self) -> List[Dict[str, Any]]:
+        """Return the ordered list of earning tasks for this faucet.
+
+        Each entry is a dict with:
+
+        * ``func`` -- an async callable to execute.
+        * ``name`` -- human-readable task label.
+
+        By default includes ``Faucet Claim`` and, for PTC-capable
+        faucets, ``PTC Ads``.
+
+        Returns:
+            List of task dicts.
         """
         tasks = []
         # Claim is usually the primary task
@@ -1983,16 +2143,29 @@ class FaucetBot:
         return tasks
              
     async def withdraw(self) -> ClaimResult:
-        """
-        Generic withdrawal logic. Subclasses should override this with site-specific
-        navigation and button clicking.
+        """Execute a withdrawal from the faucet.
+
+        Subclasses should override with site-specific navigation and
+        form submission.  The base implementation returns a
+        "Not Implemented" failure result.
+
+        Returns:
+            :class:`ClaimResult` indicating success/failure.
         """
         logger.warning(f"[{self.faucet_name}] Withdrawal not implemented for this faucet.")
         return ClaimResult(success=False, status="Not Implemented", next_claim_minutes=1440)
 
-    def get_jobs(self):
-        """
-        Returns a list of Job objects for the scheduler.
+    def get_jobs(self) -> List['Job']:
+        """Build :class:`Job` objects for the scheduler.
+
+        Creates three jobs per faucet:
+
+        1. **Claim** (priority 1) -- runs immediately.
+        2. **Withdraw** (priority 5) -- runs after 1 hour, then daily.
+        3. **PTC** (priority 3) -- runs after 5 min if PTC is available.
+
+        Returns:
+            List of :class:`core.orchestrator.Job` instances.
         """
         from core.orchestrator import Job
         
@@ -2033,7 +2206,21 @@ class FaucetBot:
         return jobs
 
     async def withdraw_wrapper(self, page: Page) -> ClaimResult:
-        """Wrapper for withdrawal with threshold checking and analytics tracking."""
+        """Scheduler entry-point for withdrawal jobs.
+
+        Handles the full withdrawal lifecycle:
+
+        1. Ensure authentication via :meth:`login_wrapper`.
+        2. Check balance against the configured minimum threshold.
+        3. Call :meth:`withdraw` (site-specific).
+        4. Record withdrawal analytics.
+
+        Args:
+            page: Playwright ``Page`` assigned by the scheduler.
+
+        Returns:
+            :class:`ClaimResult` with withdrawal outcome.
+        """
         from core.withdrawal_analytics import get_analytics
         
         self.page = page
@@ -2129,6 +2316,24 @@ class FaucetBot:
             return "UNKNOWN"
              
     async def claim_wrapper(self, page: Page) -> ClaimResult:
+        """Scheduler entry-point for claim jobs.
+
+        Orchestrates the full faucet-claim lifecycle:
+
+        1. Authenticate via :meth:`login_wrapper`.
+        2. Warm up the page and inject organic mouse / scroll events.
+        3. Call :meth:`claim` (site-specific).
+        4. Classify errors and record analytics.
+
+        All steps are wrapped in structured lifecycle logging for
+        observability.
+
+        Args:
+            page: Playwright ``Page`` assigned by the scheduler.
+
+        Returns:
+            :class:`ClaimResult` with claim outcome.
+        """
         self.page = page
         page_content = None
         status_code = None
@@ -2237,6 +2442,17 @@ class FaucetBot:
             )
 
     async def ptc_wrapper(self, page: Page) -> ClaimResult:
+        """Scheduler entry-point for PTC (Paid-to-Click) ad jobs.
+
+        Authenticates and then delegates to :meth:`view_ptc_ads`.
+
+        Args:
+            page: Playwright ``Page`` assigned by the scheduler.
+
+        Returns:
+            :class:`ClaimResult` -- always ``success=True`` unless login
+            fails.
+        """
         self.page = page
         if not await self.login_wrapper():
             return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
@@ -2361,10 +2577,15 @@ class FaucetBot:
         return None
 
     async def run(self) -> ClaimResult:
-        """
-        Main execution flow. 
-        Returns the ClaimResult from the primary 'claim' task (or a default failure one)
-        to determine the next schedule time.
+        """Execute the full faucet run (login + all earning tasks).
+
+        This is the legacy entry-point; newer code uses the individual
+        ``*_wrapper`` methods called directly by the scheduler.  The
+        method still works for standalone testing.
+
+        Returns:
+            :class:`ClaimResult` from the primary claim task, or a
+            default failure result if everything fails.
         """
         logger.info(f"[{self.faucet_name}] Starting run...")
         

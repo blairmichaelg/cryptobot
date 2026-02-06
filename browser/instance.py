@@ -1,3 +1,18 @@
+"""Stealth browser instance management for Cryptobot Gen 3.0.
+
+Provides :class:`BrowserManager` which wraps ``Camoufox`` (a hardened Firefox
+fork) via Playwright.  Features include:
+
+* Headless or visible operation with realistic screen constraints.
+* Per-account browser contexts with isolated cookies and proxy bindings.
+* Encrypted cookie persistence via :class:`SecureCookieStorage`.
+* Resource blocking (ads, trackers, fingerprinting services).
+* WebRTC leak prevention and advanced Firefox pref hardening.
+* Fingerprint persistence (canvas seed, GPU, audio, hardware concurrency)
+  stored in ``config/profile_fingerprints.json``.
+* Atomic JSON read/write with backup rotation for all state files.
+"""
+
 from __future__ import annotations
 from typing import Optional, List, Dict, Any
 
@@ -18,9 +33,19 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 class BrowserManager:
-    """
-    Manages the lifecycle of a stealthy Camoufox browser instance.
-    Handles context creation, page management, and cleanup.
+    """Manages the lifecycle of a stealth Camoufox browser instance.
+
+    Responsibilities:
+        * Launching / closing the Camoufox browser process.
+        * Creating isolated ``BrowserContext`` instances per faucet account,
+          each with its own proxy, user-agent, and fingerprint seed.
+        * Loading and saving encrypted cookies for session persistence.
+        * Attaching the :class:`ResourceBlocker` to intercept requests.
+        * Exposing ``get_page`` / ``close_context`` helpers for the scheduler.
+
+    The manager should be instantiated *once* at startup and re-used across
+    all jobs.  Thread safety is provided by asyncio (all public methods are
+    coroutines).
     """
     def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True, timeout: int = 60000, user_agents: Optional[List[str]] = None):
         """
@@ -59,8 +84,18 @@ class BrowserManager:
             self._secure_storage = None
         self.seed_cookie_jar = True
 
-    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
-        """Atomic JSON write with corruption protection and backups."""
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3) -> None:
+        """Atomically write JSON with corruption protection.
+
+        Writes to a temporary file, validates the output, then atomically
+        replaces the target.  Up to *max_backups* previous versions are
+        rotated (``filepath.backup.1`` … ``filepath.backup.N``).
+
+        Args:
+            filepath: Destination file path.
+            data: JSON-serialisable dictionary.
+            max_backups: Number of backup generations to keep.
+        """
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
@@ -83,7 +118,19 @@ class BrowserManager:
             logger.error("Failed to safely write %s: %s", filepath, e)
 
     def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
-        """Read JSON with fallback to backups if corrupted."""
+        """Read JSON with automatic fallback to backup files.
+
+        Tries the primary file first, then ``filepath.backup.1`` through
+        ``filepath.backup.N``.  Returns ``None`` if all candidates are
+        missing or corrupted.
+
+        Args:
+            filepath: Primary file path.
+            max_backups: Number of backup generations to attempt.
+
+        Returns:
+            Parsed dictionary, or ``None``.
+        """
         candidates = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
         for candidate in candidates:
             if not os.path.exists(candidate):
@@ -96,11 +143,13 @@ class BrowserManager:
         return None
 
     def _normalize_proxy_key(self, proxy: str) -> str:
+        """Strip the scheme prefix from a proxy URL for use as a dict key."""
         if not proxy:
             return ""
         return proxy.split("://", 1)[1] if "://" in proxy else proxy
 
     def _proxy_host_port(self, proxy: str) -> str:
+        """Extract ``host:port`` from a proxy URL for host-level grouping."""
         if not proxy:
             return ""
         try:
@@ -141,8 +190,16 @@ class BrowserManager:
 
         return False
 
-    async def launch(self):
-        """Launches a highly stealthy Camoufox instance with hardened configuration."""
+    async def launch(self) -> None:
+        """Launch a hardened Camoufox browser instance.
+
+        Configures Firefox preferences for stealth (WebRTC leak prevention,
+        telemetry disabling, DNS prefetch blocking, etc.) and initialises
+        the browser process.  Should be called once at startup.
+
+        Raises:
+            Exception: If the browser fails to start.
+        """
         logger.info("Launching Camoufox (Headless: %s)...", self.headless)
         
         # Construct arguments
@@ -253,9 +310,31 @@ class BrowserManager:
             raise
 
     async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True, block_images_override: Optional[bool] = None, block_media_override: Optional[bool] = None) -> BrowserContext:
-        """
-        Creates a new isolated browser context with specific proxy and user agent.
-        Includes enhanced anti-detection measures and sticky session support.
+        """Create an isolated browser context with per-profile stealth.
+
+        Each context gets its own proxy, fingerprint (canvas/WebGL/audio
+        seeds), locale/timezone, resource-blocker, and stealth-script
+        injection.  Cookies from previous sessions are loaded
+        automatically.
+
+        Args:
+            proxy: ``user:pass@host:port`` proxy string (or ``None``).
+            user_agent: Custom User-Agent (or ``None`` for random pick).
+            profile_name: Profile identifier for sticky sessions / cookies.
+            locale_override: Force a specific locale (e.g. ``en-US``).
+            timezone_override: Force a specific IANA timezone.
+            allow_sticky_proxy: Load a previously-bound proxy for this
+                profile.
+            block_images_override: Override the global image-blocking
+                setting.
+            block_media_override: Override the global media-blocking
+                setting.
+
+        Returns:
+            A configured Playwright ``BrowserContext``.
+
+        Raises:
+            RuntimeError: If the browser has not been launched yet.
         """
         if not self.browser:
             raise RuntimeError("Browser not launched. Call launch() first.")
@@ -543,14 +622,15 @@ class BrowserManager:
         
         return context
 
-    async def save_cookies(self, context: BrowserContext, profile_name: str):
-        """
-        Save browser cookies to disk for faster subsequent logins.
-        Uses encrypted storage by default.
-        
+    async def save_cookies(self, context: BrowserContext, profile_name: str) -> None:
+        """Persist browser cookies to disk for session reuse.
+
+        Uses :class:`SecureCookieStorage` (Fernet encryption) when
+        available; falls back to plain JSON.
+
         Args:
-            context: The browser context to save cookies from
-            profile_name: Unique identifier for this profile (e.g., faucet_username)
+            context: The browser context whose cookies to save.
+            profile_name: Unique key (typically ``faucet_username``).
         """
         try:
             cookies = await context.cookies()
@@ -768,8 +848,26 @@ class BrowserManager:
         viewport_width: Optional[int] = None,
         viewport_height: Optional[int] = None,
         device_scale_factor: Optional[float] = None
-    ):
-        """Save the fingerprint settings for a profile including canvas, WebGL, and audio parameters."""
+    ) -> None:
+        """Persist deterministic fingerprint parameters for a profile.
+
+        Values default to hashes of *profile_name* when ``None``,
+        ensuring the same profile always gets the same canvas/WebGL/audio
+        fingerprint across sessions.
+
+        Args:
+            profile_name: Unique profile key.
+            locale: BCP-47 locale (e.g. ``en-US``).
+            timezone_id: IANA timezone (e.g. ``America/New_York``).
+            canvas_seed: Seed for canvas noise generation.
+            gpu_index: Index into GPU config array (0--12).
+            audio_seed: Seed for audio fingerprint noise.
+            languages: Navigator language list.
+            platform: ``navigator.platform`` value.
+            viewport_width: Viewport width in pixels.
+            viewport_height: Viewport height in pixels.
+            device_scale_factor: Device pixel ratio.
+        """
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
             data = {}
@@ -818,7 +916,14 @@ class BrowserManager:
             logger.error(f"Failed to save fingerprint for {profile_name}: {e}")
 
     async def load_profile_fingerprint(self, profile_name: str) -> Optional[Dict[str, str]]:
-        """Load the fingerprint settings for a profile."""
+        """Load persisted fingerprint parameters for a profile.
+
+        Args:
+            profile_name: Unique profile key.
+
+        Returns:
+            Dict of fingerprint settings, or ``None`` if not found.
+        """
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
             if os.path.exists(fingerprint_file):
@@ -831,7 +936,20 @@ class BrowserManager:
             return None
 
     async def new_page(self, context: BrowserContext = None) -> Page:
-        """Creates and returns a new page. If context is provided, uses it. Otherwise uses default context."""
+        """Create a new page in *context* (or the default browser context).
+
+        When using the default context, a :class:`ResourceBlocker` is
+        automatically attached.
+
+        Args:
+            context: Specific context to use (``None`` for default).
+
+        Returns:
+            A new Playwright ``Page``.
+
+        Raises:
+            RuntimeError: If the context is closed or unresponsive.
+        """
         if not self.browser:
             await self.launch()
 
@@ -850,9 +968,13 @@ class BrowserManager:
         return page
     
     async def safe_new_page(self, context: BrowserContext) -> Optional[Page]:
-        """
-        Safely create a new page with health checks.
-        Returns None if context is closed or operation fails.
+        """Create a new page with a context-health pre-check.
+
+        Args:
+            context: The context to create the page in.
+
+        Returns:
+            A new ``Page``, or ``None`` if the context is closed.
         """
         try:
             if not await self.check_context_alive(context):
@@ -866,8 +988,8 @@ class BrowserManager:
                 logger.warning(f"Failed to create page: {e}")
             return None
 
-    async def restart(self):
-        """Restarts the browser instance to clear memory and hung processes."""
+    async def restart(self) -> None:
+        """Restart the browser to clear memory and hung processes."""
         logger.info("🔄 Restarting browser instance...")
         await self.close()
         await asyncio.sleep(2)
@@ -875,7 +997,14 @@ class BrowserManager:
         logger.info("✅ Browser instance restarted.")
 
     async def check_health(self) -> bool:
-        """Checks if the browser instance is still responsive."""
+        """Verify the browser process is still responsive.
+
+        Creates and immediately closes a throwaway context as a
+        lightweight liveness probe.
+
+        Returns:
+            ``True`` if the browser responded, ``False`` otherwise.
+        """
         if not self.browser:
             return False
         try:
@@ -889,7 +1018,17 @@ class BrowserManager:
             return False
 
     async def check_context_alive(self, context: BrowserContext) -> bool:
-        """Check if a browser context is still alive and usable."""
+        """Check if a context is still alive and usable.
+
+        Creates and immediately closes a test page.  The context is
+        added to the ``_closed_contexts`` set on failure.
+
+        Args:
+            context: The context to probe.
+
+        Returns:
+            ``True`` if the context is responsive.
+        """
         try:
             if not context:
                 return False
@@ -919,7 +1058,16 @@ class BrowserManager:
             return False
     
     async def check_page_alive(self, page: Page) -> bool:
-        """Check if a page is still alive and usable."""
+        """Check if a page is still alive and responsive.
+
+        Evaluates ``1 + 1`` with a 3 s timeout.
+
+        Args:
+            page: The page to probe.
+
+        Returns:
+            ``True`` if the page responded.
+        """
         try:
             if not page:
                 return False
@@ -1002,9 +1150,18 @@ class BrowserManager:
             return False
     
     async def check_page_status(self, page: Page) -> Dict[str, Any]:
-        """
-        Check the page for common failure status codes or network errors.
-        Returns a dict with 'blocked', 'network_error', and 'status'.
+        """Probe the page for HTTP-level blocks or network errors.
+
+        Issues a lightweight ``HEAD`` fetch against the current URL
+        from within the page context.
+
+        Args:
+            page: The page to check.
+
+        Returns:
+            Dict with keys ``blocked`` (bool), ``network_error`` (bool),
+            and ``status`` (int HTTP code, ``0`` for network error,
+            ``-1`` for unknown).
         """
         try:
             # First verify page is still alive
@@ -1028,8 +1185,8 @@ class BrowserManager:
             logger.debug(f"Status check failed: {e}")
             return {"blocked": False, "network_error": False, "status": -1}
 
-    async def close(self):
-        """Cleanup resources."""
+    async def close(self) -> None:
+        """Shut down the browser and clear all tracking state."""
         if self.browser:
             try:
                 await self.camoufox.__aexit__(None, None, None)

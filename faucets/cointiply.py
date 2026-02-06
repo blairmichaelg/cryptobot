@@ -1,3 +1,12 @@
+"""Cointiply faucet bot for Cryptobot Gen 3.0.
+
+Implements ``cointiply.com`` with faucet claiming, PTC (paid-to-click) ad
+viewing, and multi-currency withdrawals.  Uses hCaptcha solving (via
+CapSolver fallback if 2Captcha primary is configured).
+
+Claim interval: ~60 minutes.
+"""
+
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
@@ -7,14 +16,15 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 class CointiplyBot(FaucetBot):
-    """
-    Cointiply faucet bot implementation.
-    
+    """Cointiply faucet bot implementation.
+
     Supports:
-    - Faucet claims with timer-based scheduling
-    - PTC ad viewing for bonus earnings
-    - Automated withdrawals to multiple cryptocurrencies
+        * Faucet claims with timer-based scheduling.
+        * PTC (paid-to-click) ad viewing for bonus earnings.
+        * Automated withdrawals to multiple cryptocurrencies.
+        * hCaptcha solving with provider fallback.
     """
     
     def __init__(self, settings, page, **kwargs):

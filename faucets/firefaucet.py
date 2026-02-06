@@ -1,3 +1,15 @@
+"""FireFaucet bot implementation for Cryptobot Gen 3.0.
+
+Implements the ``firefaucet.win`` faucet with:
+    * Cloudflare Turnstile detection and bypass (progressive stealth escalation).
+    * Multi-currency auto-faucet claiming (ATC) and manual faucet modes.
+    * Shortlink traversal for bonus earnings.
+    * Balance and timer extraction with fallback selectors.
+    * Level / XP-aware claim scheduling.
+
+Claim interval: ~30 minutes (auto-faucet mode).
+"""
+
 from .base import FaucetBot, ClaimResult
 import logging
 from solvers.shortlink import ShortlinkSolver
@@ -6,8 +18,23 @@ import random
 
 logger = logging.getLogger(__name__)
 
+
 class FireFaucetBot(FaucetBot):
+    """Bot for the FireFaucet.win faucet site.
+
+    FireFaucet uses Cloudflare Turnstile protection and a points-based
+    auto-faucet system.  This bot handles both the auto-faucet (ATC) and
+    manual claim workflows, with progressive Cloudflare bypass logic.
+    """
+
     def __init__(self, settings, page, **kwargs):
+        """Initialise the FireFaucet bot.
+
+        Args:
+            settings: Global :class:`BotSettings` configuration.
+            page: Playwright ``Page`` instance.
+            **kwargs: Passed through to :class:`FaucetBot`.
+        """
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FireFaucet"
         self.base_url = "https://firefaucet.win"

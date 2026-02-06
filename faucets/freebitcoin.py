@@ -1,3 +1,18 @@
+"""FreeBitcoin faucet bot for Cryptobot Gen 3.0.
+
+Implements ``freebitco.in`` -- one of the oldest Bitcoin faucets.  Features:
+    * Hourly BTC claims via the main "ROLL" button.
+    * Multiply BTC (hi-lo gambling game -- optional).
+    * Reward points accumulation and free-roll bonuses.
+    * Cloudflare / reCAPTCHA / Turnstile bypass.
+
+Claim interval: ~60 minutes.
+
+Known issues:
+    * Login success rate is currently ~0 %% -- selectors may require update
+      or credential refresh (see ``copilot-instructions.md``).
+"""
+
 from .base import FaucetBot, ClaimResult
 from core.extractor import DataExtractor
 import logging
@@ -7,7 +22,14 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
 class FreeBitcoinBot(FaucetBot):
+    """FreeBitco.in faucet bot.
+
+    Handles login, hourly roll claims, balance extraction, and withdrawal.
+    Currently experiencing 100 %% login failure rate -- investigate selector
+    changes on the site.
+    """
     def __init__(self, settings, page, **kwargs):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FreeBitcoin"

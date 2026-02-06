@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import time
+from typing import List
 from playwright.async_api import Page
 from faucets.base import FaucetBot, ClaimResult
 from core.extractor import DataExtractor
@@ -465,7 +466,7 @@ class PickFaucetBase(FaucetBot):
                 return balance
         return "0"
 
-    def get_jobs(self):
+    def get_jobs(self) -> List['Job']:
         """Standard job definition for the pick family.
 
         Returns:

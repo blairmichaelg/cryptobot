@@ -1,3 +1,18 @@
+"""Residential proxy pool manager for Cryptobot Gen 3.0.
+
+Manages proxy sourcing (2Captcha, Webshare, Zyte, Azure VMs, DigitalOcean
+droplets), sticky session assignment, health monitoring, latency tracking,
+reputation scoring, and cooldown / burn policies.
+
+Key class:
+    ProxyManager: Singleton-like manager instantiated once by ``main.py``.
+
+Proxy lifecycle::
+
+    load -> validate -> assign (sticky 1:1 per account) -> monitor latency
+    -> cooldown on detection -> burn (12 h) on repeated failures -> dead-list
+"""
+
 import logging
 import asyncio
 import aiohttp
@@ -14,6 +29,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Proxy:
+    """Represents a single proxy endpoint.
+
+    Attributes:
+        ip: Proxy hostname or IP address.
+        port: Proxy port number.
+        username: Authentication username (may be empty for whitelisted IPs).
+        password: Authentication password (may be empty).
+        protocol: URL scheme -- ``http`` or ``https``.
+    """
+
     ip: str
     port: int
     username: str
@@ -21,7 +46,12 @@ class Proxy:
     protocol: str = "http"
 
     def to_string(self) -> str:
-        """Returns the proxy string format expected by Playwright: http://user:pass@ip:port or http://ip:port"""
+        """Format the proxy as a URL string for Playwright.
+
+        Returns:
+            ``protocol://user:pass@ip:port`` (with credentials) or
+            ``protocol://ip:port`` (without).
+        """
         if self.username and self.password is not None:
             # Include colon even if password is empty to support providers that expect user: (e.g., Zyte proxy auth)
             return f"{self.protocol}://{self.username}:{self.password}@{self.ip}:{self.port}"
@@ -31,17 +61,25 @@ class Proxy:
         return f"{self.protocol}://{self.ip}:{self.port}"
 
     def to_2captcha_string(self) -> str:
-        """Returns the proxy string format expected by 2Captcha: user:pass@ip:port or ip:port"""
+        """Format the proxy for the 2Captcha API (no scheme prefix).
+
+        Returns:
+            ``user:pass@ip:port`` or ``ip:port``.
+        """
         if self.username and self.password:
             return f"{self.username}:{self.password}@{self.ip}:{self.port}"
         return f"{self.ip}:{self.port}"
 
 class ProxyManager:
-    """
-    Manages fetching proxies from 2Captcha and assigning them to accounts
-    using a 'Sticky Session' strategy (1 Account = 1 Proxy).
-    
-    Also provides proxy health monitoring with latency tracking.
+    """Manages proxy fetching, assignment, health monitoring, and rotation.
+
+    Supports multiple proxy providers (2Captcha, Webshare, Zyte, Azure VMs,
+    DigitalOcean droplets) unified behind a single interface.  Proxies are
+    assigned in a *sticky session* model (one account = one proxy) and tracked
+    for latency, failure count, and reputation score.
+
+    Health data is persisted to ``config/proxy_health.json`` so that
+    cooldowns and reputation survive restarts.
     """
 
     # Validation defaults (can be overridden via settings)
@@ -132,8 +170,8 @@ class ProxyManager:
         )
         return len(proxies)
 
-    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
-        """Atomic JSON write with corruption protection and backups."""
+    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3) -> None:
+        """Atomically write JSON with backup rotation and validation."""
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
@@ -156,7 +194,7 @@ class ProxyManager:
             logger.warning(f"Failed to safely write {filepath}: {e}")
 
     def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
-        """Read JSON with fallback to backups if corrupted."""
+        """Read JSON with automatic fallback to backup files on corruption."""
         paths = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
         for path in paths:
             if not os.path.exists(path):
@@ -169,11 +207,11 @@ class ProxyManager:
         return None
 
     def _proxy_key(self, proxy: Proxy) -> str:
-        """Generate a unique key for a proxy (full string with session)."""
+        """Generate a unique dictionary key for a proxy (credentials + host:port)."""
         return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
 
     def _mask_proxy_key(self, proxy_key: str) -> str:
-        """Redact credentials from proxy key for logging."""
+        """Redact API keys / credentials from a proxy key for safe logging."""
         try:
             if self.proxy_provider == "zyte" and self.zyte_api_key:
                 if self.zyte_api_key in proxy_key:

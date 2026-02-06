@@ -1,3 +1,14 @@
+"""FaucetCrypto faucet bot for Cryptobot Gen 3.0.
+
+Implements ``faucetcrypto.com`` with:
+    * Level-based faucet claiming.
+    * PTC ad viewing.
+    * Shortlink completion for bonus coins.
+    * Multi-currency withdrawal.
+
+Claim interval: ~30 minutes.
+"""
+
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
@@ -5,7 +16,12 @@ import random
 
 logger = logging.getLogger(__name__)
 
+
 class FaucetCryptoBot(FaucetBot):
+    """FaucetCrypto.com faucet bot.
+
+    Handles login, faucet claiming, level tracking, and PTC ad viewing.
+    """
     def __init__(self, settings, page, **kwargs):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FaucetCrypto"

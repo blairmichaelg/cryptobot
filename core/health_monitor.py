@@ -277,7 +277,7 @@ class HealthMonitor:
             logger.error(f"Proxy health check error: {e}")
             return {"healthy": False, "message": f"Health check error: {e}"}
     
-    def record_faucet_attempt(self, faucet_type: str, success: bool):
+    def record_faucet_attempt(self, faucet_type: str, success: bool) -> None:
         """
         Record a faucet claim attempt for health tracking.
         
@@ -371,7 +371,7 @@ class HealthMonitor:
             logger.error(f"System health check error: {e}")
             return {"healthy": False, "message": f"Health check error: {e}"}
     
-    async def send_health_alert(self, severity: str, message: str, component: str = "general"):
+    async def send_health_alert(self, severity: str, message: str, component: str = "general") -> None:
         """
         Send health alert with deduplication.
         
@@ -698,7 +698,7 @@ class HealthMonitor:
         
         return result
     
-    def send_azure_metrics(self, result: HealthCheckResult):
+    def send_azure_metrics(self, result: HealthCheckResult) -> None:
         """
         Send metrics to Azure Monitor
         
@@ -728,7 +728,7 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Failed to send Azure metrics: {e}")
     
-    def send_webhook_notification(self, result: HealthCheckResult):
+    def send_webhook_notification(self, result: HealthCheckResult) -> None:
         """
         Send notification to webhook URL (Slack, Discord, Teams, etc.)
         
@@ -792,7 +792,7 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Failed to send webhook notification: {e}")
     
-    def send_email_notification(self, result: HealthCheckResult):
+    def send_email_notification(self, result: HealthCheckResult) -> None:
         """
         Send email notification (requires SMTP configuration)
         
@@ -909,7 +909,7 @@ Alerts:
             logger.error("Service restart failed - service not running")
             return False
     
-    def reset_backoff(self):
+    def reset_backoff(self) -> None:
         """Reset the restart backoff counter"""
         self.restart_count = 0
         self.last_restart_time = None
@@ -955,7 +955,7 @@ Alerts:
         
         return result
     
-    def run_daemon(self, check_interval: int = 60, auto_restart: bool = True):
+    def run_daemon(self, check_interval: int = 60, auto_restart: bool = True) -> None:
         """
         Run health monitor as a daemon
         

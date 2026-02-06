@@ -31,16 +31,25 @@ logger = logging.getLogger(__name__)
 # Factory registry for faucet bot instantiation
 from core.registry import get_faucet_class
 
-async def main():
-    """
-    Main execution loop.
+async def main() -> None:
+    """Run the faucet farm.
 
-    1. Parses command line arguments.
-    2. detailed logging setup.
-    3. Initializes BrowserManager (Stealth Context).
-    4. Initializes ProxyManager (if 2Captcha proxies enabled).
-    5. Loads Faucet Jobs from the Factory Registry.
-    6. Starts the JobScheduler and waits for SIGTERM or interruption.
+    Execution stages:
+
+    1. Parse CLI flags (``--visible``, ``--single``, ``--wallet-check``).
+    2. Initialise structured logging via :func:`setup_logging`.
+    3. Launch :class:`BrowserManager` with Camoufox stealth context.
+    4. Optionally spin up :class:`ProxyManager` for residential proxy
+       rotation (2Captcha, Azure VM, or DigitalOcean sources).
+    5. Build :class:`Job` objects for every enabled
+       :class:`AccountProfile` through the factory registry.
+    6. Enter :meth:`JobScheduler.scheduler_loop` and wait for
+       ``SIGTERM`` / ``KeyboardInterrupt``.
+    7. Gracefully shut down browser contexts, persist session state,
+       and close the wallet RPC session.
+
+    Raises:
+        SystemExit: When the browser fails to launch.
     """
     parser = argparse.ArgumentParser(description="Gen 3.0 Smart Crypto Farm - Job Scheduler")
     parser.add_argument("--visible", action="store_true", help="Show browser")

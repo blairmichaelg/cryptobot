@@ -164,7 +164,7 @@ class FaucetMonitor:
         except Exception as e:
             logger.warning(f"Could not save monitoring state: {e}")
     
-    def update_from_analytics(self):
+    def update_from_analytics(self) -> None:
         """
         Update metrics from earnings_analytics.json.
         
@@ -524,7 +524,7 @@ class MonitoringDashboard:
         
         return Panel(text, title=f"🔔 Alerts ({len(alerts)})", border_style="red")
     
-    def display(self, hours: int = 24, show_all: bool = False):
+    def display(self, hours: int = 24, show_all: bool = False) -> None:
         """
         Display the monitoring dashboard.
         
@@ -556,7 +556,7 @@ class MonitoringDashboard:
         
         self.console.print(self.render_faucet_table(metrics, show_all))
     
-    async def live_display(self, refresh_seconds: int = 30, hours: int = 24):
+    async def live_display(self, refresh_seconds: int = 30, hours: int = 24) -> None:
         """
         Display live updating dashboard.
         

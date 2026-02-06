@@ -1,13 +1,41 @@
+"""Stealth and anti-detection hub for browser automation.
+
+Provides two main abstractions:
+
+:class:`HumanProfile`
+    Timing distributions that simulate distinct human behaviour
+    archetypes (fast typist, cautious reader, distracted multi-tasker,
+    etc.).  Every faucet bot selects a profile at the start of a session
+    and derives all micro-delays from it so that the timing pattern is
+    internally consistent.
+
+:class:`StealthHub`
+    One-stop shop for stealth artefacts injected into every Camoufox
+    browser context: comprehensive JS stealth scripts (canvas, WebGL,
+    audio, navigator spoofing), randomised viewport/screen dimensions,
+    user-agent pools, pre-navigation warmup routines, and
+    locale/timezone/platform consistency helpers.
+"""
+
 import random
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
 class HumanProfile:
-    """
-    Human behavioral timing profiles for stealth automation.
-    Each profile simulates distinct user behavior patterns.
+    """Human behavioural timing profiles for stealth automation.
+
+    Each class constant (``FAST_USER``, ``NORMAL_USER``, …) names a
+    distinct behaviour archetype.  The :data:`TIMING_RANGES` dict maps
+    every archetype to per-action ``(min, max)`` delay ranges in seconds.
+
+    Typical usage::
+
+        profile = HumanProfile.get_random_profile()
+        delay   = HumanProfile.get_action_delay(profile, 'click')
+        await asyncio.sleep(delay)
     """
     FAST_USER = "fast"          # 0.5-2s delays, occasional bursts
     NORMAL_USER = "normal"      # 2-5s delays, steady pace  
@@ -136,10 +164,21 @@ class HumanProfile:
         return False, 0.0
 
 class StealthHub:
-    """
-    Central hub for managing advanced browser stealth and anti-detection scripts.
-    Goes beyond simple user-agent spoofing by handling canvas, WebGL, 
-    audio fingerprinting, and navigator property protection.
+    """Central hub for browser stealth and anti-detection injection.
+
+    All methods are ``@staticmethod`` -- no instance state is required.
+    The hub aggregates:
+
+    * **Stealth JS** -- fingerprint evasion for canvas, WebGL, audio,
+      navigator, screen, timezone, Intl, and many more browser APIs.
+    * **Viewport / screen dimensions** -- realistic, weighted random
+      resolutions drawn from Steam/StatCounter data.
+    * **User-Agent pool** -- 2025-2026 Chrome/Firefox/Edge/Safari
+      strings, weighted towards Chrome market share.
+    * **Pre-navigation warmup** -- organic scroll + mouse-move events
+      that build a behavioural baseline before claim actions.
+    * **Geo-consistency helpers** -- locale/timezone/platform
+      mappings that prevent mismatch-based detection.
     """
     
     @staticmethod

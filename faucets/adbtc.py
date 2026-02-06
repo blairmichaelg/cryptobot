@@ -1,3 +1,18 @@
+"""AdBTC.top faucet bot implementation.
+
+AdBTC is a PTC (Paid-to-Click) site where users earn BTC satoshis by viewing
+advertisements ("surf ads").  This module automates the full lifecycle:
+
+* Login with CAPTCHA solving (math / hCaptcha).
+* Balance retrieval.
+* Timer detection for surf-ad availability.
+* Automated ad surfing and claim submission.
+* Withdrawal request generation.
+
+See Also:
+    :class:`faucets.base.FaucetBot` for the inherited interface.
+"""
+
 from .base import FaucetBot, ClaimResult
 import logging
 import asyncio
@@ -5,6 +20,7 @@ import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
 
 class AdBTCBot(FaucetBot):
     """

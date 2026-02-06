@@ -1,3 +1,24 @@
+"""Job-scheduler and orchestration engine for Cryptobot Gen 3.0.
+
+This module implements the core scheduling loop that drives all faucet-claim
+activity.  It manages a min-heap priority queue of :class:`Job` objects,
+orchestrates their execution across browser contexts, and provides:
+
+* Concurrency control (global + per-profile limits).
+* Per-domain rate limiting to avoid triggering anti-bot defences.
+* Automatic proxy rotation on detection / failure.
+* Exponential back-off with jitter per faucet.
+* Circuit-breaker logic with error-type awareness.
+* Session persistence (``config/session_state.json``) for crash recovery.
+* Integration with :class:`HealthMonitor` for service-level health.
+* ML-style timer prediction (stated vs. actual claim interval tracking).
+
+Classes:
+    ErrorType: Enum classifying errors for intelligent retry/disable decisions.
+    Job: Dataclass representing a single scheduled claim task.
+    JobScheduler: Main orchestration engine.
+"""
+
 import asyncio
 import logging
 import time
@@ -63,6 +84,22 @@ MAX_CONSECUTIVE_JOB_FAILURES = 5  # Restart browser if 5 jobs fail in a row
 
 @dataclass(order=True)
 class Job:
+    """A single scheduled faucet-claim task.
+
+    Jobs are ordered by ``(priority, next_run)`` for the min-heap.  Lower
+    ``priority`` values execute first; ties are broken by ``next_run``
+    (earliest first).
+
+    Attributes:
+        priority: Numeric priority (lower = higher urgency).
+        next_run: Unix timestamp when this job becomes eligible.
+        name: Human-readable job label (e.g. ``"firefaucet_claim"``).
+        profile: :class:`AccountProfile` with credentials and proxy info.
+        faucet_type: Registry key used to resolve the bot class.
+        job_type: Execution wrapper name (default ``"claim_wrapper"``).
+        retry_count: Number of consecutive retries so far.
+    """
+
     priority: int
     next_run: float
     name: str = field(compare=False)
@@ -71,7 +108,8 @@ class Job:
     job_type: str = field(compare=False, default="claim_wrapper")
     retry_count: int = field(default=0, compare=False)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise the job to a JSON-safe dictionary."""
         return {
             "priority": self.priority,
             "next_run": self.next_run,
@@ -83,7 +121,8 @@ class Job:
         }
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: Dict[str, Any]) -> "Job":
+        """Deserialise a job from a dictionary (e.g. session_state.json)."""
         data['profile'] = AccountProfile(**data['profile'])
         return cls(**data)
 
@@ -773,15 +812,18 @@ class JobScheduler:
                 return key
         return None
 
-    async def schedule_withdrawal_jobs(self):
-        """
-        Automatically schedule withdrawal jobs for all faucets with withdraw() support.
-        
+    async def schedule_withdrawal_jobs(self) -> int:
+        """Schedule withdrawal jobs for all faucets with a ``withdraw()`` override.
+
         Timing strategy:
-        - Initial check: 24-72h depending on earnings rate
-        - Repeat: Every 24-72h depending on earnings rate
-        - Priority: Low (don't interfere with claiming)
-        - Timing: Prefer off-peak hours (0-5 UTC, 22-23 UTC, weekends)
+
+        * Initial check offset: 24-72 h based on historical earnings rate.
+        * Repeat cadence: every 24-72 h.
+        * Priority: low (never pre-empts claiming).
+        * Preferred windows: off-peak hours (0-5 UTC, 22-23 UTC, weekends).
+
+        Returns:
+            Number of withdrawal jobs scheduled.
         """
         from core.registry import FAUCET_REGISTRY, get_faucet_class
         from core.analytics import get_tracker
@@ -884,12 +926,13 @@ class JobScheduler:
         logger.info(f"Withdrawal job scheduling complete: {scheduled_count} jobs scheduled")
         return scheduled_count
     
-    async def schedule_auto_withdrawal_check(self):
-        """
-        Schedule automated withdrawal check job using real-time fee monitoring.
-        
-        This job runs every 4 hours during off-peak windows and checks all
-        faucet balances, executing withdrawals when conditions are optimal.
+    async def schedule_auto_withdrawal_check(self) -> None:
+        """Schedule a recurring automated-withdrawal check job.
+
+        Runs every 4 hours during off-peak windows.  Requires wallet
+        RPC configuration (``wallet_rpc_urls``, ``electrum_rpc_user``,
+        ``electrum_rpc_pass``).  If any prerequisite is missing or
+        connectivity fails, the method logs a warning and returns.
         """
         logger.info("📅 Scheduling automated withdrawal check job...")
         
@@ -975,14 +1018,17 @@ class JobScheduler:
             logger.debug(traceback.format_exc())
 
     async def execute_auto_withdrawal_check(self, _job: Job) -> 'ClaimResult':
-        """
-        Execute automated withdrawal check and schedule next run.
-        
+        """Run the automated-withdrawal cycle and reschedule.
+
+        Delegates to :meth:`AutoWithdrawalManager.check_and_execute_withdrawals`,
+        logs a summary, and returns a :class:`ClaimResult` whose
+        ``next_claim_minutes`` is 240 (4 h).
+
         Args:
-            job: The auto_withdrawal_check job
-            
+            _job: The scheduler :class:`Job` triggering this check.
+
         Returns:
-            ClaimResult with next check time
+            :class:`ClaimResult` with outcome and next-run offset.
         """
         from faucets.base import ClaimResult
         
@@ -1032,11 +1078,18 @@ class JobScheduler:
             )
     
     def detect_operation_mode(self) -> "OperationMode":
-        """
-        Auto-detect current operation mode based on system health.
-        
+        """Auto-detect the current operation mode from system health.
+
+        Checks, in order:
+
+        1. ``config/.maintenance`` sentinel file → ``MAINTENANCE``.
+        2. Healthy proxy count below threshold → ``LOW_PROXY``.
+        3. Daily CAPTCHA spend exceeding budget → ``LOW_BUDGET``.
+        4. Recent failure rate > 60 % → ``SLOW_MODE``.
+        5. Otherwise → ``NORMAL``.
+
         Returns:
-            Appropriate OperationMode based on current conditions
+            The :class:`OperationMode` matching current conditions.
         """
         from core.config import OperationMode
         
@@ -1096,14 +1149,21 @@ class JobScheduler:
         return OperationMode.NORMAL
     
     def apply_mode_restrictions(self, mode: "OperationMode") -> float:
-        """
-        Adjust bot behavior based on current operation mode.
-        
+        """Modify scheduler behaviour for the given operation mode.
+
+        Side-effects may include:
+
+        * Reducing ``max_concurrent_bots`` (``LOW_PROXY``).
+        * Purging high-cost jobs (``LOW_BUDGET``).
+        * Increasing delay multiplier (``SLOW_MODE``).
+        * Freezing the queue (``MAINTENANCE``).
+
         Args:
-            mode: Current operation mode to apply
-            
+            mode: The :class:`OperationMode` to apply.
+
         Returns:
-            Delay multiplier to apply to all sleeps
+            A delay multiplier (``>= 1.0``) to scale all scheduling
+            sleeps by.
         """
         from core.config import OperationMode
         
@@ -1149,13 +1209,16 @@ class JobScheduler:
         
         return delay_multiplier
     
-    def check_and_update_mode(self):
-        """
-        Periodically check operation mode and apply restrictions.
-        Should be called from main scheduler loop.
-        
+    def check_and_update_mode(self) -> float:
+        """Periodically re-evaluate the operation mode.
+
+        Called from the main scheduler loop.  Skips re-evaluation if
+        fewer than :data:`MODE_CHECK_INTERVAL` seconds have elapsed
+        since the last check.
+
         Returns:
-            Current delay multiplier
+            Delay multiplier (``1.0`` when no change, ``> 1.0`` when
+            degraded mode is active).
         """
         now = time.time()
         if now - self.last_mode_check_time < self.MODE_CHECK_INTERVAL:
@@ -1300,11 +1363,17 @@ class JobScheduler:
                 except Exception as cleanup_error:
                     logger.debug(f"Final cleanup exception for {faucet_name}: {cleanup_error}")
 
-    def add_job(self, job: Job):
-        """
-        Add a job to the priority queue with deduplication.
-        
-        Prevents duplicate pending jobs for the same profile + faucet + job_type.
+    def add_job(self, job: Job) -> None:
+        """Enqueue a job with deduplication.
+
+        Prevents adding a job whose ``(profile.username, job_type,
+        faucet_type, name)`` tuple already exists in the pending queue
+        or the running-jobs set.
+
+        Dynamic priority is applied via :meth:`get_faucet_priority`.
+
+        Args:
+            job: The :class:`Job` to add.
         """
         username = job.profile.username
         # 1. Check if an identical job is already in the queue
@@ -1399,9 +1468,19 @@ class JobScheduler:
 
     
     def get_next_proxy(self, profile: AccountProfile, faucet_type: Optional[str] = None) -> Optional[str]:
-        """
-        Get the next proxy for a profile based on rotation strategy.
-        Delegates to ProxyManager if available for advanced rotation.
+        """Select the next proxy for a profile.
+
+        Delegates to :class:`ProxyManager` when available, otherwise
+        rotates through ``profile.proxy_pool`` using round-robin or
+        random strategy.
+
+        Args:
+            profile: The account whose proxy pool to draw from.
+            faucet_type: Faucet identifier; used to check bypass rules.
+
+        Returns:
+            ``user:pass@host:port`` proxy string, or ``None`` for
+            direct connection.
         """
         if self._should_bypass_proxy(faucet_type):
             try:
@@ -1444,8 +1523,17 @@ class JobScheduler:
         
         return proxy
 
-    def record_proxy_failure(self, proxy: str, detected: bool = False, status_code: int = 0):
-        """Record a proxy failure, delegating to ProxyManager if available."""
+    def record_proxy_failure(self, proxy: str, detected: bool = False, status_code: int = 0) -> None:
+        """Record a proxy failure or detection event.
+
+        When *detected* is ``True`` the proxy is burned (blacklisted
+        for 12 h).
+
+        Args:
+            proxy: The ``user:pass@host:port`` proxy string.
+            detected: ``True`` if the target site flagged this proxy.
+            status_code: HTTP status code that triggered the failure.
+        """
         if self.proxy_manager:
             self.proxy_manager.record_failure(proxy, detected=detected, status_code=status_code)
             return
@@ -1534,7 +1622,19 @@ class JobScheduler:
             return 600, "Unknown error - requeue +10min"
 
     def get_recovery_delay(self, error_type: ErrorType, retry_count: int, current_proxy: Optional[str]) -> tuple[float, str]:
-        """Public wrapper for recovery delay calculation."""
+        """Calculate recovery delay after a job failure.
+
+        Wraps the private :meth:`_get_recovery_delay` helper.
+
+        Args:
+            error_type: Classified error category.
+            retry_count: How many retries have occurred so far.
+            current_proxy: The proxy string in use (may be ``None``).
+
+        Returns:
+            ``(delay_minutes, reason)`` tuple describing the wait and
+            a human-readable justification.
+        """
         return self._get_recovery_delay(error_type, retry_count, current_proxy)
 
     async def _run_job_wrapper(self, job: Job):
@@ -1929,17 +2029,18 @@ class JobScheduler:
             if job_key in self.running_jobs:
                 del self.running_jobs[job_key]
 
-    async def scheduler_loop(self):
-        """
-        Main event loop for the scheduler.
-        
-        Runs continuously until stopped. In each iteration:
-        1. Performs maintenance (heartbeats, session persistence, health checks).
-        2. Checks for jobs ready to run (next_run <= now).
-        3. Enforces concurrency limits (global and per-profile).
-        4. Enforces domain rate limiting.
-        5. Spawns tasks for eligible jobs.
-        6. Sleeps dynamically until the next job is ready or timeout occurs.
+    async def scheduler_loop(self) -> None:
+        """Main event loop for the scheduler.
+
+        Runs continuously until :meth:`stop` is called.  Each iteration:
+
+        1. Perform maintenance (heartbeat, session persistence, health
+           checks, mode evaluation).
+        2. Find jobs whose ``next_run <= now``.
+        3. Enforce global and per-profile concurrency limits.
+        4. Enforce domain rate-limiting.
+        5. Spawn ``asyncio.Task`` instances for eligible jobs.
+        6. Sleep dynamically until the next job is ready or a timeout.
         """
         logger.info("Job Scheduler loop started.")
         
@@ -2221,13 +2322,17 @@ class JobScheduler:
             except asyncio.TimeoutError:
                 pass  # Sleep completed
 
-    def stop(self):
-        """Stop the scheduler and persist final state."""
+    def stop(self) -> None:
+        """Stop the scheduler, persist session state, and signal the loop."""
         self._persist_session()
         self._stop_event.set()
 
-    async def cleanup(self):
-        """Cleanup resources on shutdown."""
+    async def cleanup(self) -> None:
+        """Release resources held by the scheduler.
+
+        Closes the :class:`WalletDaemon` aiohttp session (if the
+        auto-withdrawal subsystem was initialised).
+        """
         try:
             # Close wallet daemon session if initialized
             if hasattr(self, 'auto_withdrawal') and self.auto_withdrawal:

@@ -1,3 +1,15 @@
+"""CoinPayU faucet bot for Cryptobot Gen 3.0.
+
+Implements ``coinpayu.com`` -- a PTC (paid-to-click) and faucet site.
+Features:
+    * PTC ad viewing (primary earning method).
+    * Faucet claims with timer scheduling.
+    * Shortlink traversal for bonus earnings.
+    * Multi-currency withdrawal support.
+
+Claim interval: varies per activity.
+"""
+
 from .base import FaucetBot, ClaimResult
 from core.extractor import DataExtractor
 import logging
@@ -8,7 +20,14 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 class CoinPayUBot(FaucetBot):
+    """CoinPayU PTC and faucet bot.
+
+    Handles PTC ad viewing, faucet claiming, shortlink solving, and
+    multi-currency withdrawals.  Strips email aliases (plus-addressing)
+    since CoinPayU blocks ``+`` in email addresses.
+    """
     def __init__(self, settings, page, **kwargs):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "CoinPayU"

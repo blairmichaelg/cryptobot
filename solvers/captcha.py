@@ -1,3 +1,21 @@
+"""Hybrid CAPTCHA solver for Cryptobot Gen 3.0.
+
+Supports multiple CAPTCHA types and providers:
+    * **Turnstile** (Cloudflare) -- via 2Captcha or CapSolver.
+    * **hCaptcha** -- via CapSolver (2Captcha cannot solve hCaptcha).
+    * **reCAPTCHA v2 / v3** -- via 2Captcha or CapSolver.
+    * **Image CAPTCHAs** -- via 2Captcha.
+    * **Altcha** (proof-of-work) -- solved locally, zero cost.
+
+Features:
+    * Adaptive provider routing (choose cheapest provider per-captcha type).
+    * Daily budget tracking to prevent cost overruns.
+    * Rate-limiting per 2Captcha API best practices.
+    * Fallback provider support (e.g. CapSolver if 2Captcha fails).
+    * Per-faucet cost attribution for profitability analysis.
+    * Manual human-in-the-loop fallback when running in visible mode.
+"""
+
 import asyncio
 import logging
 import aiohttp
@@ -18,22 +36,39 @@ DEFAULT_DAILY_BUDGET_USD = 5.0  # Default daily budget limit
 
 
 class CaptchaSolver:
-    """
-    Hybrid Solver: Defaults to 2Captcha if key exists, otherwise
-    falls back to manual human solving (Human-in-the-Loop).
-    
-    Includes rate limiting per 2Captcha API best practices and
-    daily budget tracking to prevent cost overruns.
+    """Hybrid CAPTCHA solver with multi-provider support and budget tracking.
+
+    Primary workflow:
+        1. Detect CAPTCHA type on the page (Turnstile, hCaptcha, reCAPTCHA, image).
+        2. Select the optimal provider (fixed or adaptive routing).
+        3. Submit the task and poll for the solution token.
+        4. Inject the token into the page and trigger callbacks.
+        5. Record cost and update per-faucet statistics.
+
+    If no API key is configured, falls back to manual human solving
+    (browser must be running in visible, non-headless mode).
+
+    Attributes:
+        api_key: API key for the primary solving provider.
+        provider: Primary provider name (``2captcha`` or ``capsolver``).
+        fallback_provider: Optional secondary provider name.
+        daily_budget: Maximum daily CAPTCHA spend in USD.
+        adaptive_routing: Enable cost-based provider selection.
     """
 
     def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD, fallback_provider: Optional[str] = None, fallback_api_key: Optional[str] = None, adaptive_routing: bool = False, routing_min_samples: int = 20):
-        """
-        Initialize the CaptchaSolver.
+        """Initialise the CaptchaSolver.
 
         Args:
-            api_key: The API key for the captcha solving service.
-            provider: The name of the captcha solving provider (default is "2captcha").
+            api_key: API key for the primary captcha-solving service.
+            provider: Primary provider name (default ``"2captcha"``).
             daily_budget: Maximum daily spend in USD (default $5.00).
+            fallback_provider: Optional secondary provider name.
+            fallback_api_key: API key for the fallback provider.
+            adaptive_routing: If ``True``, choose the cheapest provider
+                per captcha type based on historical success rates.
+            routing_min_samples: Minimum solve attempts before adaptive
+                routing takes effect.
         """
         self.api_key = api_key
         self.provider = provider.lower().replace("twocaptcha", "2captcha")

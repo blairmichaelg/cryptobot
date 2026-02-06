@@ -1,3 +1,16 @@
+"""Application configuration for Cryptobot Gen 3.0.
+
+Central configuration module powered by Pydantic v2.  Settings are loaded from
+environment variables (with ``.env`` file support) and an optional
+``config/faucet_config.json`` file.
+
+Key exports:
+    BotSettings: Root settings model (singleton-like; instantiate once).
+    AccountProfile: Per-faucet credential + proxy model.
+    OperationMode: Enum for graceful degradation states.
+    BASE_DIR / CONFIG_DIR / LOGS_DIR: Canonical project paths.
+"""
+
 import json
 # pylint: disable=no-member
 import logging
@@ -7,10 +20,17 @@ from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
+# ---------------------------------------------------------------------------
 # Base Paths
-BASE_DIR = Path(__file__).parent.parent
-CONFIG_DIR = BASE_DIR / "config"
-LOGS_DIR = BASE_DIR / "logs"
+# ---------------------------------------------------------------------------
+BASE_DIR: Path = Path(__file__).parent.parent
+"""Project root directory (parent of ``core/``)."""
+
+CONFIG_DIR: Path = BASE_DIR / "config"
+"""Directory containing runtime configuration files (proxies, state, cookies)."""
+
+LOGS_DIR: Path = BASE_DIR / "logs"
+"""Directory for log output files."""
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +45,53 @@ class OperationMode(Enum):
 
 
 class AccountProfile(BaseModel):
+    """Credentials and proxy configuration for a single faucet account.
+
+    Attributes:
+        faucet: Faucet identifier matching a key in ``FAUCET_REGISTRY``.
+        username: Login username or email address.
+        password: Login password.
+        proxy: Optional sticky proxy URL (``protocol://user:pass@host:port``).
+        proxy_pool: List of proxy URLs available for rotation.
+        proxy_rotation_strategy: Rotation algorithm — ``round_robin``, ``random``,
+            or ``health_based``.
+        residential_proxy: Whether the assigned proxies are residential (affects
+            cooldown / burn policies).
+        enabled: Set to ``False`` to skip this account during job creation.
+        behavior_profile: Optional humanisation timing profile name
+            (``fast`` / ``balanced`` / ``cautious``).
+    """
+
     faucet: str
     username: str
     password: str
     proxy: Optional[str] = None
-    proxy_pool: List[str] = []  # Multiple proxies for rotation
-    proxy_rotation_strategy: str = "round_robin"  # Options: round_robin, random, health_based
-    residential_proxy: bool = False  # Flag to indicate if proxies are residential
+    proxy_pool: List[str] = []
+    proxy_rotation_strategy: str = "round_robin"
+    residential_proxy: bool = False
     enabled: bool = True
-    behavior_profile: Optional[str] = None  # Optional timing profile (fast, balanced, cautious)
+    behavior_profile: Optional[str] = None
 
 class BotSettings(BaseSettings):
-    """
-    Gen 3.0 Configuration
+    """Root configuration model for Cryptobot Gen 3.0.
+
+    All fields can be set via environment variables or a ``.env`` file.  The
+    model also merges values from ``config/faucet_config.json`` (accounts,
+    wallet addresses, browser overrides) during post-init.
+
+    Section overview:
+        * **Core** – log level, headless mode, global timeout.
+        * **Security / API** – CAPTCHA provider keys, daily budget, fallback.
+        * **Proxy** – provider selection, file paths, validation, routing.
+        * **Optimisation** – image/media blocking, cost modelling.
+        * **Wallet** – JSON-RPC endpoints and withdrawal addresses.
+        * **FaucetPay** – micro-wallet integration addresses.
+        * **Withdrawal** – thresholds, scheduling, retry policy.
+        * **Performance** – concurrency limits, scheduler tick rate.
+        * **Degraded modes** – ``LOW_PROXY`` / ``SLOW_MODE`` thresholds.
+        * **Canary** – optional canary-rollout filtering.
+        * **Auto-suspend** – ROI-based circuit breaker.
+        * **Legacy** – single-account credential fields for backward compat.
     """
     # Core
     log_level: str = "INFO"
@@ -209,7 +263,13 @@ class BotSettings(BaseSettings):
     user_agents: List[str] = Field(default_factory=list)
 
     def model_post_init(self, __context: Any) -> None:  # pylint: disable=arguments-differ
-        """Initialize dynamic user agents if empty."""
+        """Initialize dynamic fields after Pydantic model construction.
+
+        * Generates a pool of user-agent strings (via ``fake_useragent`` or a
+          hardcoded fallback list) if none were supplied.
+        * Loads supplementary accounts and wallet addresses from
+          ``config/faucet_config.json``.
+        """
         if not self.user_agents:
             try:
                 from fake_useragent import UserAgent
@@ -230,9 +290,12 @@ class BotSettings(BaseSettings):
         self._load_faucet_config_defaults()
 
     def _load_faucet_config_defaults(self) -> None:
-        """
-        Load accounts and wallet addresses from config/faucet_config.json
-        if not already provided via environment settings.
+        """Load accounts and wallet addresses from ``config/faucet_config.json``.
+
+        Accounts already present (matched by normalised faucet name + username)
+        are *not* overwritten.  Browser-level overrides (headless, timeout,
+        block_images, block_media, user_agents) are applied only when the JSON
+        file provides them.
         """
         config_path = CONFIG_DIR / "faucet_config.json"
         if not config_path.exists():
@@ -374,9 +437,20 @@ class BotSettings(BaseSettings):
     )
 
     def get_account(self, faucet_name: str) -> Optional[Dict[str, str]]:
-        """
-        Helper to get the first matching account.
-        Prioritizes the 'accounts' list, falls back to legacy fields.
+        """Return credentials for the first matching account.
+
+        Lookup order:
+            1. ``self.accounts`` list (multi-account profiles).
+            2. Legacy per-faucet env-var fields.
+
+        For Pick.io family faucets the returned dict uses an ``email`` key
+        instead of ``username``.
+
+        Args:
+            faucet_name: Faucet identifier (case-insensitive, underscores ignored).
+
+        Returns:
+            ``{"username": …, "password": …}`` dict, or ``None`` if no match.
         """
         name = faucet_name.lower().replace("_", "").replace(" ", "")
         
@@ -429,9 +503,17 @@ class BotSettings(BaseSettings):
         return None
 
     def filter_profiles(self, profiles: List[AccountProfile]) -> List[AccountProfile]:
-        """
-        Apply canary filtering to profiles when enabled.
-        Matches by faucet name or username (case-insensitive substring).
+        """Apply canary-rollout filtering to a list of profiles.
+
+        When ``canary_only`` is enabled, only profiles whose faucet name or
+        username contains ``canary_profile`` (case-insensitive substring match)
+        are returned.
+
+        Args:
+            profiles: Full list of account profiles to filter.
+
+        Returns:
+            Filtered list (may be empty if nothing matches).
         """
         if not self.canary_only or not self.canary_profile:
             return profiles

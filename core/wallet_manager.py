@@ -77,7 +77,7 @@ class WalletDaemon:
         await self.close()
         return False
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the aiohttp session."""
         if self._session and not self._session.closed:
             await self._session.close()

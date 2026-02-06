@@ -282,7 +282,7 @@ class EarningsTracker:
     def record_claim(self, faucet: str, success: bool, amount: float = 0.0, 
                      currency: str = "unknown", balance_after: float = 0.0,
                      allow_test: bool = False, claim_time: Optional[float] = None,
-                     failure_reason: Optional[str] = None):
+                     failure_reason: Optional[str] = None) -> None:
         """
         Record a claim attempt.
         
@@ -361,7 +361,7 @@ class EarningsTracker:
             # Regular save (on every claim for data protection)
             self._save()
 
-    def record_cost(self, cost_type: str, amount_usd: float, faucet: str = None):
+    def record_cost(self, cost_type: str, amount_usd: float, faucet: str = None) -> None:
         """Record a cost incurred (e.g. captcha solve)."""
         record = CostRecord(
             timestamp=time.time(),
@@ -373,7 +373,7 @@ class EarningsTracker:
         logger.debug(f"💸 Cost: {cost_type} ${amount_usd:.4f} for {faucet or 'global'}")
         self._save()
 
-    def record_runtime_cost(self, faucet: str, duration_seconds: float, time_cost_per_hour: float, proxy_cost_per_hour: float, proxy_used: bool = False):
+    def record_runtime_cost(self, faucet: str, duration_seconds: float, time_cost_per_hour: float, proxy_cost_per_hour: float, proxy_used: bool = False) -> None:
         """Record time/proxy costs associated with a faucet runtime."""
         hours = max(duration_seconds, 0.0) / 3600.0
         if time_cost_per_hour > 0:

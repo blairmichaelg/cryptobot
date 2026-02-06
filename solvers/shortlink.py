@@ -1,32 +1,40 @@
+"""Generic shortlink traversal solver for Cryptobot Gen 3.0.
+
+Many crypto faucets offer bonus earnings for completing shortlinks -- URLs
+that pass through multiple intermediate pages with countdown timers,
+CAPTCHAs, and redirect chains before arriving at a destination URL.
+
+:class:`ShortlinkSolver` automates this multi-step process:
+    1. Navigate to the shortlink URL.
+    2. Wait for countdown timers (10--30 s typically).
+    3. Solve any CAPTCHAs (Turnstile, hCaptcha, reCAPTCHA).
+    4. Click through ``Continue`` / ``Get Link`` / ``Next`` buttons.
+    5. Handle popups and redirects.
+    6. Detect when the final destination (success URL) is reached.
+
+The resource blocker is temporarily disabled during shortlink traversal
+to avoid triggering adblock detection on intermediate pages.
+"""
+
 import asyncio
 import logging
 from playwright.async_api import Page
 
 logger = logging.getLogger(__name__)
 
+
 class ShortlinkSolver:
-    """
-    Generic solver for crypto shortlinks.
-    
-    This solver handles the complex multi-step process of traversing crypto shortlinks,
-    which typically involve:
-    1. Waiting for countdown timers (10-30 seconds)
-    2. Solving captchas (Turnstile, hCaptcha, reCaptcha)
-    3. Clicking through multiple "Continue", "Get Link", or "Next" buttons
-    4. Handling popup windows and redirects
-    5. Detecting when the final destination is reached
-    
-    The solver uses standardized DataExtractor methods for timer parsing and implements
-    heuristics to avoid clicking on ad elements or decoy buttons.
-    
+    """Automated solver for multi-step crypto shortlinks.
+
     Args:
-        page: The Playwright Page instance to control
-        blocker: Optional resource blocker (disabled during shortlink traversal to avoid detection)
-        captcha_solver: Optional CaptchaSolver instance for handling captchas
-        
-    Example:
-        >>> solver = ShortlinkSolver(page, blocker=blocker, captcha_solver=captcha)
-        >>> success = await solver.solve("https://shortlink.example.com/abc123")
+        page: Playwright ``Page`` instance to drive.
+        blocker: Optional :class:`ResourceBlocker` -- disabled during traversal.
+        captcha_solver: Optional :class:`CaptchaSolver` for embedded CAPTCHAs.
+
+    Example::
+
+        solver = ShortlinkSolver(page, blocker=blocker, captcha_solver=captcha)
+        success = await solver.solve("https://shortlink.example.com/abc123")
     """
     def __init__(self, page: Page, blocker=None, captcha_solver=None):
         self.page = page

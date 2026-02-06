@@ -1,5 +1,16 @@
+"""Network-level resource blocker for Cryptobot Gen 3.0.
+
+Blocks ad networks, analytics trackers, fingerprinting services, and
+optionally images / media at the Playwright route level.  This reduces
+page-load time, bandwidth, and fingerprint surface area.
+
+The domain block-list (``AD_DOMAINS``) is compiled to regex patterns at
+construction time for fast matching.
+"""
+
 import logging
 import re
+from typing import List
 from playwright.async_api import Route, Request
 
 logger = logging.getLogger(__name__)
@@ -137,13 +148,47 @@ AD_DOMAINS = [
 ]
 
 class ResourceBlocker:
-    def __init__(self, block_images: bool = True, block_media: bool = True):
+    """Route-level resource blocker for Playwright browser contexts.
+
+    Blocks requests by resource type (images, media, fonts) and by URL
+    pattern (ad networks, analytics, fingerprinting services).  CAPTCHA-related
+    resources are always allowed through, even when image blocking is enabled.
+
+    Attributes:
+        block_images: Whether image resources are blocked.
+        block_media: Whether media and font resources are blocked.
+        compiled_patterns: Pre-compiled regex patterns for domain blocking.
+        enabled: Master switch – set to ``False`` to bypass all blocking
+            (used during shortlink traversal).
+    """
+
+    def __init__(self, block_images: bool = True, block_media: bool = True) -> None:
+        """Initialise the resource blocker.
+
+        Args:
+            block_images: Block image resource requests.
+            block_media: Block media (video/audio) and font requests.
+        """
         self.block_images = block_images
         self.block_media = block_media
-        self.compiled_patterns = [re.compile(p) for p in AD_DOMAINS]
-        self.enabled = True
+        self.compiled_patterns: List[re.Pattern[str]] = [
+            re.compile(p) for p in AD_DOMAINS
+        ]
+        self.enabled: bool = True
 
-    async def handle_route(self, route: Route):
+    async def handle_route(self, route: Route) -> None:
+        """Playwright route handler that aborts or continues each request.
+
+        Decision order:
+            1. If blocking is disabled (``self.enabled is False``), continue.
+            2. Block images (except CAPTCHA-related).
+            3. Block media / fonts.
+            4. Block known ad / tracker domains.
+            5. Allow everything else.
+
+        Args:
+            route: Playwright ``Route`` object for the intercepted request.
+        """
         if not self.enabled:
             await route.continue_()
             return
