@@ -3,13 +3,19 @@ import json
 import os
 import time
 from unittest.mock import patch, MagicMock
-from core.analytics import EarningsTracker, ClaimRecord, get_tracker, ANALYTICS_FILE
+from core.analytics import EarningsTracker, ClaimRecord, get_tracker, set_test_mode, is_test_mode
+
+@pytest.fixture(autouse=True)
+def enable_test_mode():
+    """Automatically enable test mode for all analytics tests."""
+    set_test_mode(True)
+    yield
+    set_test_mode(False)
 
 @pytest.fixture
 def temp_analytics_file(tmp_path):
     p = tmp_path / "test_analytics.json"
-    with patch("core.analytics.ANALYTICS_FILE", str(p)):
-        yield p
+    yield p
 
 class TestAnalytics:
     
@@ -115,7 +121,8 @@ class TestAnalytics:
     def test_get_daily_summary(self, temp_analytics_file):
         """Test human-readable summary (lines 176-200)."""
         tracker = EarningsTracker(storage_file=str(temp_analytics_file))
-        tracker.record_claim("test_faucet", True, 0.0001, "BTC", allow_test=True)
+        # In test mode, test faucets are allowed
+        tracker.record_claim("test_faucet", True, 0.0001, "BTC")
         summary = tracker.get_daily_summary()
         assert "test_faucet" in summary
         assert "BTC" in summary

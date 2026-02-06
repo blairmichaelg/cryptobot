@@ -16,8 +16,45 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-# Analytics data file path
+# Analytics data file paths
 ANALYTICS_FILE = os.path.join(os.path.dirname(__file__), "..", "earnings_analytics.json")
+TEST_ANALYTICS_FILE = os.path.join(os.path.dirname(__file__), "..", "test_analytics.json")
+
+# Global test mode flag - can be set by main.py or tests
+_test_mode = False
+
+def set_test_mode(enabled: bool = True):
+    """
+    Set test mode for analytics.
+    
+    Args:
+        enabled: If True, use test_analytics.json; if False, use production earnings_analytics.json
+    """
+    global _test_mode
+    _test_mode = enabled
+    logger.info(f"📊 Analytics test mode {'enabled' if enabled else 'disabled'}")
+
+def is_test_mode() -> bool:
+    """
+    Check if analytics is in test mode.
+    
+    Returns:
+        True if test mode is enabled, False otherwise
+    """
+    global _test_mode
+    # Also check environment variable as fallback
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _test_mode
+
+def get_analytics_file() -> str:
+    """
+    Get the appropriate analytics file based on current mode.
+    
+    Returns:
+        Path to test or production analytics file
+    """
+    return TEST_ANALYTICS_FILE if is_test_mode() else ANALYTICS_FILE
 
 
 class CryptoPriceFeed:
@@ -204,14 +241,18 @@ class EarningsTracker:
     AUTO_FLUSH_INTERVAL = 300
     
     def __init__(self, storage_file: Optional[str] = None):
-        self.storage_file = storage_file or ANALYTICS_FILE
+        # Use provided file, or auto-detect based on mode
+        if storage_file is None:
+            storage_file = get_analytics_file()
+        
+        self.storage_file = storage_file
         self.claims: list = []
         self.costs: list = []  # Fix #27: Track costs
         self.session_start = time.time()
         self.last_flush_time = time.time()  # Track last auto-flush
         
         # Ensure file exists and is writable
-        if not os.path.exists(ANALYTICS_FILE):
+        if not os.path.exists(self.storage_file):
             self._save()
              
         self._load()
@@ -296,8 +337,10 @@ class EarningsTracker:
             claim_time: Time taken for claim in seconds
             failure_reason: Reason for failure if unsuccessful
         """
-        # Filter out test faucets from production analytics unless explicitly allowed
-        if not allow_test and (faucet == "test_faucet" or faucet.startswith("test_")):
+        # In test mode, always allow test faucets
+        # In production mode, filter out test faucets unless explicitly allowed
+        if not is_test_mode() and not allow_test and (faucet == "test_faucet" or faucet.startswith("test_") or 
+                                                        faucet.lower() in ["testfaucet", "faucet1", "faucet2", "faucet3"]):
             logger.debug(f"Skipping analytics for test faucet: {faucet}")
             return
         

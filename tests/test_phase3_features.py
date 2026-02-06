@@ -8,6 +8,15 @@ Tests for Phase 3-4 enhancement features:
 import pytest
 import time
 from unittest.mock import MagicMock, AsyncMock, patch
+from core.analytics import set_test_mode
+
+
+@pytest.fixture(autouse=True)
+def enable_test_mode():
+    """Automatically enable test mode for all analytics tests."""
+    set_test_mode(True)
+    yield
+    set_test_mode(False)
 
 
 class TestCloudflareDetection:
@@ -154,8 +163,7 @@ class TestDailyReports:
                 faucet="TestFaucet",
                 success=True,
                 amount=100,
-                currency="satoshi",
-                allow_test=True
+                currency="satoshi"
             )
         
         trends = tracker.get_trending_analysis(7)

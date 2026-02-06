@@ -46,7 +46,14 @@ async def main():
     parser.add_argument("--visible", action="store_true", help="Show browser")
     parser.add_argument("--wallet-check", action="store_true", help="Check Electrum")
     parser.add_argument("--single", type=str, help="Run only a specific faucet (e.g. 'firefaucet')")
+    parser.add_argument("--test-mode", action="store_true", help="Use test analytics file (test_analytics.json)")
     args = parser.parse_args()
+
+    # Enable test mode in analytics if flag is set
+    if args.test_mode:
+        from core.analytics import set_test_mode
+        set_test_mode(True)
+        logger.info("🧪 Test mode enabled - using test_analytics.json")
 
     settings = BotSettings()
     if args.visible:

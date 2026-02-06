@@ -76,6 +76,8 @@ earnings_analytics.json.backup.*
 # Analytics databases
 *.db
 earnings_analytics.json
+test_analytics.json
+test_analytics.json.backup.*
 withdrawal_analytics.db
 profitability_report.json
 captcha_balance_tracking.json
