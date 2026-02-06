@@ -308,6 +308,8 @@ class BrowserManager:
             "permissions": ["geolocation", "notifications"],
             "locale": locale,
             "timezone_id": timezone_id,
+            "bypass_csp": True,  # Bypass Content Security Policy for better stealth
+            "ignore_https_errors": True,  # Ignore SSL errors with proxies
         }
         
         # Sticky Session Logic: Resolve and Persist Proxy

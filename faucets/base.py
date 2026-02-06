@@ -979,7 +979,7 @@ class FaucetBot:
             logger.error(f"[{self.faucet_name}] Page crash detected: {e}")
             return False
     
-    async def safe_navigate(self, url: str, wait_until: str = "domcontentloaded", timeout: int = None, retry_on_proxy_error: bool = True) -> bool:
+    async def safe_navigate(self, url: str, wait_until: str = "commit", timeout: int = None, retry_on_proxy_error: bool = True) -> bool:
         """
         Navigate to URL with automatic proxy error handling and retry logic.
         
@@ -1040,10 +1040,9 @@ class FaucetBot:
                     logger.warning(f"[{self.faucet_name}] Timeout on attempt {attempt}: {error_str[:150]}")
                     
                     if attempt < max_attempts:
-                        # Try with more lenient wait strategy on retry
-                        if wait_until == "domcontentloaded":
-                            wait_until = "commit"
-                            logger.info(f"[{self.faucet_name}] Switching to 'commit' wait strategy")
+                        # On timeout, extend timeout for next attempt (proxies need more time)
+                        attempt_timeout = min(attempt_timeout + 30000, 150000)  # Add 30s, max 150s
+                        logger.info(f"[{self.faucet_name}] Extending timeout to {attempt_timeout}ms for retry")
                         await asyncio.sleep(1)  # Shorter wait
                         continue
                     else:
