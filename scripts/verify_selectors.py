@@ -163,7 +163,7 @@ class SelectorVerifier:
             if page:
                 try:
                     await page.close()
-                except:
+                except Exception:
                     pass
                     
         return results

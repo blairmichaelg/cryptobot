@@ -195,7 +195,7 @@ class FaucetTester:
         self.print_summary()
         
     def print_summary(self):
-        """Print test results summary."""
+        """Print test results summary and return exit code."""
         logger.info(f"\n{'='*80}")
         logger.info("TEST SUMMARY")
         logger.info(f"{'='*80}\n")
@@ -233,7 +233,7 @@ class FaucetTester:
                     
         logger.info(f"\n{'='*80}")
         
-        # Return exit code
+        # Return exit code based on success
         if self.quick_mode:
             return 0 if logins_ok == total else 1
         else:
@@ -256,7 +256,7 @@ async def main():
     # Run tests
     await tester.test_all(faucet_filter=args.faucet)
     
-    # Return exit code
+    # Return exit code based on results
     return tester.print_summary()
 
 
