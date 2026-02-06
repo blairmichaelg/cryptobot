@@ -153,6 +153,21 @@ Test a specific module (e.g., just FireFaucet):
 python main.py --single firefaucet --visible
 ```
 
+### Run in Test Mode
+
+Use test mode to avoid polluting production analytics with test data:
+
+```bash
+# Basic test mode
+python main.py --test-mode
+
+# Combine with other flags
+python main.py --test-mode --visible --single firefaucet
+```
+
+Test mode uses `test_analytics.json` instead of `earnings_analytics.json` for analytics data.
+See [docs/TESTING_BEST_PRACTICES.md](docs/TESTING_BEST_PRACTICES.md) for more information.
+
 ### Run Once & Exit
 
 Do one round of claims and stop:
