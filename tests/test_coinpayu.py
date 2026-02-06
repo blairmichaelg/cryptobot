@@ -105,6 +105,17 @@ async def test_coinpayu_login_success(mock_settings, mock_page, mock_solver):
     """Test successful login with new stealth features"""
     mock_page.url = "https://www.coinpayu.com/login"
     
+    # Setup email and password field locators
+    email_field_locator = MagicMock()
+    email_field_locator.count = AsyncMock(return_value=1)
+    email_field_locator.first = MagicMock()
+    email_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    password_field_locator = MagicMock()
+    password_field_locator.count = AsyncMock(return_value=1)
+    password_field_locator.first = MagicMock()
+    password_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
     # Setup mock locators
     turnstile_locator = MagicMock()
     turnstile_locator.count = AsyncMock(return_value=0)
@@ -114,14 +125,20 @@ async def test_coinpayu_login_success(mock_settings, mock_page, mock_solver):
     
     login_btn_locator = MagicMock()
     login_btn_locator.count = AsyncMock(return_value=1)
-    login_btn_locator.click = AsyncMock()
+    login_btn_locator.first = MagicMock()
+    login_btn_locator.first.is_visible = AsyncMock(return_value=True)
+    login_btn_locator.first.click = AsyncMock()
     
     def locator_side_effect(selector):
         if "turnstile" in selector or "cf-turnstile" in selector:
             return turnstile_locator
         elif "alert-div" in selector or "alert-red" in selector:
             return alert_locator
-        elif "Login" in selector:
+        elif 'email' in selector.lower():
+            return email_field_locator
+        elif 'password' in selector.lower():
+            return password_field_locator
+        elif "Login" in selector or "btn" in selector or "submit" in selector:
             return login_btn_locator
         return MagicMock()
     
@@ -539,30 +556,55 @@ async def test_coinpayu_timer_extraction():
 @pytest.mark.asyncio
 async def test_coinpayu_login_retry_on_timeout(mock_settings, mock_page, mock_solver):
     """Test login retries on timeout"""
-    mock_page.goto.side_effect = [
-        asyncio.TimeoutError(),  # First attempt fails
-        asyncio.TimeoutError(),  # Second attempt fails
-        None  # Third attempt succeeds
-    ]
+    # Setup: First 2 attempts timeout, 3rd succeeds
+    attempt_counter = {'count': 0}
     
-    mock_page.url = "https://www.coinpayu.com/dashboard"  # Eventually logged in
+    async def navigate_side_effect(*args, **kwargs):
+        attempt_counter['count'] += 1
+        if attempt_counter['count'] <= 2:
+            raise asyncio.TimeoutError()
+        return None
+    
+    # Setup email and password field locators
+    email_field_locator = MagicMock()
+    email_field_locator.count = AsyncMock(return_value=1)
+    email_field_locator.first = MagicMock()
+    email_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    password_field_locator = MagicMock()
+    password_field_locator.count = AsyncMock(return_value=1)
+    password_field_locator.first = MagicMock()
+    password_field_locator.first.is_visible = AsyncMock(return_value=True)
     
     login_btn_locator = MagicMock()
     login_btn_locator.count = AsyncMock(return_value=1)
+    login_btn_locator.first = MagicMock()
+    login_btn_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    turnstile_locator = MagicMock()
+    turnstile_locator.count = AsyncMock(return_value=0)
     
     alert_locator = MagicMock()
     alert_locator.count = AsyncMock(return_value=0)
     
     def locator_side_effect(selector):
-        if "Login" in selector:
+        if 'email' in selector.lower():
+            return email_field_locator
+        elif 'password' in selector.lower():
+            return password_field_locator
+        elif "turnstile" in selector or "cf-turnstile" in selector:
+            return turnstile_locator
+        elif "Login" in selector or "submit" in selector or "btn" in selector:
             return login_btn_locator
         elif "alert" in selector:
             return alert_locator
         return MagicMock()
     
+    mock_page.url = "https://www.coinpayu.com/login"  # Start on login page
     mock_page.locator.side_effect = locator_side_effect
     
     bot = CoinPayUBot(mock_settings, mock_page)
+    bot.safe_navigate = AsyncMock(side_effect=navigate_side_effect)
     bot.human_like_click = AsyncMock()
     bot.human_type = AsyncMock()
     bot.idle_mouse = AsyncMock()
@@ -571,10 +613,16 @@ async def test_coinpayu_login_retry_on_timeout(mock_settings, mock_page, mock_so
     bot.handle_cloudflare = AsyncMock(return_value=True)
     bot.strip_email_alias = MagicMock(return_value="test@example.com")
     
+    # After 3rd attempt, switch to dashboard (logged in)
+    async def wait_for_url_side_effect(*args, **kwargs):
+        mock_page.url = "https://www.coinpayu.com/dashboard"
+    
+    mock_page.wait_for_url = AsyncMock(side_effect=wait_for_url_side_effect)
+    
     result = await bot.login()
     
     assert result is True
-    assert mock_page.goto.call_count >= 2  # Should retry
+    assert bot.safe_navigate.call_count == 3  # Should retry 3 times
 
 
 @pytest.mark.asyncio
@@ -656,3 +704,137 @@ async def test_coinpayu_captcha_failure_handling(mock_settings, mock_page, mock_
     
     # Should still attempt to claim even if CAPTCHA solving fails
     assert bot.solver.solve_captcha.called
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_login_fallback_selectors(mock_settings, mock_page, mock_solver):
+    """Test login with fallback selectors when primary selector fails"""
+    mock_page.url = "https://www.coinpayu.com/login"
+    
+    # Setup email and password field locators
+    email_field_locator = MagicMock()
+    email_field_locator.count = AsyncMock(return_value=1)
+    email_field_locator.first = MagicMock()
+    email_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    password_field_locator = MagicMock()
+    password_field_locator.count = AsyncMock(return_value=1)
+    password_field_locator.first = MagicMock()
+    password_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    # Setup mock locators - primary selector fails, fallback succeeds
+    primary_btn_locator = MagicMock()
+    primary_btn_locator.count = AsyncMock(return_value=0)  # Primary selector not found
+    
+    fallback_btn_locator = MagicMock()
+    fallback_btn_locator.count = AsyncMock(return_value=1)  # Fallback found
+    fallback_btn_locator.first = MagicMock()
+    fallback_btn_locator.first.is_visible = AsyncMock(return_value=True)
+    fallback_btn_locator.first.click = AsyncMock()
+    
+    turnstile_locator = MagicMock()
+    turnstile_locator.count = AsyncMock(return_value=0)
+    
+    alert_locator = MagicMock()
+    alert_locator.count = AsyncMock(return_value=0)
+    
+    def locator_side_effect(selector):
+        if "turnstile" in selector or "cf-turnstile" in selector:
+            return turnstile_locator
+        elif "alert-div" in selector or "alert-red" in selector:
+            return alert_locator
+        elif 'email' in selector.lower():
+            return email_field_locator
+        elif 'password' in selector.lower():
+            return password_field_locator
+        elif 'button.btn-primary:has-text("Login")' in selector:
+            return primary_btn_locator  # Primary fails
+        elif "Login" in selector or "submit" in selector or "btn" in selector:
+            return fallback_btn_locator  # Fallback works
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.strip_email_alias = MagicMock(return_value="test@example.com")
+    bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.close_popups = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    
+    result = await bot.login()
+    
+    # Should succeed using fallback selector
+    assert result is True
+    bot.human_like_click.assert_called()  # Should click the fallback button
+    bot.handle_cloudflare.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_coinpayu_login_post_captcha_dom_change(mock_settings, mock_page, mock_solver):
+    """Test login handles DOM changes after CAPTCHA solve"""
+    mock_page.url = "https://www.coinpayu.com/login"
+    
+    # Simulate CAPTCHA solving
+    mock_page.wait_for_load_state = AsyncMock()
+    
+    # Setup email and password field locators
+    email_field_locator = MagicMock()
+    email_field_locator.count = AsyncMock(return_value=1)
+    email_field_locator.first = MagicMock()
+    email_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    password_field_locator = MagicMock()
+    password_field_locator.count = AsyncMock(return_value=1)
+    password_field_locator.first = MagicMock()
+    password_field_locator.first.is_visible = AsyncMock(return_value=True)
+    
+    login_btn_locator = MagicMock()
+    login_btn_locator.count = AsyncMock(return_value=1)
+    login_btn_locator.first = MagicMock()
+    login_btn_locator.first.is_visible = AsyncMock(return_value=True)
+    login_btn_locator.first.click = AsyncMock()
+    
+    turnstile_locator = MagicMock()
+    turnstile_locator.count = AsyncMock(return_value=1)  # CAPTCHA present
+    
+    alert_locator = MagicMock()
+    alert_locator.count = AsyncMock(return_value=0)
+    
+    def locator_side_effect(selector):
+        if "turnstile" in selector or "cf-turnstile" in selector:
+            return turnstile_locator
+        elif "alert-div" in selector or "alert-red" in selector:
+            return alert_locator
+        elif 'email' in selector.lower():
+            return email_field_locator
+        elif 'password' in selector.lower():
+            return password_field_locator
+        elif "Login" in selector or "submit" in selector or "btn" in selector:
+            return login_btn_locator
+        return MagicMock()
+    
+    mock_page.locator.side_effect = locator_side_effect
+    
+    # Mock CAPTCHA solver to return success
+    mock_solver.solve_captcha = AsyncMock(return_value=True)
+    
+    bot = CoinPayUBot(mock_settings, mock_page)
+    bot.solver = mock_solver
+    bot.strip_email_alias = MagicMock(return_value="test@example.com")
+    bot.human_like_click = AsyncMock()
+    bot.human_type = AsyncMock()
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.close_popups = AsyncMock()
+    bot.handle_cloudflare = AsyncMock(return_value=True)
+    
+    result = await bot.login()
+    
+    # Should succeed and wait for DOM to stabilize after CAPTCHA
+    assert result is True
+    mock_page.wait_for_load_state.assert_called()  # Should wait for DOM changes
+    bot.human_like_click.assert_called()  # Should click login button
+

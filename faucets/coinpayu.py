@@ -218,13 +218,46 @@ class CoinPayUBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully.")
                     await self.random_delay(0.5, 1.0)
+                    
+                    # After CAPTCHA solve, DOM may change - wait for it to stabilize
+                    try:
+                        await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
+                    except Exception:
+                        pass  # Continue even if wait times out
+                    await self.random_delay(0.3, 0.7)
                 
-                # Click Login
-                login_btn = self.page.locator("button.btn-primary:has-text('Login')")
-                if await login_btn.count() > 0:
+                # Click Login with multiple fallback selectors
+                # After CAPTCHA solve, button classes/attributes may change
+                login_selectors = [
+                    'button.btn-primary:has-text("Login")',  # Primary selector
+                    'button:has-text("Login")',              # Fallback without class
+                    'button:has-text("Log in")',             # Alternative text
+                    'button.btn-primary',                    # Just the class
+                    'button[type="submit"]',                 # Submit button
+                    'input[type="submit"]',                  # Input submit
+                    'button.btn',                            # Generic button class
+                    '#login_button',                         # Common ID
+                    '.login-btn',                            # Common class
+                ]
+                
+                login_btn = None
+                for selector in login_selectors:
+                    try:
+                        loc = self.page.locator(selector)
+                        if await loc.count() > 0:
+                            # Check if first element is visible
+                            if await loc.first.is_visible():
+                                login_btn = loc.first
+                                logger.info(f"[{self.faucet_name}] Found login button with selector: {selector}")
+                                break
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Selector '{selector}' failed: {e}")
+                        continue
+                
+                if login_btn:
                     await self.human_like_click(login_btn)
                 else:
-                    logger.warning(f"[{self.faucet_name}] Login button not found.")
+                    logger.warning(f"[{self.faucet_name}] Login button not found with any selector.")
                     continue
                 
                 # Check for "Proxy detected" error
