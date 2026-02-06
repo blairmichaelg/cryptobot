@@ -1,3 +1,0 @@
-WARNING:root:psutil not available - system resource monitoring disabled
-usage: main.py [-h] [--visible] [--wallet-check] [--single SINGLE]
-main.py: error: unrecognized arguments: --once

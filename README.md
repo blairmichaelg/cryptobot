@@ -2,13 +2,13 @@
 
 **Professional-Grade Autonomous Harvesting Infrastructure**
 
-[![Production Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](PRODUCTION_STATUS.md)
+[![Production Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](docs/summaries/PRODUCTION_STATUS.md)
 [![Azure VM](https://img.shields.io/badge/Azure%20VM-RUNNING-blue)](docs/azure/AZURE_VM_STATUS.md)
-[![Week 1 Fixes](https://img.shields.io/badge/Week%201%20Fixes-COMPLETE-success)](AGENT_TASKS.md)
+[![Week 1 Fixes](https://img.shields.io/badge/Week%201%20Fixes-COMPLETE-success)](docs/summaries/AGENT_TASKS.md)
 
 This project is a sophisticated, modular automation system designed to harvest high-value crypto faucets using advanced stealth technology (`Camoufox`) and automated CAPTCHA solving (`2Captcha`). **Production deployed and running 24/7 on Azure VM.**
 
-**Latest Update (Feb 1, 2026)**: All Week 1 critical fixes complete! Browser crash prevention, Cloudflare bypass, enhanced selectors, and claim tracking all operational. See [PRODUCTION_STATUS.md](PRODUCTION_STATUS.md) for details.
+**Latest Update (Feb 6, 2026)**: Codebase cleaned and reorganized! All test files, debug scripts, and documentation properly organized. Production deployment optimized.
 
 ---
 
@@ -34,6 +34,10 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **`config/`**: Centralized configuration, state, and session management
 - **`deploy/`**: Systemd service files (`faucet_worker.service`) and deployment configurations
 - **`logs/`**: Rotating logs and heartbeat monitoring
+- **`tests/`**: Comprehensive test suite for all modules
+- **`scripts/`**: Utility scripts for monitoring, deployment, and administration
+- **`scripts/dev/`**: Development and debugging utilities
+- **`docs/`**: Complete documentation including guides, API docs, and summaries
 
 ### Advanced Features
 
@@ -167,16 +171,16 @@ View real-time dashboard with faucet health metrics:
 
 ```bash
 # Show 24-hour metrics
-python monitor.py
+python scripts/monitor.py
 
 # Live auto-refreshing dashboard
-python monitor.py --live
+python scripts/monitor.py --live
 
 # Check active alerts only
-python monitor.py --alerts-only
+python scripts/monitor.py --alerts-only
 
 # Show 7-day metrics
-python monitor.py --period 168
+python scripts/monitor.py --period 168
 ```
 
 See [docs/MONITORING.md](docs/MONITORING.md) for complete monitoring documentation.
@@ -187,13 +191,13 @@ Automate registration for all 11 Pick.io faucet sites with a single command:
 
 ```bash
 # Register all 11 Pick.io faucets with the same credentials
-python register_faucets.py --email your@email.com --password yourpassword
+python scripts/dev/register_faucets.py --email your@email.com --password yourpassword
 
 # Register specific faucets only
-python register_faucets.py --email your@email.com --password yourpassword --faucets litepick tronpick dogepick
+python scripts/dev/register_faucets.py --email your@email.com --password yourpassword --faucets litepick tronpick dogepick
 
 # Show browser during registration (for debugging)
-python register_faucets.py --email your@email.com --password yourpassword --visible
+python scripts/dev/register_faucets.py --email your@email.com --password yourpassword --visible
 ```
 
 **Supported Pick.io Faucets:**
@@ -234,29 +238,29 @@ python main.py --wallet-check
 
 ### Meta Management Commands
 
-The bot includes a unified management interface (`meta.py`) for common operations:
+The bot includes a unified management interface (`scripts/dev/meta.py`) for common operations:
 
 ```bash
 # GitHub workflow automation (sync, PR review, issue delegation)
-python meta.py workflow                      # Dry run (preview changes)
-python meta.py workflow --execute            # Execute workflow
-python meta.py workflow --execute --auto-merge  # Full automation
+python scripts/dev/meta.py workflow                      # Dry run (preview changes)
+python scripts/dev/meta.py workflow --execute            # Execute workflow
+python scripts/dev/meta.py workflow --execute --auto-merge  # Full automation
 
 # System health check
-python meta.py health
+python scripts/dev/meta.py health
 
 # Profitability dashboard
-python meta.py profitability                 # Last 24 hours
-python meta.py profitability --hours 168     # Last 7 days
+python scripts/dev/meta.py profitability                 # Last 24 hours
+python scripts/dev/meta.py profitability --hours 168     # Last 7 days
 
 # Repository sync
-python meta.py sync --merge --push
+python scripts/dev/meta.py sync --merge --push
 
 # Other utilities
-python meta.py clean      # Cleanup temp files
-python meta.py audit      # Check project state
-python meta.py report     # Earnings report
-python meta.py dashboard  # Interactive dashboard
+python scripts/dev/meta.py clean      # Cleanup temp files
+python scripts/dev/meta.py audit      # Check project state
+python scripts/dev/meta.py report     # Earnings report
+python scripts/dev/meta.py dashboard  # Interactive dashboard
 ```
 
 See [docs/GITHUB_WORKFLOW.md](docs/GITHUB_WORKFLOW.md) for complete workflow documentation.
@@ -283,7 +287,7 @@ This will:
 **Check Service Status:**
 
 ```bash
-python meta.py health
+python scripts/dev/meta.py health
 ```
 
 ---
@@ -296,7 +300,7 @@ The bot includes a comprehensive profitability analytics dashboard accessible vi
 
 ```bash
 # View profitability dashboard for the last 24 hours (default)
-python meta.py profitability
+python scripts/dev/meta.py profitability
 
 # View profitability for the last 12 hours
 python meta.py profitability --hours 12

@@ -12,7 +12,9 @@ Thank you for your interest in contributing to the Gen 3.0 Crypto Faucet Farm! T
     cd cryptobot
     ```
 
-3. **Set Up Environment**:
+3. **Review Project Structure**: Familiarize yourself with the codebase organization by reading [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md).
+
+4. **Set Up Environment**:
     We provide a deployment script to handle setup.
 
     ```bash
