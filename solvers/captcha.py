@@ -628,6 +628,12 @@ class CaptchaSolver:
                     if not proxy_context:
                         proxy_context = {}
                     
+                    # Auto-populate proxy from set_proxy() if available and not explicitly provided
+                    if "proxy_string" not in proxy_context and self.proxy_string:
+                        proxy_context["proxy_string"] = self.proxy_string
+                        proxy_context["proxy_type"] = "http"  # Default to http
+                        logger.debug(f"Auto-populated proxy context from set_proxy: {self.proxy_string[:30]}...")
+                    
                     # Get user-agent from page if not already provided
                     if "user_agent" not in proxy_context:
                         try:
