@@ -1062,11 +1062,8 @@ class FaucetBot:
             if action_roll < 0.50:
                 # 50%: Normal reading scroll (small, paragraph-sized)
                 scroll_amount = self._behavior_rng.randint(40, 120)
-                # Smooth scroll: multiple small wheel events
-                scroll_steps = self._behavior_rng.randint(2, 5)
-                for _ in range(scroll_steps):
-                    await self.page.mouse.wheel(0, scroll_amount // scroll_steps)
-                    await asyncio.sleep(self._behavior_rng.uniform(0.05, 0.15))
+                # Use physics-based momentum scroll
+                await self.natural_scroll(distance=scroll_amount, direction=1)
                 total_scrolled += scroll_amount
                 
                 # Reading pause (longer = more engaged)
@@ -1075,14 +1072,14 @@ class FaucetBot:
             elif action_roll < 0.65:
                 # 15%: Quick skim scroll (scanning content)
                 scroll_amount = self._behavior_rng.randint(150, 350)
-                await self.page.mouse.wheel(0, scroll_amount)
+                await self.natural_scroll(distance=scroll_amount, direction=1)
                 total_scrolled += scroll_amount
                 await asyncio.sleep(self._behavior_rng.uniform(0.3, 0.8))
                 
             elif action_roll < 0.75:
                 # 10%: Scroll back up (re-reading something)
                 scroll_back = self._behavior_rng.randint(50, min(200, max(50, total_scrolled // 3)))
-                await self.page.mouse.wheel(0, -scroll_back)
+                await self.natural_scroll(distance=scroll_back, direction=-1)
                 total_scrolled = max(0, total_scrolled - scroll_back)
                 await asyncio.sleep(self._behavior_rng.uniform(0.5, 1.5))
                 
@@ -1106,8 +1103,149 @@ class FaucetBot:
                 await asyncio.sleep(self._behavior_rng.uniform(0.3, 0.8))
                 
             else:
-                # 12%: Pause + idle micro-movement (absorbed in content)
-                await self.idle_mouse(duration=self._behavior_rng.uniform(0.5, 1.5))
+                # 12%: Pause + Perlin drift or idle micro-movement (absorbed in content)
+                if self._behavior_rng.random() < 0.5:
+                    await self.natural_mouse_drift(duration=self._behavior_rng.uniform(0.5, 1.5))
+                else:
+                    await self.idle_mouse(duration=self._behavior_rng.uniform(0.5, 1.5))
+
+    async def natural_scroll(self, distance: int = 300, direction: int = 1):
+        """
+        Perform a physically realistic scroll with momentum and deceleration.
+        
+        Models real trackpad/mouse wheel physics:
+        - Initial acceleration phase (finger starts moving)
+        - Peak velocity (mid-scroll)
+        - Deceleration with friction (finger slows/lifts)
+        - Optional micro-bounce at end (trackpad overscroll)
+        
+        Args:
+            distance: Total scroll distance in pixels
+            direction: 1 for down, -1 for up
+        """
+        if not self.page or distance <= 0:
+            return
+        
+        try:
+            # Physics parameters with human variation
+            num_steps = self._behavior_rng.randint(8, 18)
+            
+            # Generate velocity curve: ease-in, sustain, ease-out
+            # Using a modified sigmoid for natural feel
+            velocities = []
+            for i in range(num_steps):
+                t = i / (num_steps - 1)  # 0.0 to 1.0
+                # Bell curve: slow start, fast middle, slow end
+                # v(t) = sin(pi * t) ^ 0.7 gives natural scroll feel
+                import math
+                v = math.sin(math.pi * t) ** 0.7
+                # Add per-step jitter (finger tremor)
+                v *= self._behavior_rng.uniform(0.85, 1.15)
+                velocities.append(max(0.05, v))
+            
+            # Normalize velocities so total distance matches target
+            total_v = sum(velocities)
+            
+            for i, v in enumerate(velocities):
+                step_distance = int((v / total_v) * distance) * direction
+                if step_distance == 0:
+                    step_distance = direction  # Minimum 1px
+                
+                await self.page.mouse.wheel(0, step_distance)
+                
+                # Inter-step delay: shorter at peak velocity, longer at start/end
+                t = i / (num_steps - 1) if num_steps > 1 else 0.5
+                base_delay = 0.015 + 0.035 * (1.0 - math.sin(math.pi * t) ** 0.5)
+                delay = base_delay * self._behavior_rng.uniform(0.8, 1.3)
+                await asyncio.sleep(delay)
+            
+            # 25% chance of micro-bounce (trackpad overscroll behavior)
+            if self._behavior_rng.random() < 0.25:
+                bounce = self._behavior_rng.randint(3, 12) * (-direction)
+                await asyncio.sleep(self._behavior_rng.uniform(0.03, 0.08))
+                await self.page.mouse.wheel(0, bounce)
+                await asyncio.sleep(self._behavior_rng.uniform(0.05, 0.12))
+                await self.page.mouse.wheel(0, -bounce // 2)  # Settle back
+                
+        except Exception:
+            # Fallback to simple scroll if physics scroll fails
+            try:
+                await self.page.mouse.wheel(0, distance * direction)
+            except Exception:
+                pass
+
+    async def natural_mouse_drift(self, duration: float = 2.0):
+        """
+        Generate Perlin-noise-like mouse drift for idle periods.
+        
+        More sophisticated than idle_mouse() — this creates smooth,
+        continuous drift patterns that closely mimic real hand tremor
+        on a mouse/trackpad while the user is reading or thinking.
+        
+        Uses layered sinusoidal motion at different frequencies
+        to simulate organic hand micro-movements (poor man's Perlin noise).
+        
+        Args:
+            duration: How long to drift in seconds
+        """
+        if not self.page:
+            return
+        
+        try:
+            vp = self.page.viewport_size
+            if not vp:
+                await asyncio.sleep(duration)
+                return
+            
+            # Start from a random natural position
+            cx = self._behavior_rng.randint(int(vp['width'] * 0.2), int(vp['width'] * 0.8))
+            cy = self._behavior_rng.randint(int(vp['height'] * 0.25), int(vp['height'] * 0.7))
+            
+            import math
+            start_time = time.time()
+            step_interval = self._behavior_rng.uniform(0.04, 0.08)
+            
+            # Layered frequencies for natural-looking drift
+            # Each layer has: amplitude, frequency_x, frequency_y, phase_x, phase_y
+            layers = []
+            for _ in range(3):
+                layers.append({
+                    'amp': self._behavior_rng.uniform(0.5, 3.0),
+                    'fx': self._behavior_rng.uniform(0.3, 1.5),
+                    'fy': self._behavior_rng.uniform(0.3, 1.5),
+                    'px': self._behavior_rng.uniform(0, 2 * math.pi),
+                    'py': self._behavior_rng.uniform(0, 2 * math.pi),
+                })
+            
+            while time.time() - start_time < duration:
+                t = time.time() - start_time
+                
+                # Sum sinusoidal layers for smooth organic drift
+                dx = sum(
+                    l['amp'] * math.sin(l['fx'] * t + l['px'])
+                    for l in layers
+                )
+                dy = sum(
+                    l['amp'] * math.sin(l['fy'] * t + l['py'])
+                    for l in layers
+                )
+                
+                # Add micro-tremor (high frequency, low amplitude)
+                dx += random.gauss(0, 0.3)
+                dy += random.gauss(0, 0.3)
+                
+                x = int(cx + dx)
+                y = int(cy + dy)
+                
+                # Clamp to viewport
+                x = max(5, min(vp['width'] - 5, x))
+                y = max(5, min(vp['height'] - 5, y))
+                
+                await self.page.mouse.move(x, y)
+                await asyncio.sleep(step_interval)
+                
+        except Exception:
+            await asyncio.sleep(duration)
 
     async def random_micro_interaction(self):
         """
@@ -1116,15 +1254,15 @@ class FaucetBot:
         
         Possible micro-actions:
         - Hover over a random link
-        - Scroll slightly
+        - Natural momentum scroll  
         - Tab focus/blur cycle
-        - Mouse idle movement
+        - Mouse idle movement / Perlin drift
         - Text selection/deselection
         """
         action = random.random()
         
         try:
-            if action < 0.25:
+            if action < 0.20:
                 # Hover over a random visible link
                 links = self.page.locator("a:visible")
                 count = await links.count()
@@ -1137,21 +1275,24 @@ class FaucetBot:
                     except Exception:
                         pass
                         
-            elif action < 0.45:
-                # Small scroll
+            elif action < 0.38:
+                # Natural momentum scroll (physics-based)
                 direction = random.choice([1, 1, -1])
-                amount = random.randint(20, 80) * direction
-                await self.page.mouse.wheel(0, amount)
-                await asyncio.sleep(random.uniform(0.2, 0.5))
+                distance = random.randint(40, 180)
+                await self.natural_scroll(distance=distance, direction=direction)
                 
-            elif action < 0.60:
+            elif action < 0.52:
                 # Tab focus/blur cycle
                 await self.random_focus_blur()
                 await asyncio.sleep(random.uniform(0.5, 2.0))
                 
-            elif action < 0.80:
-                # Idle mouse movement
+            elif action < 0.68:
+                # Idle mouse movement (classic)
                 await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+            
+            elif action < 0.82:
+                # Perlin-like mouse drift (organic hand tremor)
+                await self.natural_mouse_drift(duration=random.uniform(0.8, 2.0))
                 
             else:
                 # Just wait naturally
@@ -1739,6 +1880,10 @@ class FaucetBot:
         # Warm up the page to establish behavioral baseline before any actions
         await self.warm_up_page()
         
+        # Brief organic mouse drift before login interaction (~40%)
+        if random.random() < 0.4:
+            await self.natural_mouse_drift(duration=random.uniform(0.5, 1.2))
+        
         self.last_error_type = None
         failure = await self.check_failure_states()
         if failure:
@@ -2024,6 +2169,18 @@ class FaucetBot:
             
             # Warm up the page again before claim action (may have navigated)
             await self.warm_up_page()
+            
+            # Natural scroll to orient on page before claiming (~60%)
+            if random.random() < 0.6:
+                await self.natural_scroll(
+                    distance=random.randint(80, 250),
+                    direction=random.choice([1, 1, -1])
+                )
+                await asyncio.sleep(random.uniform(0.3, 1.0))
+            
+            # Brief organic mouse drift before clicking claim (~30%)
+            if random.random() < 0.3:
+                await self.natural_mouse_drift(duration=random.uniform(0.5, 1.5))
             
             # Structured logging: claim_submit (executing)
             logger.info(f"[LIFECYCLE] claim_submit | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
