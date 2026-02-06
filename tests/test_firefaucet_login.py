@@ -10,6 +10,7 @@ from browser.instance import BrowserManager
 from faucets.firefaucet import FireFaucetBot
 from core.proxy_manager import ProxyManager
 
+@pytest.mark.skip(reason="Integration test requiring real browser and credentials")
 @pytest.mark.asyncio
 async def test_firefaucet_login_logic():
     """

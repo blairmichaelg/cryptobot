@@ -1132,7 +1132,12 @@ class CaptchaSolver:
                     continue
                     
                 if data.get("status") == "ready":
-                    return data["solution"]["token"] if "token" in data["solution"] else data["solution"]["gRecaptchaResponse"]
+                    solution = data.get("solution", {})
+                    token = solution.get("token") or solution.get("gRecaptchaResponse")
+                    if not token:
+                        logger.error(f"CapSolver returned ready but no token found in solution: {list(solution.keys())}")
+                        return None
+                    return token
                 
                 if data.get("status") == "failed":
                     logger.error(f"CapSolver Failed: {data.get('errorDescription')}")

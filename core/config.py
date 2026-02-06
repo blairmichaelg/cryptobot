@@ -54,6 +54,13 @@ class BotSettings(BaseSettings):
     captcha_fallback_provider: Optional[str] = None  # Optional fallback provider (e.g., capsolver)
     captcha_fallback_api_key: Optional[str] = None
     
+    # 2Captcha Proxy Auto-Refresh Settings
+    proxy_auto_refresh_enabled: bool = False  # Enable automatic proxy refresh (opt-in)
+    proxy_auto_refresh_interval_hours: int = 24  # Recommended interval for scheduled refresh (for reference)
+    proxy_min_healthy_count: int = 50  # Minimum healthy proxies before triggering refresh
+    proxy_target_count: int = 100  # Target total proxy count
+    proxy_max_latency_ms: float = 3000  # Maximum acceptable proxy latency in milliseconds
+    
     # Proxy Configuration
     residential_proxies_file: str = str(CONFIG_DIR / "proxies.txt")  # File containing 1 proxy per line (user:pass@ip:port)
     azure_proxies_file: str = str(CONFIG_DIR / "azure_proxies.txt")  # Azure VM proxy list
@@ -313,6 +320,15 @@ class BotSettings(BaseSettings):
     freebitcoin_username: Optional[str] = None
     freebitcoin_password: Optional[str] = None
 
+    coinpayu_username: Optional[str] = None
+    coinpayu_password: Optional[str] = None
+
+    faucetcrypto_username: Optional[str] = None
+    faucetcrypto_password: Optional[str] = None
+
+    adbtc_username: Optional[str] = None
+    adbtc_password: Optional[str] = None
+
     dutchy_username: Optional[str] = None
     dutchy_password: Optional[str] = None
     
@@ -345,8 +361,8 @@ class BotSettings(BaseSettings):
     accounts: List[AccountProfile] = Field(default_factory=list)
 
     enabled_faucets: List[str] = [
-        "fire_faucet", "cointiply", "dutchy",
-        "litepick", "tronpick", "dogepick", "solpick", "binpick", 
+        "fire_faucet", "cointiply", "dutchy", "freebitcoin", "coinpayu", "faucetcrypto",
+        "litepick", "tronpick", "dogepick", "solpick", "binpick",
         "bchpick", "tonpick", "polygonpick", "dashpick", "ethpick", "usdpick"
     ]
     wallet_addresses: Dict[str, str] = Field(default_factory=dict)
@@ -379,6 +395,12 @@ class BotSettings(BaseSettings):
             return {"username": self.freebitcoin_username, "password": self.freebitcoin_password}
         elif "dutchy" in name and self.dutchy_username:
             return {"username": self.dutchy_username, "password": self.dutchy_password}
+        elif "coinpayu" in name and self.coinpayu_username:
+            return {"username": self.coinpayu_username, "password": self.coinpayu_password}
+        elif "faucetcrypto" in name and self.faucetcrypto_username:
+            return {"username": self.faucetcrypto_username, "password": self.faucetcrypto_password}
+        elif "adbtc" in name and self.adbtc_username:
+            return {"username": self.adbtc_username, "password": self.adbtc_password}
         
         # Pick.io Family Fallbacks (use 'email' key for Pick.io sites)
         elif "litepick" in name and self.litepick_username:

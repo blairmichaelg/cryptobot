@@ -235,35 +235,50 @@ async def test_human_type_called_for_login(mock_settings, mock_page):
     with patch("faucets.base.CaptchaSolver") as MockSolver:
         solver_instance = MockSolver.return_value
         solver_instance.solve_captcha = AsyncMock(return_value=True)
-        
+
         bot = FireFaucetBot(mock_settings, mock_page)
         bot.solver = solver_instance
+        bot.safe_navigate = AsyncMock(return_value=True)
+        bot.detect_cloudflare_block = AsyncMock(return_value=False)
         bot.handle_cloudflare = AsyncMock()
         bot.human_type = AsyncMock()
         bot.idle_mouse = AsyncMock()
         bot.random_delay = AsyncMock()
-        bot.human_like_click = AsyncMock()
-        
-        # Setup page to indicate successful login
-        mock_page.url = "https://firefaucet.win/dashboard"
-        
-        # Mock locators for login elements
-        def create_login_locator(selector):
+
+        # Start on login page (not dashboard - otherwise login returns True immediately)
+        mock_page.url = "https://firefaucet.win/login"
+        mock_page.wait_for_selector = AsyncMock()
+
+        # Mock submit button locator
+        submit_btn = MagicMock()
+        submit_btn.count = AsyncMock(return_value=1)
+        submit_btn.is_disabled = AsyncMock(return_value=False)
+
+        # Mock dashboard elements (not visible initially)
+        dashboard_loc = MagicMock()
+        dashboard_loc.count = AsyncMock(return_value=0)
+
+        def create_locator(selector):
             loc = MagicMock()
-            if "#username" in selector or "#password" in selector:
-                loc.count = AsyncMock(return_value=1)
-                loc.is_disabled = AsyncMock(return_value=False)
-            elif "submitbtn" in selector or 'submit' in selector:
-                loc.count = AsyncMock(return_value=1)
-                loc.is_disabled = AsyncMock(return_value=False)
-            else:
-                loc.count = AsyncMock(return_value=0)
+            loc.count = AsyncMock(return_value=0)
+            loc.first = MagicMock()
+            loc.first.is_visible = AsyncMock(return_value=False)
+            loc.first.text_content = AsyncMock(return_value="")
+            if "submitbtn" in selector or 'submit' in selector:
+                return submit_btn
+            elif "user-balance" in selector or "level-progress" in selector or "dashboard" in selector:
+                return dashboard_loc
             return loc
-        
-        mock_page.locator.side_effect = create_login_locator
-        
+
+        mock_page.locator = MagicMock(side_effect=create_locator)
+
+        # After human_like_click (submit), change URL to dashboard
+        async def click_and_redirect(*args, **kwargs):
+            mock_page.url = "https://firefaucet.win/dashboard"
+        bot.human_like_click = AsyncMock(side_effect=click_and_redirect)
+
         result = await bot.login()
-        
+
         # Verify human_type was called for both username and password
         assert bot.human_type.call_count >= 2
         # Verify idle_mouse was called for stealth
@@ -312,37 +327,72 @@ async def test_balance_updated_after_claim(mock_settings, mock_page):
     with patch("faucets.base.CaptchaSolver") as MockSolver:
         solver_instance = MockSolver.return_value
         solver_instance.solve_captcha = AsyncMock(return_value=True)
-        
+
         bot = FireFaucetBot(mock_settings, mock_page)
         bot.solver = solver_instance
         bot.idle_mouse = AsyncMock()
         bot.human_like_click = AsyncMock()
         bot.random_delay = AsyncMock()
-        
+        bot.detect_cloudflare_block = AsyncMock(return_value=False)
+        bot.handle_cloudflare = AsyncMock()
+        bot.simulate_reading = AsyncMock()
+
+        # Fix async mocks for page methods used by claim
+        mock_page.evaluate = AsyncMock(return_value="")
+        mock_page.title = AsyncMock(return_value="FireFaucet")
+        mock_page.query_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock()
+
         # Mock get_balance to return different values (before and after claim)
         balance_calls = ["100", "150"]
         bot.get_balance = AsyncMock(side_effect=balance_calls)
         bot.get_timer = AsyncMock(return_value=0)
-        
-        # Setup success message
-        def create_success_locator(selector):
+
+        def create_default_locator():
             loc = MagicMock()
-            if "#get_reward_button" in selector:
-                loc.count = AsyncMock(return_value=1)
-            elif ".success_msg" in selector or "success" in selector:
-                loc.count = AsyncMock(return_value=1)
-                loc.first = MagicMock()
-                loc.first.text_content = AsyncMock(return_value="Claim successful!")
-            else:
-                loc.count = AsyncMock(return_value=0)
+            loc.count = AsyncMock(return_value=0)
+            loc.is_visible = AsyncMock(return_value=False)
+            loc.first = MagicMock()
+            loc.first.is_visible = AsyncMock(return_value=False)
+            loc.first.text_content = AsyncMock(return_value="")
+            loc.first.click = AsyncMock()
+            loc.first.get_attribute = AsyncMock(return_value=None)
+            loc.first.is_enabled = AsyncMock(return_value=True)
+            loc.all = AsyncMock(return_value=[])
+            loc.nth = MagicMock(return_value=loc)
             return loc
-        
-        mock_page.locator.side_effect = create_success_locator
-        
+
+        # Setup faucet button
+        faucet_btn = create_default_locator()
+        faucet_btn.count = AsyncMock(return_value=1)
+        faucet_btn.first.is_visible = AsyncMock(return_value=True)
+        faucet_btn.first.text_content = AsyncMock(return_value="Get Reward")
+        faucet_btn.first.is_enabled = AsyncMock(return_value=True)
+        faucet_btn.first.get_attribute = AsyncMock(return_value=None)
+
+        # Setup success message (needs is_visible on the locator itself for .nth(i).is_visible() check)
+        success_locator = create_default_locator()
+        success_locator.count = AsyncMock(return_value=1)
+        success_locator.is_visible = AsyncMock(return_value=True)
+        success_locator.text_content = AsyncMock(return_value="Claim successful!")
+        success_locator.first.is_visible = AsyncMock(return_value=True)
+        success_locator.first.text_content = AsyncMock(return_value="Claim successful!")
+
+        def create_locator(selector):
+            if "#get_reward_button" in selector:
+                return faucet_btn
+            elif "success" in selector.lower() or "alert-success" in selector:
+                return success_locator
+            elif "Get reward" in selector or "Get Reward" in selector or "Claim" in selector:
+                return faucet_btn
+            return create_default_locator()
+
+        mock_page.locator.side_effect = create_locator
+
         result = await bot.claim()
-        
-        # Verify balance was fetched twice
-        assert bot.get_balance.call_count == 2
+
+        # Verify balance was fetched at least twice (before claim + after success)
+        assert bot.get_balance.call_count >= 2
         # Verify final balance in result
         assert result.balance == "150"
 

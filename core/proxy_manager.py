@@ -1162,6 +1162,108 @@ class ProxyManager:
         c = await self.fetch_proxies_from_api(count)
         return c > 0
 
+    async def fetch_2captcha_proxies(self, count: int = 100, validate: bool = True, max_latency_ms: float = 3000) -> int:
+        """
+        Fetch and populate residential proxies from 2Captcha API.
+        
+        This method:
+        1. Fetches proxy configuration from 2Captcha API (if not in file)
+        2. Generates session-rotated proxies (50-100 proxies from one gateway)
+        3. Validates each proxy before adding to pool
+        4. Filters proxies by latency (<3000ms preferred)
+        5. Saves to config/proxies.txt
+        
+        Args:
+            count: Number of proxies to generate (default: 100)
+            validate: Whether to validate proxies before adding (default: True)
+            max_latency_ms: Maximum acceptable latency in ms (default: 3000)
+            
+        Returns:
+            Number of valid proxies added to pool
+            
+        Example:
+            >>> pm = ProxyManager(settings)
+            >>> count = await pm.fetch_2captcha_proxies(count=50)
+            >>> print(f"Added {count} proxies to pool")
+        """
+        if self.proxy_provider != "2captcha":
+            logger.warning("fetch_2captcha_proxies() only works with proxy_provider='2captcha'")
+            return 0
+            
+        if not self.api_key:
+            logger.error("Cannot fetch 2Captcha proxies: TWOCAPTCHA_API_KEY not set")
+            return 0
+        
+        logger.info(f"[2CAPTCHA] Fetching {count} residential proxies from 2Captcha API...")
+        
+        # Step 1: Fetch proxy config from API if we don't have a base proxy
+        if not self.proxies:
+            logger.info("[2CAPTCHA] No base proxy found. Attempting to fetch from API...")
+            base_proxy = await self.fetch_proxy_config_from_2captcha()
+            
+            if base_proxy:
+                self.proxies = [base_proxy]
+                self.all_proxies = [base_proxy]
+                logger.info(f"[2CAPTCHA] ✓ Got base proxy: {base_proxy.ip}:{base_proxy.port}")
+            else:
+                # If API fetch failed, check if there's a proxy in the file we missed
+                loaded = self.load_proxies_from_file()
+                if loaded == 0:
+                    logger.error("[2CAPTCHA] Failed to fetch proxy config from API and no proxies in file.")
+                    logger.error("Please ensure you have:")
+                    logger.error("  1. Purchased residential proxy traffic at https://2captcha.com/proxy/residential-proxies")
+                    logger.error("  2. Or manually add your proxy to config/proxies.txt")
+                    logger.error("     Format: username:password@proxy-gateway.2captcha.com:port")
+                    return 0
+        
+        # Step 2: Generate session-rotated proxies
+        logger.info(f"[2CAPTCHA] Generating {count} session-rotated proxies...")
+        generated = await self.fetch_proxies_from_api(quantity=count)
+        
+        if generated == 0:
+            logger.error("[2CAPTCHA] Failed to generate proxies")
+            return 0
+        
+        logger.info(f"[2CAPTCHA] ✓ Generated {generated} proxies")
+        
+        # Step 3: Validate proxies if requested
+        valid_count = generated
+        if validate:
+            logger.info("[2CAPTCHA] Validating proxies (this may take a moment)...")
+            valid_count = await self.validate_all_proxies()
+            logger.info(f"[2CAPTCHA] ✓ Validation complete: {valid_count}/{generated} proxies are healthy")
+        
+        # Step 4: Filter by latency
+        if max_latency_ms > 0 and self.validated_proxies:
+            fast_proxies = []
+            for proxy in self.validated_proxies:
+                proxy_key = self._proxy_key(proxy)
+                latencies = self.proxy_latency.get(proxy_key, [])
+                if latencies:
+                    avg_latency = sum(latencies) / len(latencies)
+                    if avg_latency <= max_latency_ms:
+                        fast_proxies.append(proxy)
+                # Note: Proxies without latency data were not validated - exclude them
+            
+            if fast_proxies:
+                logger.info(f"[2CAPTCHA] ✓ Filtered to {len(fast_proxies)} proxies with <{max_latency_ms}ms latency")
+                valid_count = len(fast_proxies)
+            else:
+                logger.warning(f"[2CAPTCHA] No proxies met latency requirement (<{max_latency_ms}ms)")
+        
+        # Step 5: Report statistics
+        health_stats = await self.health_check_all_proxies()
+        logger.info(f"[2CAPTCHA] ═══ Proxy Pool Summary ═══")
+        logger.info(f"[2CAPTCHA]   Total proxies: {health_stats.get('total', 0)}")
+        logger.info(f"[2CAPTCHA]   Healthy: {health_stats.get('healthy', 0)}")
+        logger.info(f"[2CAPTCHA]   Dead: {health_stats.get('dead', 0)}")
+        avg_latency = health_stats.get('avg_latency_ms') or 0
+        logger.info(f"[2CAPTCHA]   Avg latency: {avg_latency:.0f}ms")
+        logger.info(f"[2CAPTCHA]   File: {os.path.abspath(self.settings.residential_proxies_file)}")
+        logger.info(f"[2CAPTCHA] ═══════════════════════════")
+        
+        return valid_count
+
     def assign_proxies(self, profiles: List[AccountProfile]):
         """
         Assigns proxies to profiles 1:1.
@@ -1411,3 +1513,97 @@ class ProxyManager:
             self._save_health_data()
         
         return removed
+
+    async def auto_refresh_proxies(
+        self, 
+        min_healthy_count: int = 50,
+        target_count: int = 100,
+        max_latency_ms: float = 3000,
+        refresh_interval_hours: int = 24
+    ) -> bool:
+        """
+        Automatically refresh the proxy pool when needed.
+        
+        This method:
+        1. Checks current healthy proxy count
+        2. If below min_healthy_count, fetches new proxies
+        3. Validates and filters by latency
+        4. Can be called periodically (e.g., daily via scheduler)
+        
+        Args:
+            min_healthy_count: Minimum healthy proxies before refresh (default: 50)
+            target_count: Target number of total proxies (default: 100)
+            max_latency_ms: Maximum acceptable latency in ms (default: 3000)
+            refresh_interval_hours: How often to check (for logging only, default: 24)
+            
+        Returns:
+            True if refresh was successful or not needed, False if failed
+            
+        Example:
+            >>> # In scheduler or cron job
+            >>> pm = ProxyManager(settings)
+            >>> success = await pm.auto_refresh_proxies()
+        """
+        if self.proxy_provider != "2captcha":
+            logger.debug(f"auto_refresh_proxies() skipped: provider is {self.proxy_provider}, not 2captcha")
+            return True
+        
+        # Check current health
+        health_stats = await self.health_check_all_proxies()
+        healthy_count = health_stats.get('healthy', 0)
+        total_count = health_stats.get('total', 0)
+        
+        logger.info(f"[AUTO-REFRESH] Current proxy pool: {healthy_count} healthy / {total_count} total")
+        
+        # Determine if refresh is needed
+        if healthy_count >= min_healthy_count:
+            logger.info(f"[AUTO-REFRESH] ✓ Proxy pool is healthy ({healthy_count} >= {min_healthy_count}). No refresh needed.")
+            return True
+        
+        logger.warning(f"[AUTO-REFRESH] ⚠️ Low proxy count ({healthy_count} < {min_healthy_count}). Refreshing pool...")
+        
+        # Calculate how many new proxies to fetch
+        needed = target_count - healthy_count
+        fetch_count = max(needed, 20)  # Fetch at least 20 to account for validation failures
+        
+        # Fetch new proxies
+        try:
+            valid_count = await self.fetch_2captcha_proxies(
+                count=fetch_count,
+                validate=True,
+                max_latency_ms=max_latency_ms
+            )
+            
+            if valid_count > 0:
+                # Check health again
+                new_health = await self.health_check_all_proxies()
+                new_healthy = new_health.get('healthy', 0)
+                
+                logger.info(f"[AUTO-REFRESH] ✅ Refresh complete: {new_healthy} healthy proxies (was {healthy_count})")
+                
+                # Save health data
+                self._save_health_data()
+                
+                return True
+            else:
+                logger.error(f"[AUTO-REFRESH] ❌ Failed to fetch new proxies")
+                return False
+                
+        except Exception as e:
+            logger.error(f"[AUTO-REFRESH] ❌ Error during refresh: {e}")
+            return False
+    
+    def get_refresh_schedule_info(self) -> Dict[str, Any]:
+        """
+        Get information about the auto-refresh schedule.
+        
+        Returns:
+            Dictionary with schedule information
+        """
+        return {
+            "enabled": self.proxy_provider == "2captcha",
+            "provider": self.proxy_provider,
+            "recommended_interval_hours": 24,
+            "recommended_cron": "0 2 * * *",  # Daily at 2 AM
+            "health_file": self.health_file
+        }

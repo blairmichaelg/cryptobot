@@ -117,3 +117,7 @@ config/cookies_encrypted/
 *.pdf
 azure_deploy_output.log
 deployment_*.log
+
+# Claude Code temp files
+tmpclaude-*
+nul

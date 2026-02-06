@@ -90,5 +90,29 @@
   "firefaucet_blazefoley97@gmail.com": {
     "created_at": 1767740287.5264711,
     "cookie_count": 20
+  },
+  "test_user_123": {
+    "created_at": 1768374045.8097785,
+    "cookie_count": 14
+  },
+  "user_alice": {
+    "created_at": 1768374052.7359858,
+    "cookie_count": 11
+  },
+  "user_bob": {
+    "created_at": 1767769252.8307717,
+    "cookie_count": 14
+  },
+  "user_charlie": {
+    "created_at": 1769065252.9324615,
+    "cookie_count": 13
+  },
+  "persistence_test_user": {
+    "created_at": 1769497259.1337938,
+    "cookie_count": 15
+  },
+  "test_profile": {
+    "created_at": 1769583728.3361065,
+    "cookie_count": 10
   }
 }

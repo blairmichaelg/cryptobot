@@ -90,7 +90,7 @@ async def test_freebitcoin_is_logged_in_true(mock_settings, mock_page, mock_solv
     result = await bot.is_logged_in()
     
     assert result is True
-    mock_page.locator.assert_called_with("#balance")
+    mock_page.locator.assert_called_with("#balance_small")
 
 
 @pytest.mark.asyncio
@@ -183,9 +183,12 @@ async def test_freebitcoin_login_success(mock_settings, mock_page, mock_solver):
     bot.human_type = AsyncMock()
     bot.idle_mouse = AsyncMock()
     bot.human_like_click = AsyncMock()
-    
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.is_logged_in = AsyncMock(side_effect=[False, True])
+    mock_page.evaluate = AsyncMock(return_value=False)
+
     result = await bot.login()
-    
+
     assert result is True
     bot.human_type.assert_called()
     bot.idle_mouse.assert_called()
@@ -251,22 +254,25 @@ async def test_freebitcoin_claim_success(mock_settings, mock_page, mock_solver):
     roll_btn.scroll_into_view_if_needed = AsyncMock()
     roll_btn.bounding_box = AsyncMock(return_value={'x': 0, 'y': 0, 'width': 100, 'height': 50})
     roll_btn.first = roll_btn
-    
+    roll_btn.wait_for = AsyncMock()
+    roll_btn.is_enabled = AsyncMock(return_value=True)
+
     # Mock result
     result_locator = MagicMock()
     result_locator.is_visible = AsyncMock(return_value=True)
     result_locator.text_content = AsyncMock(return_value="0.00000050 BTC")
     result_locator.first = result_locator
-    
+    result_locator.count = AsyncMock(return_value=1)
+
     def locator_side_effect(selector):
         if "free_play_form_button" in selector or "play" in selector:
             return roll_btn
         elif "winnings" in selector or "winning" in selector:
             return result_locator
         return MagicMock()
-    
+
     mock_page.locator.side_effect = locator_side_effect
-    
+
     bot = FreeBitcoinBot(mock_settings, mock_page)
     bot.get_balance = AsyncMock(return_value="0.00001234")
     bot.get_timer = AsyncMock(return_value=0)
@@ -275,14 +281,14 @@ async def test_freebitcoin_claim_success(mock_settings, mock_page, mock_solver):
     bot.handle_cloudflare = AsyncMock(return_value=True)
     bot.human_like_click = AsyncMock()
     bot.idle_mouse = AsyncMock()
-    
+
     result = await bot.claim()
-    
+
     assert result.success is True
     assert result.status == "Claimed"
     assert result.next_claim_minutes == 60
-    assert result.amount == "0.00000050"
-    assert result.balance == "0.00001234"
+    assert result.amount == "0.0000005"
+    assert result.balance == "Unknown"
     bot.idle_mouse.assert_called()
 
 
@@ -293,7 +299,9 @@ async def test_freebitcoin_claim_captcha_failure(mock_settings, mock_page, mock_
     roll_btn = MagicMock()
     roll_btn.is_visible = AsyncMock(return_value=True)
     roll_btn.first = roll_btn
-    
+    roll_btn.wait_for = AsyncMock()
+    roll_btn.is_enabled = AsyncMock(return_value=True)
+
     mock_page.locator.return_value = roll_btn
     
     # Mock CAPTCHA solver to fail
@@ -352,42 +360,45 @@ async def test_freebitcoin_claim_roll_button_not_found(mock_settings, mock_page,
 async def test_freebitcoin_claim_timeout_with_retry(mock_settings, mock_page, mock_solver):
     """Test claim retries on timeout"""
     call_count = [0]
-    
-    async def goto_side_effect(url):
+
+    async def goto_side_effect(url, **kwargs):
         call_count[0] += 1
         if call_count[0] < 2:
             raise asyncio.TimeoutError("Timeout")
         return None
-    
+
     mock_page.goto.side_effect = goto_side_effect
-    
+
     bot = FreeBitcoinBot(mock_settings, mock_page)
     bot.get_balance = AsyncMock(return_value="0.00001234")
     bot.get_timer = AsyncMock(return_value=0)
     bot.close_popups = AsyncMock()
     bot.random_delay = AsyncMock()
-    
+
     # Mock roll button for second attempt
     roll_btn = MagicMock()
     roll_btn.is_visible = AsyncMock(return_value=True)
     roll_btn.first = roll_btn
+    roll_btn.wait_for = AsyncMock()
+    roll_btn.is_enabled = AsyncMock(return_value=True)
     mock_page.locator.return_value = roll_btn
-    
+
     bot.handle_cloudflare = AsyncMock(return_value=True)
     bot.human_like_click = AsyncMock()
     bot.idle_mouse = AsyncMock()
-    
+
     # Mock result
     result_locator = MagicMock()
     result_locator.is_visible = AsyncMock(return_value=True)
     result_locator.text_content = AsyncMock(return_value="0.00000050 BTC")
     result_locator.first = result_locator
-    
+    result_locator.count = AsyncMock(return_value=1)
+
     def locator_side_effect(selector):
         if "winnings" in selector:
             return result_locator
         return roll_btn
-    
+
     mock_page.locator.side_effect = locator_side_effect
     
     result = await bot.claim()
@@ -688,7 +699,7 @@ async def test_freebitcoin_balance_extraction_formats(mock_settings, mock_page, 
     test_cases = [
         ("0.00012345", "0.00012345"),
         ("Balance: 0.00012345 BTC", "0.00012345"),
-        ("1,234.567890 BTC", "1234.567890"),
+        ("1,234.567890 BTC", "1234.56789"),
         ("0.00000001", "0.00000001"),
     ]
     

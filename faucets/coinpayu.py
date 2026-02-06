@@ -218,14 +218,59 @@ class CoinPayUBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully.")
                     await self.random_delay(0.5, 1.0)
-                
-                # Click Login
-                login_btn = self.page.locator("button.btn-primary:has-text('Login')")
-                if await login_btn.count() > 0:
+
+                # CRITICAL FIX: After CAPTCHA solve, DOM may have been rebuilt.
+                # Re-query the login button with extended selectors and a fresh DOM check.
+                # Also wait briefly for any DOM updates from the CAPTCHA callback.
+                await asyncio.sleep(1)
+
+                # Click Login - use multiple fallback selectors for robustness
+                # After CAPTCHA solve, button selector may vary due to DOM changes
+                login_selectors = [
+                    'button.btn-primary:has-text("Login")',
+                    'button.btn-primary:has-text("Log in")',
+                    'button:has-text("Login")',
+                    'button:has-text("Log in")',
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    '#login-button',
+                    '.login-btn',
+                    'form button.btn-primary',
+                    'form button.btn',
+                    'button.btn-primary',
+                ]
+
+                login_btn = None
+                for selector in login_selectors:
+                    try:
+                        loc = self.page.locator(selector)
+                        if await loc.count() > 0 and await loc.first.is_visible(timeout=2000):
+                            login_btn = loc.first
+                            logger.info(f"[{self.faucet_name}] Found login button with: {selector}")
+                            break
+                    except Exception:
+                        continue
+
+                if login_btn:
+                    logger.info(f"[{self.faucet_name}] Clicking login button...")
                     await self.human_like_click(login_btn)
                 else:
-                    logger.warning(f"[{self.faucet_name}] Login button not found.")
-                    continue
+                    logger.warning(f"[{self.faucet_name}] Login button not found with any selector, trying form submit...")
+                    # Last resort: submit the form directly via JavaScript
+                    try:
+                        await self.page.evaluate("""
+                            const forms = document.querySelectorAll('form');
+                            for (const form of forms) {
+                                const emailInput = form.querySelector('input[type="email"], input[name="email"]');
+                                if (emailInput) {
+                                    form.submit();
+                                    break;
+                                }
+                            }
+                        """)
+                    except Exception:
+                        logger.error(f"[{self.faucet_name}] Form submit fallback also failed")
+                        continue
                 
                 # Check for "Proxy detected" error
                 await self.random_delay(1.0, 2.0)
@@ -236,10 +281,28 @@ class CoinPayUBot(FaucetBot):
                         logger.error(f"[{self.faucet_name}] Login Blocked: {text}")
                         return False
 
-                # Wait for redirect to dashboard
-                await self.page.wait_for_url("**/dashboard", timeout=15000)
-                logger.info(f"[{self.faucet_name}] Login successful.")
-                return True
+                # Wait for redirect to dashboard - use multiple detection methods
+                try:
+                    await self.page.wait_for_url("**/dashboard**", timeout=15000)
+                    logger.info(f"[{self.faucet_name}] Login successful (URL redirect).")
+                    return True
+                except Exception:
+                    # URL check failed, try other indicators
+                    await asyncio.sleep(2)
+                    if await self.is_logged_in():
+                        logger.info(f"[{self.faucet_name}] Login successful (session detected).")
+                        return True
+                    # Check for error messages on the page
+                    try:
+                        error_el = self.page.locator(".alert-danger, .alert-div.alert-red, .error-message")
+                        if await error_el.count() > 0 and await error_el.first.is_visible():
+                            error_text = await error_el.first.text_content()
+                            logger.error(f"[{self.faucet_name}] Login error: {error_text}")
+                            if "proxy" in error_text.lower() or "vpn" in error_text.lower():
+                                return False  # Don't retry on proxy block
+                    except Exception:
+                        pass
+                    logger.warning(f"[{self.faucet_name}] Login state unclear on attempt {attempt + 1}")
                 
             except asyncio.TimeoutError:
                 logger.warning(f"[{self.faucet_name}] Login timeout on attempt {attempt + 1}")

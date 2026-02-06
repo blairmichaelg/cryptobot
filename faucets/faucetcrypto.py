@@ -363,52 +363,52 @@ class FaucetCryptoBot(FaucetBot):
             
             for i in range(count):
                 if processed >= limit: break
-                
+
                 # Intermediate buttons on list page
                 watch_btn = self.page.locator("button:has-text('Watch')").first
                 if not await watch_btn.is_visible(): break
-                
+
                 logger.info(f"[{self.faucet_name}] Opening Ad {processed+1}...")
                 await self.human_like_click(watch_btn)
-                
+
                 # 1. Intermediate Page (Step 1)
                 # FaucetCrypto usually shows a 10s timer before "Get Reward"
                 try:
                     await self.page.wait_for_selector("button:has-text('Get Reward')", timeout=20000)
                     reward_btn = self.page.locator("button:has-text('Get Reward')")
-                    
+
                     # Sometimes there is an antibot check (select symbols in order)
                     # We look for turnstile/recaptcha first
                     await self.solver.solve_captcha(self.page)
-                    
+
                     await self.human_like_click(reward_btn)
                 except Exception as e:
                     logger.warning(f"[{self.faucet_name}] Intermediate page failed: {e}")
                     await self.page.goto(f"{self.base_url}/ptc/list")
                     continue
 
-            # 2. Main Ad Page (Step 2)
-            # Ad opens (usually in current tab or new tab depending on ad type)
-            # Real internal PTCs open in current tab with a top bar timer
-            logger.info(f"[{self.faucet_name}] Watching Ad timer...")
-            
-            # Poll for the "Continue" button on the top bar
-            try:
-                # Wait for the top bar timer to finish and "Continue" button to appear
-                # v4.0+: Button often has a .success class when ready
-                continue_btn = self.page.locator("#continue-button, button:has-text('Continue'), .btn-success:has-text('Continue')")
-                await continue_btn.wait_for(state="visible", timeout=60000)
-                await self.human_like_click(continue_btn)
-                
-                logger.info(f"[{self.faucet_name}] Ad {processed+1} completed.")
-                processed += 1
-            except Exception as e:
-                logger.warning(f"[{self.faucet_name}] Failed to find Continue button: {e}")
-                
+                # 2. Main Ad Page (Step 2)
+                # Ad opens (usually in current tab or new tab depending on ad type)
+                # Real internal PTCs open in current tab with a top bar timer
+                logger.info(f"[{self.faucet_name}] Watching Ad timer...")
+
+                # Poll for the "Continue" button on the top bar
+                try:
+                    # Wait for the top bar timer to finish and "Continue" button to appear
+                    # v4.0+: Button often has a .success class when ready
+                    continue_btn = self.page.locator("#continue-button, button:has-text('Continue'), .btn-success:has-text('Continue')")
+                    await continue_btn.wait_for(state="visible", timeout=60000)
+                    await self.human_like_click(continue_btn)
+
+                    logger.info(f"[{self.faucet_name}] Ad {processed+1} completed.")
+                    processed += 1
+                except Exception as e:
+                    logger.warning(f"[{self.faucet_name}] Failed to find Continue button: {e}")
+
                 # Return to list
                 await self.page.goto(f"{self.base_url}/ptc/list")
                 await self.random_delay(2, 5)
-                
+
             logger.info(f"[{self.faucet_name}] PTC session complete. Watched {processed} ads.")
                 
         except Exception as e:

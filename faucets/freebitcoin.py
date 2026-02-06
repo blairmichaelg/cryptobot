@@ -14,13 +14,15 @@ class FreeBitcoinBot(FaucetBot):
 
     async def is_logged_in(self) -> bool:
         balance_selectors = [
+            "#balance_small",
+            "#balance_small span",
+            ".balanceli",
             "#balance",
             ".balance",
             "[data-balance]",
             ".user-balance",
             "span.balance",
             "#balance_small",
-            "#balance_small span",
             ".balance-amount",
             "a[href*='logout']",
             "a:has-text('Logout')",
@@ -764,18 +766,38 @@ class FreeBitcoinBot(FaucetBot):
                 await self.random_delay(2, 4)
 
                 # Extract Balance with fallback selectors
+                # FreeBitcoin uses #balance_small (visible in nav bar) as the reliable
+                # balance element. #balance exists but is often hidden/not visible.
+                # .balanceli is the parent container. PR #96 confirmed #balance_small.
                 logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
-                    "#balance",
-                    fallback_selectors=["span.balance", ".user-balance", "[data-balance]"]
+                    "#balance_small",
+                    fallback_selectors=[
+                        "#balance",
+                        ".balanceli",
+                        "li.balanceli span",
+                        "span.balance",
+                        ".user-balance",
+                        "[data-balance]",
+                        ".account-balance"
+                    ]
                 )
                 logger.info(f"[DEBUG] Balance: {balance}")
 
                 # Check if timer is running (already claimed) with fallback selectors
+                # FreeBitcoin uses .countdown_time_remaining for the countdown display.
+                # #time_remaining exists but may not always be visible.
                 logger.info("[DEBUG] Checking timer...")
                 wait_min = await self.get_timer(
-                    "#time_remaining",
-                    fallback_selectors=["span#timer", ".countdown", "[data-next-claim]", ".time-remaining"]
+                    ".countdown_time_remaining",
+                    fallback_selectors=[
+                        "#time_remaining",
+                        "#countdown_timer",
+                        "span#timer",
+                        ".countdown",
+                        "[data-next-claim]",
+                        ".time-remaining"
+                    ]
                 )
                 logger.info(f"[DEBUG] Timer: {wait_min} minutes")
                 if wait_min > 0:
@@ -787,8 +809,9 @@ class FreeBitcoinBot(FaucetBot):
                 # Use multiple selector options for robustness
                 roll_btn = self.page.locator(
                     "#free_play_form_button, input#free_play_form_button, input[name='free_play_form_button'], "
-                    "button#free_play_form_button, button[id*='play'], .claim-btn, button:has-text('Roll'), "
-                    "button:has-text('Play')"
+                    "button#free_play_form_button, button[id*='play'], .homepage_play_now_button, "
+                    ".claim-btn, button:has-text('Roll'), button:has-text('ROLL'), "
+                    "button:has-text('Play'), input[value*='ROLL'], input[value*='Roll']"
                 ).first
 
                 try:
@@ -1030,8 +1053,11 @@ class FreeBitcoinBot(FaucetBot):
             await self.handle_cloudflare()
             await self.close_popups()
             
-            # Get current balance
-            balance = await self.get_balance("#balance")
+            # Get current balance - use #balance_small as primary (confirmed working)
+            balance = await self.get_balance(
+                "#balance_small",
+                fallback_selectors=["#balance", ".balanceli", "li.balanceli span"]
+            )
             balance_sat = int(float(balance) * 100000000) if balance else 0
             
             # Check minimum (30,000 satoshis)

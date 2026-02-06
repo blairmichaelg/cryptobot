@@ -125,6 +125,25 @@ class FaucetBot:
         self.solver.set_headless(getattr(settings, "headless", True))
         fallback_provider = getattr(settings, "captcha_fallback_provider", None)
         fallback_key = getattr(settings, "captcha_fallback_api_key", None)
+
+        # Auto-select fallback API key if provider is set but key is not
+        if fallback_provider and not fallback_key:
+            if fallback_provider.lower() == "capsolver":
+                fallback_key = getattr(settings, "capsolver_api_key", None)
+            elif fallback_provider.lower() == "2captcha":
+                fallback_key = getattr(settings, "twocaptcha_api_key", None)
+
+        # Auto-configure CapSolver as fallback if primary is 2captcha and
+        # a CapSolver API key exists but no fallback is explicitly configured.
+        # This ensures hCaptcha support (which 2Captcha can't solve) works
+        # automatically for sites like Cointiply.
+        if not fallback_provider and provider == "2captcha":
+            capsolver_key = getattr(settings, "capsolver_api_key", None)
+            if capsolver_key:
+                fallback_provider = "capsolver"
+                fallback_key = capsolver_key
+                logger.info("Auto-configured CapSolver as fallback captcha provider")
+
         if fallback_provider and fallback_key:
             self.solver.set_fallback_provider(fallback_provider, fallback_key)
             

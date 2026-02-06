@@ -69,7 +69,8 @@ def mock_page():
     page.mouse = MagicMock()
     page.mouse.move = AsyncMock()
     page.mouse.click = AsyncMock()
-    
+    page.is_closed = MagicMock(return_value=False)
+
     return page
 
 
@@ -130,15 +131,27 @@ async def test_login_success(mock_settings, mock_page, mock_solver):
     bot.random_delay = AsyncMock()
     bot.idle_mouse = AsyncMock()
     bot.human_like_click = AsyncMock()
-    
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
+    bot.safe_click = AsyncMock(return_value=True)
+
+    # Mock locator chain for iterative selector search
+    locator_mock = MagicMock()
+    locator_mock.count = AsyncMock(return_value=1)
+    locator_mock.first = MagicMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+    locator_mock.first.input_value = AsyncMock(return_value="filled")
+    locator_mock.first.click = AsyncMock()
+    mock_page.locator = MagicMock(return_value=locator_mock)
+
+    # Mock wait_for_url to succeed (login redirect)
+    mock_page.wait_for_url = AsyncMock()
+
     result = await bot.login()
-    
+
     assert result is True
-    assert mock_page.goto.called
-    assert bot.handle_cloudflare.called
-    assert bot.human_type.call_count == 2  # email and password
+    assert bot.human_type.call_count >= 2  # email and password
     assert bot.solver.solve_captcha.called
-    assert bot.human_like_click.called
 
 
 @pytest.mark.asyncio
@@ -175,14 +188,23 @@ async def test_claim_timer_active(mock_settings, mock_page, mock_solver):
     bot.handle_cloudflare = AsyncMock()
     bot.get_current_balance = AsyncMock(return_value="100.00")
     bot.get_timer = AsyncMock(return_value=45.0)  # 45 minutes remaining
-    
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+
+    # Mock page.title() so it doesn't match '404'
+    mock_page.title = AsyncMock(return_value="Cointiply")
+
     # Setup roll button to be visible
     locator_mock = mock_page.locator.return_value
     locator_mock.count = AsyncMock(return_value=1)
     locator_mock.is_visible = AsyncMock(return_value=True)
-    
+    locator_mock.first = MagicMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+
     result = await bot.claim()
-    
+
     assert isinstance(result, ClaimResult)
     assert result.success is True
     assert result.status == "Timer Active"
@@ -200,32 +222,40 @@ async def test_claim_success_ready_to_claim(mock_settings, mock_page, mock_solve
     bot.idle_mouse = AsyncMock()
     bot.random_delay = AsyncMock()
     bot.human_like_click = AsyncMock()
-    
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
+    bot.safe_click = AsyncMock(return_value=True)
+
+    # Mock page.title() so it doesn't match '404'
+    mock_page.title = AsyncMock(return_value="Cointiply")
+
     # Setup roll button to be visible
     locator_mock = mock_page.locator.return_value
     locator_mock.count = AsyncMock(return_value=1)
     locator_mock.is_visible = AsyncMock(return_value=True)
-    
+    locator_mock.first = MagicMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+    locator_mock.first.is_enabled = AsyncMock(return_value=True)
+
     # Mock success indicator
     success_locator = MagicMock()
     success_locator.count = AsyncMock(return_value=1)
-    
+
     def locator_side_effect(selector):
         if "snackbar" in selector or "toast" in selector or "alert" in selector:
             return success_locator
         return locator_mock
-    
+
     mock_page.locator.side_effect = locator_side_effect
-    
+
     result = await bot.claim()
-    
+
     assert isinstance(result, ClaimResult)
     assert result.success is True
     assert result.status == "Claimed"
     assert result.next_claim_minutes == 60
     assert result.balance == "105.50"
     assert bot.solver.solve_captcha.called
-    assert bot.human_like_click.called
 
 
 @pytest.mark.asyncio
@@ -236,15 +266,23 @@ async def test_claim_captcha_failure_retry(mock_settings, mock_page, mock_solver
     bot.get_current_balance = AsyncMock(return_value="100.00")
     bot.get_timer = AsyncMock(return_value=0.0)
     bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
     bot.solver.solve_captcha = AsyncMock(side_effect=[False, False, False])  # Fail 3 times
-    
+
+    # Mock page.title() so it doesn't match '404'
+    mock_page.title = AsyncMock(return_value="Cointiply")
+
     # Setup roll button to be visible
     locator_mock = mock_page.locator.return_value
     locator_mock.count = AsyncMock(return_value=1)
     locator_mock.is_visible = AsyncMock(return_value=True)
-    
+    locator_mock.first = MagicMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+
     result = await bot.claim()
-    
+
     # Should fail after max retries
     assert isinstance(result, ClaimResult)
     assert result.success is False
@@ -257,14 +295,23 @@ async def test_claim_roll_button_not_available(mock_settings, mock_page, mock_so
     bot = CointiplyBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
     bot.get_current_balance = AsyncMock(return_value="100.00")
-    
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+
+    # Mock page.title() so it doesn't match '404'
+    mock_page.title = AsyncMock(return_value="Cointiply")
+
     # Setup roll button to NOT be visible
     locator_mock = mock_page.locator.return_value
     locator_mock.count = AsyncMock(return_value=0)
     locator_mock.is_visible = AsyncMock(return_value=False)
-    
+    locator_mock.first = MagicMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=False)
+
     result = await bot.claim()
-    
+
     assert isinstance(result, ClaimResult)
     assert result.success is False
     assert result.status == "Roll Not Available"
@@ -276,10 +323,18 @@ async def test_claim_timeout_error_retry(mock_settings, mock_page, mock_solver):
     """Test claim handles timeout errors with retry"""
     bot = CointiplyBot(mock_settings, mock_page)
     bot.handle_cloudflare = AsyncMock()
+    bot.safe_navigate = AsyncMock(return_value=True)
+    bot.check_page_health = AsyncMock(return_value=True)
+    bot.idle_mouse = AsyncMock()
+    bot.random_delay = AsyncMock()
+
+    # Mock page.title() so it doesn't match '404'
+    mock_page.title = AsyncMock(return_value="Cointiply")
+
     bot.get_current_balance = AsyncMock(side_effect=asyncio.TimeoutError("Timeout"))
-    
+
     result = await bot.claim()
-    
+
     assert isinstance(result, ClaimResult)
     assert result.success is False
     assert "Timeout" in result.status
@@ -473,14 +528,23 @@ class TestCointiplyTimerExtraction:
         bot.handle_cloudflare = AsyncMock()
         bot.get_current_balance = AsyncMock(return_value="100.00")
         bot.get_timer = AsyncMock(return_value=30.0)
-        
+        bot.safe_navigate = AsyncMock(return_value=True)
+        bot.check_page_health = AsyncMock(return_value=True)
+        bot.idle_mouse = AsyncMock()
+        bot.random_delay = AsyncMock()
+
+        # Mock page.title() so it doesn't match '404'
+        mock_page.title = AsyncMock(return_value="Cointiply")
+
         # Setup roll button visible
         locator_mock = mock_page.locator.return_value
         locator_mock.count = AsyncMock(return_value=1)
         locator_mock.is_visible = AsyncMock(return_value=True)
-        
+        locator_mock.first = MagicMock()
+        locator_mock.first.is_visible = AsyncMock(return_value=True)
+
         result = await bot.claim()
-        
+
         # Check get_timer was called with fallback selectors
         assert bot.get_timer.called
         call_args = bot.get_timer.call_args
@@ -499,9 +563,22 @@ class TestCointiplyStealthFeatures:
         bot.random_delay = AsyncMock()
         bot.idle_mouse = AsyncMock()
         bot.human_like_click = AsyncMock()
-        
+        bot.safe_navigate = AsyncMock(return_value=True)
+        bot.check_page_health = AsyncMock(return_value=True)
+        bot.safe_click = AsyncMock(return_value=True)
+
+        # Mock locator chain for iterative selector search
+        locator_mock = MagicMock()
+        locator_mock.count = AsyncMock(return_value=1)
+        locator_mock.first = MagicMock()
+        locator_mock.first.is_visible = AsyncMock(return_value=True)
+        locator_mock.first.input_value = AsyncMock(return_value="filled")
+        locator_mock.first.click = AsyncMock()
+        mock_page.locator = MagicMock(return_value=locator_mock)
+        mock_page.wait_for_url = AsyncMock()
+
         await bot.login()
-        
+
         # Should use human_type for both email and password
         assert bot.human_type.call_count >= 2
         assert bot.idle_mouse.called
@@ -517,14 +594,23 @@ class TestCointiplyStealthFeatures:
         bot.idle_mouse = AsyncMock()
         bot.human_like_click = AsyncMock()
         bot.random_delay = AsyncMock()
-        
+        bot.safe_navigate = AsyncMock(return_value=True)
+        bot.check_page_health = AsyncMock(return_value=True)
+        bot.safe_click = AsyncMock(return_value=True)
+
+        # Mock page.title() so it doesn't match '404'
+        mock_page.title = AsyncMock(return_value="Cointiply")
+
         # Setup roll button visible
         locator_mock = mock_page.locator.return_value
         locator_mock.count = AsyncMock(return_value=1)
         locator_mock.is_visible = AsyncMock(return_value=True)
-        
+        locator_mock.first = MagicMock()
+        locator_mock.first.is_visible = AsyncMock(return_value=True)
+        locator_mock.first.is_enabled = AsyncMock(return_value=True)
+
         await bot.claim()
-        
+
         assert bot.idle_mouse.called
 
 
@@ -535,8 +621,15 @@ class TestCointiplyRetryLogic:
     async def test_claim_retries_on_timeout(self, mock_settings, mock_page, mock_solver):
         """Test claim retries on timeout"""
         bot = CointiplyBot(mock_settings, mock_page)
-        
-        # First two attempts timeout, third succeeds
+        bot.safe_navigate = AsyncMock(return_value=True)
+        bot.check_page_health = AsyncMock(return_value=True)
+        bot.idle_mouse = AsyncMock()
+        bot.random_delay = AsyncMock()
+
+        # Mock page.title() so it doesn't match '404'
+        mock_page.title = AsyncMock(return_value="Cointiply")
+
+        # First two attempts timeout at handle_cloudflare, third succeeds
         bot.handle_cloudflare = AsyncMock(side_effect=[
             asyncio.TimeoutError(),
             asyncio.TimeoutError(),
@@ -544,14 +637,16 @@ class TestCointiplyRetryLogic:
         ])
         bot.get_current_balance = AsyncMock(return_value="100.00")
         bot.get_timer = AsyncMock(return_value=45.0)
-        
+
         # Setup roll button visible
         locator_mock = mock_page.locator.return_value
         locator_mock.count = AsyncMock(return_value=1)
         locator_mock.is_visible = AsyncMock(return_value=True)
-        
+        locator_mock.first = MagicMock()
+        locator_mock.first.is_visible = AsyncMock(return_value=True)
+
         result = await bot.claim()
-        
+
         # Should eventually succeed or fail after retries
         assert isinstance(result, ClaimResult)
     

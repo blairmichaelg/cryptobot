@@ -132,6 +132,12 @@ async def main():
                 profiles.append(AccountProfile(faucet="freebitcoin", username=settings.freebitcoin_username, password=settings.freebitcoin_password))
             if settings.dutchy_username:
                 profiles.append(AccountProfile(faucet="dutchy", username=settings.dutchy_username, password=settings.dutchy_password))
+            if settings.coinpayu_username:
+                profiles.append(AccountProfile(faucet="coinpayu", username=settings.coinpayu_username, password=settings.coinpayu_password))
+            if settings.faucetcrypto_username:
+                profiles.append(AccountProfile(faucet="faucetcrypto", username=settings.faucetcrypto_username, password=settings.faucetcrypto_password))
+            if settings.adbtc_username:
+                profiles.append(AccountProfile(faucet="adbtc", username=settings.adbtc_username, password=settings.adbtc_password))
             
             # Pick.io Family
             if settings.litepick_username:

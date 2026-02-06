@@ -237,50 +237,65 @@ async def test_firefaucet_login_exception(mock_settings, mock_page, mock_solver)
 @pytest.mark.asyncio
 async def test_firefaucet_claim_success(mock_settings, mock_page, mock_solver):
     """Test successful claim"""
-    # Setup unlock button
-    unlock_btn = MagicMock()
-    unlock_btn.count = AsyncMock(return_value=0)
-    
-    # Setup turnstile option
-    turnstile_opt = MagicMock()
-    turnstile_opt.count = AsyncMock(return_value=1)
-    turnstile_opt.click = AsyncMock()
-    
-    # Setup claim button
-    daily_claim_btn = MagicMock()
-    daily_claim_btn.count = AsyncMock(return_value=1)
-    
-    # Setup faucet button
-    faucet_btn = MagicMock()
+    # Fix async mocks needed by claim method
+    mock_page.evaluate = AsyncMock(return_value="")
+    mock_page.title = AsyncMock(return_value="FireFaucet")
+    mock_page.query_selector = AsyncMock(return_value=None)
+    mock_page.wait_for_selector = AsyncMock()
+
+    def create_default_locator():
+        loc = MagicMock()
+        loc.count = AsyncMock(return_value=0)
+        loc.is_visible = AsyncMock(return_value=False)
+        loc.first = MagicMock()
+        loc.first.is_visible = AsyncMock(return_value=False)
+        loc.first.text_content = AsyncMock(return_value="")
+        loc.first.click = AsyncMock()
+        loc.first.get_attribute = AsyncMock(return_value=None)
+        loc.first.is_enabled = AsyncMock(return_value=True)
+        loc.all = AsyncMock(return_value=[])
+        loc.nth = MagicMock(return_value=loc)
+        return loc
+
+    # Setup faucet button (found by selector iteration)
+    faucet_btn = create_default_locator()
     faucet_btn.count = AsyncMock(return_value=1)
-    
-    # Setup success message
-    success_msg = MagicMock()
+    faucet_btn.first.is_visible = AsyncMock(return_value=True)
+    faucet_btn.first.text_content = AsyncMock(return_value="Get Reward")
+    faucet_btn.first.is_enabled = AsyncMock(return_value=True)
+    faucet_btn.first.get_attribute = AsyncMock(return_value=None)
+
+    # Setup success message (needs is_visible on the locator itself for .nth(i).is_visible() check)
+    success_msg = create_default_locator()
     success_msg.count = AsyncMock(return_value=1)
-    
+    success_msg.is_visible = AsyncMock(return_value=True)
+    success_msg.text_content = AsyncMock(return_value="Claimed successfully!")
+    success_msg.first.is_visible = AsyncMock(return_value=True)
+    success_msg.first.text_content = AsyncMock(return_value="Claimed successfully!")
+
     def locator_side_effect(selector):
-        if "button" in selector and "center" in selector and "a" in selector:
-            return unlock_btn
-        elif "select-turnstile" in selector:
-            return turnstile_opt
-        elif "form > button" in selector:
-            return daily_claim_btn
-        elif "get_reward_button" in selector or "faucet_btn" in selector:
+        if "#get_reward_button" in selector:
             return faucet_btn
-        elif "success_msg" in selector or "alert-success" in selector:
+        elif "success" in selector.lower() or "alert-success" in selector:
             return success_msg
-        return MagicMock()
-    
+        elif "Get reward" in selector or "Get Reward" in selector or "Claim" in selector:
+            return faucet_btn
+        return create_default_locator()
+
     mock_page.locator.side_effect = locator_side_effect
-    
+
     bot = FireFaucetBot(mock_settings, mock_page)
+    bot.detect_cloudflare_block = AsyncMock(return_value=False)
+    bot.handle_cloudflare = AsyncMock()
     bot.get_balance = AsyncMock(return_value="100")
     bot.get_timer = AsyncMock(return_value=0)
     bot.human_like_click = AsyncMock()
     bot.random_delay = AsyncMock()
-    
+    bot.idle_mouse = AsyncMock()
+    bot.simulate_reading = AsyncMock()
+
     result = await bot.claim()
-    
+
     assert result.success is True
     assert result.status == "Claimed"
 

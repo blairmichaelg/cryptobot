@@ -1,41 +1,108 @@
 {
   "u1": {
     "locale": "en-AU",
-    "timezone_id": "Australia/Sydney"
+    "timezone_id": "Australia/Sydney",
+    "canvas_seed": 817021,
+    "gpu_index": 1,
+    "audio_seed": 388171,
+    "languages": [
+      "en-AU",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "test_profile": {
     "locale": "en-AU",
-    "timezone_id": "America/Los_Angeles"
+    "timezone_id": "America/Los_Angeles",
+    "canvas_seed": 615969,
+    "gpu_index": 2,
+    "audio_seed": 53393,
+    "languages": [
+      "en-AU",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "test_user_123": {
     "locale": "en-GB",
     "timezone_id": "Asia/Tokyo",
     "canvas_seed": 756809,
-    "gpu_index": 6
+    "gpu_index": 6,
+    "audio_seed": 727040,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "user_alice": {
     "locale": "en-GB",
     "timezone_id": "America/New_York",
     "canvas_seed": 658408,
-    "gpu_index": 9
+    "gpu_index": 9,
+    "audio_seed": 199062,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "user_bob": {
     "locale": "en-AU",
     "timezone_id": "Asia/Tokyo",
     "canvas_seed": 667811,
-    "gpu_index": 0
+    "gpu_index": 0,
+    "audio_seed": 622217,
+    "languages": [
+      "en-AU",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "user_charlie": {
     "locale": "en-GB",
     "timezone_id": "America/Chicago",
     "canvas_seed": 306946,
-    "gpu_index": 11
+    "gpu_index": 11,
+    "audio_seed": 60053,
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "persistence_test_user": {
     "locale": "en-AU",
     "timezone_id": "Asia/Tokyo",
     "canvas_seed": 269312,
-    "gpu_index": 8
+    "gpu_index": 8,
+    "audio_seed": 596316,
+    "languages": [
+      "en-AU",
+      "en"
+    ],
+    "platform": "Win32",
+    "viewport_width": null,
+    "viewport_height": null,
+    "device_scale_factor": null
   },
   "test_user@example.com": {
     "human_profile": "fast"
