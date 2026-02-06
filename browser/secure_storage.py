@@ -302,7 +302,7 @@ class SecureCookieStorage:
                 selected_templates.append({
                     "name": random.choice(["session_id", "user_id", "pref", "lang", "theme"]),
                     "domain": domain,
-                    "value": self._generate_random_id(secrets.randbelow(17) + 16)
+                    "value": self._generate_random_id(random.randint(16, 32))
                 })
             
             # Generate aged cookies with realistic timestamps
