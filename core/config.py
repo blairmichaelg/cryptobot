@@ -56,7 +56,7 @@ class BotSettings(BaseSettings):
     
     # 2Captcha Proxy Auto-Refresh Settings
     proxy_auto_refresh_enabled: bool = False  # Enable automatic proxy refresh (opt-in)
-    proxy_auto_refresh_interval_hours: int = 24  # How often to check and refresh proxies
+    proxy_auto_refresh_interval_hours: int = 24  # Recommended interval for scheduled refresh (for reference)
     proxy_min_healthy_count: int = 50  # Minimum healthy proxies before triggering refresh
     proxy_target_count: int = 100  # Target total proxy count
     proxy_max_latency_ms: float = 3000  # Maximum acceptable proxy latency in milliseconds

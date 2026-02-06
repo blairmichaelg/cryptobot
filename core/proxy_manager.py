@@ -1243,9 +1243,7 @@ class ProxyManager:
                     avg_latency = sum(latencies) / len(latencies)
                     if avg_latency <= max_latency_ms:
                         fast_proxies.append(proxy)
-                else:
-                    # If no latency data, include it
-                    fast_proxies.append(proxy)
+                # Note: Proxies without latency data were not validated - exclude them
             
             if fast_proxies:
                 logger.info(f"[2CAPTCHA] ✓ Filtered to {len(fast_proxies)} proxies with <{max_latency_ms}ms latency")
@@ -1259,7 +1257,8 @@ class ProxyManager:
         logger.info(f"[2CAPTCHA]   Total proxies: {health_stats.get('total', 0)}")
         logger.info(f"[2CAPTCHA]   Healthy: {health_stats.get('healthy', 0)}")
         logger.info(f"[2CAPTCHA]   Dead: {health_stats.get('dead', 0)}")
-        logger.info(f"[2CAPTCHA]   Avg latency: {health_stats.get('avg_latency_ms', 0):.0f}ms")
+        avg_latency = health_stats.get('avg_latency_ms') or 0
+        logger.info(f"[2CAPTCHA]   Avg latency: {avg_latency:.0f}ms")
         logger.info(f"[2CAPTCHA]   File: {os.path.abspath(self.settings.residential_proxies_file)}")
         logger.info(f"[2CAPTCHA] ═══════════════════════════")
         

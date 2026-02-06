@@ -96,11 +96,21 @@ success = await pm.auto_refresh_proxies(
 
 ### Scheduled Refresh
 
-To schedule automatic refresh (e.g., daily at 2 AM), add to your cron:
+To schedule automatic refresh (e.g., daily at 2 AM), add to your crontab:
 
 ```bash
-0 2 * * * cd /path/to/cryptobot && python3 -c "import asyncio; from core.config import BotSettings; from core.proxy_manager import ProxyManager; asyncio.run(ProxyManager(BotSettings()).auto_refresh_proxies())"
+# Edit crontab
+crontab -e
+
+# Add this line (adjust path as needed)
+0 2 * * * /path/to/cryptobot/scripts/refresh_proxies.py
 ```
+
+The `refresh_proxies.py` script:
+- Checks if auto-refresh is enabled in config
+- Checks current proxy pool health
+- Refreshes if needed
+- Exits cleanly with status code for monitoring
 
 Or integrate into your scheduler:
 
