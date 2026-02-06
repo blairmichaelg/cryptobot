@@ -77,43 +77,42 @@ class WithdrawalAnalytics:
     def _init_database(self):
         """Create database schema if it doesn't exist."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS withdrawals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp REAL NOT NULL,
-                    faucet TEXT NOT NULL,
-                    cryptocurrency TEXT NOT NULL,
-                    amount REAL NOT NULL,
-                    network_fee REAL DEFAULT 0.0,
-                    platform_fee REAL DEFAULT 0.0,
-                    withdrawal_method TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    balance_before REAL DEFAULT 0.0,
-                    balance_after REAL DEFAULT 0.0,
-                    tx_id TEXT,
-                    notes TEXT
-                )
-            """)
-            
-            # Create indexes for common queries
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_timestamp 
-                ON withdrawals(timestamp)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_faucet 
-                ON withdrawals(faucet)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_crypto 
-                ON withdrawals(cryptocurrency)
-            """)
-            
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS withdrawals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp REAL NOT NULL,
+                        faucet TEXT NOT NULL,
+                        cryptocurrency TEXT NOT NULL,
+                        amount REAL NOT NULL,
+                        network_fee REAL DEFAULT 0.0,
+                        platform_fee REAL DEFAULT 0.0,
+                        withdrawal_method TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        balance_before REAL DEFAULT 0.0,
+                        balance_after REAL DEFAULT 0.0,
+                        tx_id TEXT,
+                        notes TEXT
+                    )
+                """)
+                
+                # Create indexes for common queries
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_timestamp 
+                    ON withdrawals(timestamp)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_faucet 
+                    ON withdrawals(faucet)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_crypto 
+                    ON withdrawals(cryptocurrency)
+                """)
+                
+                conn.commit()
             logger.info("Withdrawal analytics database schema initialized")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -168,26 +167,25 @@ class WithdrawalAnalytics:
         )
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO withdrawals (
-                    timestamp, faucet, cryptocurrency, amount,
-                    network_fee, platform_fee, withdrawal_method, status,
-                    balance_before, balance_after, tx_id, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                record.timestamp, record.faucet, record.cryptocurrency,
-                record.amount, record.network_fee, record.platform_fee,
-                record.withdrawal_method, record.status,
-                record.balance_before, record.balance_after,
-                record.tx_id, record.notes
-            ))
-            
-            record_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    INSERT INTO withdrawals (
+                        timestamp, faucet, cryptocurrency, amount,
+                        network_fee, platform_fee, withdrawal_method, status,
+                        balance_before, balance_after, tx_id, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    record.timestamp, record.faucet, record.cryptocurrency,
+                    record.amount, record.network_fee, record.platform_fee,
+                    record.withdrawal_method, record.status,
+                    record.balance_before, record.balance_after,
+                    record.tx_id, record.notes
+                ))
+                
+                record_id = cursor.lastrowid
+                conn.commit()
             
             total_fee = network_fee + platform_fee
             net_amount = amount - total_fee
@@ -223,29 +221,28 @@ class WithdrawalAnalytics:
         cutoff = time.time() - (hours * 3600)
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            query = """
-                SELECT 
-                    SUM(amount) as total_earned,
-                    SUM(network_fee + platform_fee) as total_fees
-                FROM withdrawals
-                WHERE timestamp >= ? AND status = ?
-            """
-            params = [cutoff, "success"]
-            
-            if faucet:
-                query += " AND faucet = ?"
-                params.append(faucet)
-            
-            if cryptocurrency:
-                query += " AND cryptocurrency = ?"
-                params.append(cryptocurrency.upper())
-            
-            cursor.execute(query, params)
-            row = cursor.fetchone()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = """
+                    SELECT 
+                        SUM(amount) as total_earned,
+                        SUM(network_fee + platform_fee) as total_fees
+                    FROM withdrawals
+                    WHERE timestamp >= ? AND status = ?
+                """
+                params = [cutoff, "success"]
+                
+                if faucet:
+                    query += " AND faucet = ?"
+                    params.append(faucet)
+                
+                if cryptocurrency:
+                    query += " AND cryptocurrency = ?"
+                    params.append(cryptocurrency.upper())
+                
+                cursor.execute(query, params)
+                row = cursor.fetchone()
             
             total_earned = row[0] or 0.0
             total_fees = row[1] or 0.0
@@ -282,43 +279,42 @@ class WithdrawalAnalytics:
         cutoff = time.time() - (hours * 3600)
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                SELECT 
-                    faucet,
-                    COUNT(*) as total_withdrawals,
-                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful,
-                    SUM(amount) as total_amount,
-                    SUM(network_fee + platform_fee) as total_fees,
-                    AVG(network_fee + platform_fee) as avg_fee
-                FROM withdrawals
-                WHERE timestamp >= ?
-                GROUP BY faucet
-            """, (cutoff,))
-            
-            results = {}
-            for row in cursor.fetchall():
-                faucet = row[0]
-                total = row[1]
-                successful = row[2]
-                total_amount = row[3] or 0.0
-                total_fees = row[4] or 0.0
-                avg_fee = row[5] or 0.0
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
                 
-                results[faucet] = {
-                    "total_withdrawals": total,
-                    "successful_withdrawals": successful,
-                    "success_rate": (successful / total * 100) if total > 0 else 0,
-                    "total_earned": total_amount,
-                    "total_fees": total_fees,
-                    "net_profit": total_amount - total_fees,
-                    "avg_fee": avg_fee,
-                    "fee_percentage": (total_fees / total_amount * 100) if total_amount > 0 else 0
-                }
+                cursor.execute("""
+                    SELECT 
+                        faucet,
+                        COUNT(*) as total_withdrawals,
+                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful,
+                        SUM(amount) as total_amount,
+                        SUM(network_fee + platform_fee) as total_fees,
+                        AVG(network_fee + platform_fee) as avg_fee
+                    FROM withdrawals
+                    WHERE timestamp >= ?
+                    GROUP BY faucet
+                """, (cutoff,))
+                
+                results = {}
+                for row in cursor.fetchall():
+                    faucet = row[0]
+                    total = row[1]
+                    successful = row[2]
+                    total_amount = row[3] or 0.0
+                    total_fees = row[4] or 0.0
+                    avg_fee = row[5] or 0.0
+                    
+                    results[faucet] = {
+                        "total_withdrawals": total,
+                        "successful_withdrawals": successful,
+                        "success_rate": (successful / total * 100) if total > 0 else 0,
+                        "total_earned": total_amount,
+                        "total_fees": total_fees,
+                        "net_profit": total_amount - total_fees,
+                        "avg_fee": avg_fee,
+                        "fee_percentage": (total_fees / total_amount * 100) if total_amount > 0 else 0
+                    }
             
-            conn.close()
             return results
         except Exception as e:
             logger.error(f"Failed to get faucet performance: {e}")
@@ -495,16 +491,15 @@ class WithdrawalAnalytics:
         cutoff = time.time() - (hours * 3600)
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                SELECT COUNT(*) FROM withdrawals
-                WHERE faucet = ? AND cryptocurrency = ? AND timestamp >= ?
-            """, (faucet, cryptocurrency, cutoff))
-            
-            count = cursor.fetchone()[0]
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT COUNT(*) FROM withdrawals
+                    WHERE faucet = ? AND cryptocurrency = ? AND timestamp >= ?
+                """, (faucet, cryptocurrency, cutoff))
+                
+                count = cursor.fetchone()[0]
             
             return count > 0
         except Exception as e:
@@ -529,34 +524,33 @@ class WithdrawalAnalytics:
             List of withdrawal records as dicts
         """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = "SELECT * FROM withdrawals WHERE 1=1"
+                params = []
+                
+                if faucet:
+                    query += " AND faucet = ?"
+                    params.append(faucet)
+                
+                if cryptocurrency:
+                    query += " AND cryptocurrency = ?"
+                    params.append(cryptocurrency.upper())
+                
+                query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+                
+                cursor.execute(query, params)
+                
+                # Get column names
+                columns = [desc[0] for desc in cursor.description]
+                
+                # Convert rows to dicts
+                records = []
+                for row in cursor.fetchall():
+                    records.append(dict(zip(columns, row)))
             
-            query = "SELECT * FROM withdrawals WHERE 1=1"
-            params = []
-            
-            if faucet:
-                query += " AND faucet = ?"
-                params.append(faucet)
-            
-            if cryptocurrency:
-                query += " AND cryptocurrency = ?"
-                params.append(cryptocurrency.upper())
-            
-            query += " ORDER BY timestamp DESC LIMIT ?"
-            params.append(limit)
-            
-            cursor.execute(query, params)
-            
-            # Get column names
-            columns = [desc[0] for desc in cursor.description]
-            
-            # Convert rows to dicts
-            records = []
-            for row in cursor.fetchall():
-                records.append(dict(zip(columns, row)))
-            
-            conn.close()
             return records
         except Exception as e:
             logger.error(f"Failed to get withdrawal history: {e}")
