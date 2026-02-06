@@ -226,7 +226,7 @@ class BrowserManager:
             # Enable SharedWorker (blocking is suspicious)
             "dom.workers.sharedWorkers.enabled": True,
         }
-        kwargs["config"] = firefox_prefs
+        kwargs["firefox_user_prefs"] = firefox_prefs
 
         # We keep the camoufox instance wrapper
         try:
