@@ -130,9 +130,9 @@ class FaucetCryptoBot(FaucetBot):
                             if await self.page.locator(indicator).count() > 0:
                                 logger.info(f"[{self.faucet_name}] ✅ Login successful (detected: {indicator})")
                                 return True
-                        except:
+                        except Exception:
                             continue
-                    
+
                     # Check if we're still on login page (failure)
                     if "/login" in current_url.lower():
                         # Check for error messages

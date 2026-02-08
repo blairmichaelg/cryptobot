@@ -23,6 +23,7 @@ from .blocker import ResourceBlocker
 from .secure_storage import SecureCookieStorage
 from .stealth_hub import StealthHub
 from core.config import CONFIG_DIR
+from urllib.parse import urlparse
 import logging
 import random
 import time
@@ -153,7 +154,6 @@ class BrowserManager:
         if not proxy:
             return ""
         try:
-            from urllib.parse import urlparse
             candidate = proxy if "://" in proxy else f"http://{proxy}"
             parsed = urlparse(candidate)
             if parsed.hostname and parsed.port:
@@ -502,7 +502,6 @@ class BrowserManager:
         if proxy:
             # Parse proxy string if it's a URL
             if "://" in proxy:
-                from urllib.parse import urlparse
                 p = urlparse(proxy)
                 context_args["proxy"] = {
                     "server": f"{p.scheme}://{p.hostname}:{p.port}",
@@ -547,13 +546,13 @@ class BrowserManager:
 
         # Add Sec-CH-UA client hints based on UA string
         if "Chrome/" in ua:
-            chrome_match = ua.split("Chrome/")[-1].split(" ")[0].split(".")[0] if "Chrome/" in ua else "131"
+            chrome_match = ua.split("Chrome/")[-1].split(" ")[0].split(".")[0]
             extra_headers["Sec-CH-UA"] = f'"Chromium";v="{chrome_match}", "Google Chrome";v="{chrome_match}", "Not-A.Brand";v="99"'
             extra_headers["Sec-CH-UA-Mobile"] = "?0"
             extra_headers["Sec-CH-UA-Platform"] = f'"{platform_name or "Windows"}"'
             extra_headers["Sec-CH-UA-Full-Version-List"] = f'"Chromium";v="{chrome_match}.0.0.0", "Google Chrome";v="{chrome_match}.0.0.0", "Not-A.Brand";v="99.0.0.0"'
         elif "Edg/" in ua:
-            edge_match = ua.split("Edg/")[-1].split(".")[0] if "Edg/" in ua else "133"
+            edge_match = ua.split("Edg/")[-1].split(".")[0]
             extra_headers["Sec-CH-UA"] = f'"Chromium";v="{edge_match}", "Microsoft Edge";v="{edge_match}", "Not-A.Brand";v="99"'
             extra_headers["Sec-CH-UA-Mobile"] = "?0"
             extra_headers["Sec-CH-UA-Platform"] = f'"Windows"'
@@ -761,7 +760,7 @@ class BrowserManager:
         cookies = []
         used_combos = set()
         
-        for i in range(cookie_count):
+        for _ in range(cookie_count):
             domain = random.choice(base_domains)
             template = random.choice(cookie_templates)
             combo_key = f"{domain}:{template['name']}"
@@ -792,17 +791,11 @@ class BrowserManager:
             logger.info(f"🍪 Seeded {len(cookies)} realistic cookies for {profile_name} (age ~{age_days}d)")
 
     async def save_proxy_binding(self, profile_name: str, proxy: str):
-        """Save the proxy binding for a profile to ensuring sticky sessions."""
+        """Save the proxy binding for a profile to ensure sticky sessions."""
         try:
             bindings_file = CONFIG_DIR / "proxy_bindings.json"
-            data = {}
-            if os.path.exists(bindings_file):
-                with open(bindings_file, "r") as f:
-                    try:
-                        data = json.load(f)
-                    except json.JSONDecodeError:
-                        pass
-            
+            data = self._safe_json_read(str(bindings_file)) or {}
+
             data[profile_name] = proxy
 
             self._safe_json_write(str(bindings_file), data)
@@ -860,7 +853,7 @@ class BrowserManager:
             locale: BCP-47 locale (e.g. ``en-US``).
             timezone_id: IANA timezone (e.g. ``America/New_York``).
             canvas_seed: Seed for canvas noise generation.
-            gpu_index: Index into GPU config array (0--12).
+            gpu_index: Index into GPU config array (0--16).
             audio_seed: Seed for audio fingerprint noise.
             languages: Navigator language list.
             platform: ``navigator.platform`` value.
@@ -870,22 +863,16 @@ class BrowserManager:
         """
         try:
             fingerprint_file = CONFIG_DIR / "profile_fingerprints.json"
-            data = {}
-            if os.path.exists(fingerprint_file):
-                with open(fingerprint_file, "r") as f:
-                    try:
-                        data = json.load(f)
-                    except json.JSONDecodeError:
-                        pass
-            
+            data = self._safe_json_read(str(fingerprint_file)) or {}
+
             # Generate deterministic fingerprint parameters based on profile name
             if canvas_seed is None:
                 # Use hash of profile name to generate consistent seed
                 canvas_seed = hash(profile_name) % 1000000
             
             if gpu_index is None:
-                # Use hash to select GPU from 13 available configs (0-12)
-                gpu_index = hash(profile_name + "_gpu") % 13
+                # Use hash to select GPU from 17 available configs (0-16)
+                gpu_index = hash(profile_name + "_gpu") % 17
 
             if audio_seed is None:
                 audio_seed = hash(profile_name + "_audio") % 1000000
@@ -982,7 +969,8 @@ class BrowserManager:
                 return None
             return await context.new_page()
         except Exception as e:
-            if "Target.*closed" in str(e) or "Connection.*closed" in str(e):
+            err_str = str(e).lower()
+            if "closed" in err_str and ("target" in err_str or "connection" in err_str):
                 logger.debug(f"Context closed during page creation: {e}")
             else:
                 logger.warning(f"Failed to create page: {e}")
@@ -1051,7 +1039,8 @@ class BrowserManager:
             return False
         except Exception as e:
             # Don't log closed context errors as warnings - they're expected
-            if "Target.*closed" not in str(e) and "Connection.*closed" not in str(e):
+            err_str = str(e).lower()
+            if not ("closed" in err_str and ("target" in err_str or "connection" in err_str)):
                 logger.debug(f"Context health check failed: {e}")
             if context:
                 self._closed_contexts.add(id(context))
@@ -1083,7 +1072,8 @@ class BrowserManager:
             return False
         except Exception as e:
             # Don't log closed page errors as warnings - they're expected
-            if "Target.*closed" not in str(e) and "Connection.*closed" not in str(e):
+            err_str = str(e).lower()
+            if not ("closed" in err_str and ("target" in err_str or "connection" in err_str)):
                 logger.debug(f"Page health check failed: {e}")
             return False
 
@@ -1142,7 +1132,8 @@ class BrowserManager:
             return False
         except Exception as e:
             # Don't log closed context errors as warnings
-            if "Target.*closed" in str(e) or "Connection.*closed" in str(e):
+            err_str = str(e).lower()
+            if "closed" in err_str and ("target" in err_str or "connection" in err_str):
                 logger.debug(f"Context close on already-closed context: {e}")
             else:
                 logger.warning(f"Context close failed: {e}")
@@ -1174,7 +1165,7 @@ class BrowserManager:
             status = await page.evaluate("async () => { try { return (await fetch(window.location.href, {method: 'HEAD'})).status; } catch(e) { return 0; } }")
             
             # Note: Fetch might be blocked too, so we also check readyState and content
-            if status == 403 or status == 401:
+            if status in (403, 401):
                 return {"blocked": True, "network_error": False, "status": status}
             if status == 0:
                 # Potential network error or fetch blocked

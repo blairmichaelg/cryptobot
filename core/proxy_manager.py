@@ -23,7 +23,10 @@ import time
 import json
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
-from core.config import AccountProfile, BotSettings
+from urllib.parse import urlparse
+
+from core.config import AccountProfile, BotSettings, CONFIG_DIR
+from core.utils import safe_json_read, safe_json_write
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +55,9 @@ class Proxy:
             ``protocol://user:pass@ip:port`` (with credentials) or
             ``protocol://ip:port`` (without).
         """
-        if self.username and self.password is not None:
+        if self.username:
             # Include colon even if password is empty to support providers that expect user: (e.g., Zyte proxy auth)
             return f"{self.protocol}://{self.username}:{self.password}@{self.ip}:{self.port}"
-        elif self.username:
-            # Fix #35: Keep username even if password is empty (Common for whitelisted sessions)
-            return f"{self.protocol}://{self.username}@{self.ip}:{self.port}"
         return f"{self.protocol}://{self.ip}:{self.port}"
 
     def to_2captcha_string(self) -> str:
@@ -129,7 +129,6 @@ class ProxyManager:
         self.FAILURE_COOLDOWN = 300      # 5 minutes for connection errors
         
         # Health persistence file
-        from core.config import CONFIG_DIR
         self.health_file = str(CONFIG_DIR / "proxy_health.json")
 
         # Auto-load on init
@@ -170,45 +169,10 @@ class ProxyManager:
         )
         return len(proxies)
 
-    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3) -> None:
-        """Atomically write JSON with backup rotation and validation."""
-        try:
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-            if os.path.exists(filepath):
-                backup_base = filepath + ".backup"
-                for i in range(max_backups - 1, 0, -1):
-                    old = f"{backup_base}.{i}"
-                    new = f"{backup_base}.{i+1}"
-                    if os.path.exists(old):
-                        os.replace(old, new)
-                os.replace(filepath, f"{backup_base}.1")
-
-            temp_file = filepath + ".tmp"
-            with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            with open(temp_file, "r", encoding="utf-8") as f:
-                json.load(f)
-            os.replace(temp_file, filepath)
-        except Exception as e:
-            logger.warning(f"Failed to safely write {filepath}: {e}")
-
-    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
-        """Read JSON with automatic fallback to backup files on corruption."""
-        paths = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
-        for path in paths:
-            if not os.path.exists(path):
-                continue
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                continue
-        return None
-
     def _proxy_key(self, proxy: Proxy) -> str:
         """Generate a unique dictionary key for a proxy (credentials + host:port)."""
-        return proxy.to_string().split("://", 1)[1] if "://" in proxy.to_string() else proxy.to_string()
+        s = proxy.to_string()
+        return s.split("://", 1)[1] if "://" in s else s
 
     def _mask_proxy_key(self, proxy_key: str) -> str:
         """Redact API keys / credentials from a proxy key for safe logging."""
@@ -227,7 +191,6 @@ class ProxyManager:
         if not proxy_str:
             return ""
         try:
-            from urllib.parse import urlparse
             candidate = proxy_str if "://" in proxy_str else f"http://{proxy_str}"
             parsed = urlparse(candidate)
             if parsed.hostname and parsed.port:
@@ -252,7 +215,7 @@ class ProxyManager:
                 logger.debug(f"No proxy health file found at {self.health_file}")
                 return
 
-            data = self._safe_json_read(self.health_file)
+            data = safe_json_read(self.health_file)
             if not data:
                 return
             
@@ -287,7 +250,7 @@ class ProxyManager:
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse proxy health file: {e}. Starting fresh.")
         except Exception as e:
-            logger.warning(f"Failed to save proxy health data: {e}")
+            logger.warning(f"Failed to load proxy health data: {e}")
 
     def _prune_health_data_for_active_proxies(self, active_proxies: List[Proxy]) -> None:
         """Remove stale health data entries for proxies no longer in the pool."""
@@ -381,7 +344,6 @@ class ProxyManager:
             return None
 
         try:
-            from urllib.parse import urlparse
             candidate = proxy_string
             if "://" not in candidate:
                 candidate = f"http://{candidate}"
@@ -413,7 +375,7 @@ class ProxyManager:
                 "proxy_host_failures": self.proxy_host_failures
             }
 
-            self._safe_json_write(self.health_file, data)
+            safe_json_write(self.health_file, data)
             
             logger.debug(f"Saved proxy health data to {self.health_file}")
             
@@ -459,8 +421,6 @@ class ProxyManager:
         score = max(0.0, min(base, 100.0))
         self.proxy_reputation[proxy_key] = score
         return score
-
-
 
     async def measure_proxy_latency(self, proxy: Proxy) -> Optional[float]:
         """

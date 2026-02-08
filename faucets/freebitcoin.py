@@ -45,7 +45,6 @@ class FreeBitcoinBot(FaucetBot):
             "[data-balance]",
             ".user-balance",
             "span.balance",
-            "#balance_small",
             ".balance-amount",
             "a[href*='logout']",
             "a:has-text('Logout')",
@@ -63,107 +62,6 @@ class FreeBitcoinBot(FaucetBot):
             except Exception:
                 continue
         return False
-
-    async def _find_selector(self, selectors: list, element_name: str = "element", timeout: int = 5000, include_frames: bool = True):
-        """
-        Try multiple selectors and return the first one that exists and is visible.
-        
-        Args:
-            selectors: List of CSS selectors to try
-            element_name: Name of element for logging
-            timeout: Total timeout in milliseconds
-            
-        Returns:
-            Locator if found, None otherwise
-        """
-        for selector in selectors:
-            try:
-                locator = self.page.locator(selector).first
-                # is_visible() already checks existence internally
-                if await locator.is_visible(timeout=timeout):
-                    logger.debug(f"[FreeBitcoin] Found {element_name} with selector: {selector}")
-                    return locator
-            except Exception:
-                continue
-
-        if include_frames:
-            for frame in self.page.frames:
-                if frame == self.page.main_frame:
-                    continue
-                for selector in selectors:
-                    try:
-                        locator = frame.locator(selector).first
-                        if await locator.is_visible(timeout=timeout):
-                            logger.debug(f"[FreeBitcoin] Found {element_name} in frame with selector: {selector}")
-                            return locator
-                    except Exception:
-                        continue
-        
-        logger.warning(f"[FreeBitcoin] Could not find {element_name}. Tried selectors: {selectors}")
-        return None
-
-    async def _find_selector_any_frame(self, selectors: list, element_name: str = "element", timeout: int = 5000):
-        """
-        Try multiple selectors across the main page and iframes.
-
-        Returns:
-            Locator if found, None otherwise
-        """
-        locator = await self._find_selector(selectors, element_name=element_name, timeout=timeout)
-        if locator:
-            return locator
-
-        for frame in self.page.frames:
-            if frame == self.page.main_frame:
-                continue
-            for selector in selectors:
-                try:
-                    candidate = frame.locator(selector).first
-                    if await candidate.is_visible(timeout=timeout):
-                        logger.debug(f"[FreeBitcoin] Found {element_name} in iframe with selector: {selector}")
-                        return candidate
-                except Exception:
-                    continue
-
-        logger.warning(f"[FreeBitcoin] Could not find {element_name} in any frame. Tried selectors: {selectors}")
-        return None
-
-    async def _is_signup_form_field(self, locator) -> bool:
-        """
-        Detect whether a locator belongs to a signup/registration form.
-
-        Returns:
-            bool: True if the field appears to be part of a signup form.
-        """
-        if not locator:
-            return False
-        try:
-            info = await locator.evaluate(
-                """
-                (el) => {
-                    const form = el.closest('form');
-                    return {
-                        id: el.id || '',
-                        name: el.name || '',
-                        formId: form ? (form.id || '') : '',
-                        formName: form ? (form.name || '') : '',
-                        formAction: form ? (form.action || '') : ''
-                    };
-                }
-                """
-            )
-            haystack = " ".join(
-                [
-                    str(info.get("id", "")),
-                    str(info.get("name", "")),
-                    str(info.get("formId", "")),
-                    str(info.get("formName", "")),
-                    str(info.get("formAction", "")),
-                ]
-            ).lower()
-            return any(token in haystack for token in ["signup", "register", "registration"])
-        except Exception:
-            return False
 
     async def _wait_for_captcha_token(self, timeout: int = 15000) -> bool:
         """Wait for a captcha token to be injected into the page."""
@@ -192,8 +90,6 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             return False
 
-
-
     async def _has_session_cookie(self) -> bool:
         try:
             cookies = await self.page.context.cookies(self.base_url)
@@ -201,8 +97,6 @@ class FreeBitcoinBot(FaucetBot):
             return False
         names = {cookie.get("name") for cookie in cookies}
         return "fbtc_session" in names or "fbtc_userid" in names
-
-
 
     async def _log_login_diagnostics(self, context: str) -> None:
         """Log login page diagnostics to identify captcha/input elements."""
@@ -423,7 +317,7 @@ class FreeBitcoinBot(FaucetBot):
         - Single, clean browser-based login flow
         """
         # Check for override (Multi-Account Loop)
-        if hasattr(self, 'settings_account_override') and self.settings_account_override:
+        if self.settings_account_override:
             creds = self.settings_account_override
         else:
             creds = self.settings.get_account("freebitcoin")
@@ -853,7 +747,7 @@ class FreeBitcoinBot(FaucetBot):
                     roll_visible = False
 
                 if roll_visible:
-                    if hasattr(roll_btn, "is_enabled") and not await roll_btn.is_enabled():
+                    if not await roll_btn.is_enabled():
                         logger.warning("[DEBUG] Roll button is visible but disabled")
                         return ClaimResult(
                             success=False,
@@ -914,7 +808,7 @@ class FreeBitcoinBot(FaucetBot):
                         try:
                             await self.page.wait_for_navigation(timeout=8000)
                             logger.debug("[FreeBitcoin] Page navigated")
-                        except:
+                        except Exception:
                             logger.debug("[FreeBitcoin] No navigation detected")
                         
                         # Wait longer for result - FreeBitcoin can take 10-15 seconds
@@ -987,9 +881,9 @@ class FreeBitcoinBot(FaucetBot):
                             
                             # Try to find ANY text on the page that might indicate success
                             try:
-                                page_text = await self.page.text_content()
+                                page_text = await self.page.inner_text("body")
                                 logger.debug(f"[FreeBitcoin] Page text preview: {page_text[:500] if page_text else 'empty'}")
-                            except:
+                            except Exception:
                                 pass
                             
                             return ClaimResult(
@@ -1050,8 +944,7 @@ class FreeBitcoinBot(FaucetBot):
     def get_jobs(self):
         """Returns FreeBitcoin-specific jobs for the scheduler."""
         from core.orchestrator import Job
-        import time
-        
+
         return [
             Job(
                 priority=1,

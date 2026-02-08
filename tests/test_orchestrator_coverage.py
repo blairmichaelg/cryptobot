@@ -322,8 +322,8 @@ class TestJobSchedulerInit:
         scheduler = JobScheduler(mock_settings, mock_browser_manager)
         
         assert scheduler.security_challenge_retries == {}
-        assert scheduler.max_security_retries == 5
-        assert scheduler.security_retry_reset_hours == 24
+        assert scheduler.MAX_SECURITY_RETRIES == 5
+        assert scheduler.SECURITY_RETRY_RESET_HOURS == 24
     
     def test_scheduler_init_backoff_tracking(self, mock_settings, mock_browser_manager):
         """Test exponential backoff tracking initialization."""

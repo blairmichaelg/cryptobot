@@ -10,8 +10,13 @@ Implements the ``firefaucet.win`` faucet with:
 Claim interval: ~30 minutes (auto-faucet mode).
 """
 
+from typing import Any
+from playwright.async_api import Page
+from core.config import BotSettings
 from .base import FaucetBot, ClaimResult
 import logging
+import re
+import time
 from solvers.shortlink import ShortlinkSolver
 import asyncio
 import random
@@ -27,7 +32,7 @@ class FireFaucetBot(FaucetBot):
     manual claim workflows, with progressive Cloudflare bypass logic.
     """
 
-    def __init__(self, settings, page, **kwargs):
+    def __init__(self, settings: BotSettings, page: Page, **kwargs: Any) -> None:
         """Initialise the FireFaucet bot.
 
         Args:
@@ -275,7 +280,7 @@ class FireFaucetBot(FaucetBot):
         Returns:
             bool: True if login successful, False otherwise
         """
-        if hasattr(self, 'settings_account_override') and self.settings_account_override:
+        if self.settings_account_override:
             creds = self.settings_account_override
         else:
             creds = self.settings.get_account("fire_faucet")
@@ -343,7 +348,7 @@ class FireFaucetBot(FaucetBot):
                             logger.info(f"[{self.faucet_name}] Found login field with selector: {sel}")
                             found = True
                             break
-                    except:
+                    except Exception:
                         pass
                 if not found:
                     # Log page info for debugging
@@ -354,7 +359,7 @@ class FireFaucetBot(FaucetBot):
                         # Check if we hit adblock page
                         if "/adblock" in url:
                             logger.error(f"[{self.faucet_name}] Site detected us as using adblock!")
-                    except:
+                    except Exception:
                         pass
                     raise e
             
@@ -384,23 +389,23 @@ class FireFaucetBot(FaucetBot):
             # Check for button before trying to click
             submit_btn = self.page.locator('button.submitbtn, button[type="submit"]')
             if await submit_btn.count() > 0:
-                 logger.info(f"[{self.faucet_name}] Submit button found. Clicking...")
-                 # Ensure it's not disabled
-                 if await submit_btn.is_disabled():
-                     logger.warning(f"[{self.faucet_name}] Submit button is disabled! Waiting...")
-                     await self.page.wait_for_function("document.querySelector('button.submitbtn, button[type=\"submit\"]').disabled === false", timeout=5000)
+                logger.info(f"[{self.faucet_name}] Submit button found. Clicking...")
+                # Ensure it's not disabled
+                if await submit_btn.is_disabled():
+                    logger.warning(f"[{self.faucet_name}] Submit button is disabled! Waiting...")
+                    await self.page.wait_for_function("document.querySelector('button.submitbtn, button[type=\"submit\"]').disabled === false", timeout=5000)
 
-                 await self.human_like_click(submit_btn)
+                await self.human_like_click(submit_btn)
             else:
-                 logger.warning(f"[{self.faucet_name}] Submit button NOT found via locator. Trying generic form submit...")
-                 await self.page.evaluate("document.forms[0].submit()")
+                logger.warning(f"[{self.faucet_name}] Submit button NOT found via locator. Trying generic form submit...")
+                await self.page.evaluate("document.forms[0].submit()")
 
             # Wait for navigation or dashboard elements
             logger.info(f"[{self.faucet_name}] Waiting for post-login state...")
             
             # Poll for success (max 30 seconds)
-            start_time = asyncio.get_event_loop().time()
-            while (asyncio.get_event_loop().time() - start_time) < 30:
+            start_time = time.monotonic()
+            while (time.monotonic() - start_time) < 30:
                 try:
                     url = self.page.url
                     # 1. Check URL
@@ -420,9 +425,9 @@ class FireFaucetBot(FaucetBot):
                         return False
 
                     # 4. Check if we are still on login page
-                    if "/login" in url and (asyncio.get_event_loop().time() - start_time) > 10:
-                         # If stuck on login for 10s, try verify button again
-                         logger.debug(f"[{self.faucet_name}] Still on login page...")
+                    if "/login" in url and (time.monotonic() - start_time) > 10:
+                        # If stuck on login for 10s, try verify button again
+                        logger.debug(f"[{self.faucet_name}] Still on login page...")
                          
                 except Exception:
                     pass 
@@ -437,15 +442,12 @@ class FireFaucetBot(FaucetBot):
             return False
 
 
-    
-
     def get_jobs(self):
         """
         Returns FireFaucet-specific jobs including daily bonus and shortlinks.
         """
         from core.orchestrator import Job
-        import time
-        
+
         jobs = []
         f_type = "fire_faucet"
         
@@ -548,7 +550,6 @@ class FireFaucetBot(FaucetBot):
     
     async def daily_bonus_wrapper(self, page) -> ClaimResult:
         """Wrapper for daily bonus task."""
-        from .base import ClaimResult
         self.page = page
         if not await self.login_wrapper():
             return ClaimResult(success=False, status="Login Failed", next_claim_minutes=30)
@@ -591,7 +592,6 @@ class FireFaucetBot(FaucetBot):
     
     async def shortlinks_wrapper(self, page) -> ClaimResult:
         """Wrapper for shortlinks task."""
-        from .base import ClaimResult
         self.page = page
         if not await self.login_wrapper():
             return ClaimResult(success=False, status="Login Failed", next_claim_minutes=30)
@@ -743,8 +743,8 @@ class FireFaucetBot(FaucetBot):
             logger.info(f"[{self.faucet_name}] Timer status: {wait} minutes")
             
             if wait > 0:
-                 logger.info(f"[{self.faucet_name}] Claim not ready, waiting {wait} minutes")
-                 return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait, balance=balance)
+                logger.info(f"[{self.faucet_name}] Claim not ready, waiting {wait} minutes")
+                return ClaimResult(success=True, status="Timer Active", next_claim_minutes=wait, balance=balance)
 
             # Add stealth delay before solving CAPTCHA
             await self.idle_mouse(duration=random.uniform(1.0, 2.0))
@@ -979,7 +979,6 @@ class FireFaucetBot(FaucetBot):
                         if phrase in page_text_lower:
                             logger.info(f"[{self.faucet_name}] ✅ Success phrase found in page: '{phrase}'")
                             # Extract amount if visible in text
-                            import re
                             amount_match = re.search(r'(\d+\.?\d*)\s*(satoshi|sat|btc)', page_text_lower)
                             if amount_match:
                                 amount = amount_match.group(1)
@@ -1063,9 +1062,9 @@ class FireFaucetBot(FaucetBot):
                         if not button_still_present:
                             logger.info(f"[{self.faucet_name}] ✅ Claim button disappeared - assuming success")
                             success_found = True
-                    except:
+                    except Exception:
                         pass
-                
+
                 if success_found:
                     # Get updated balance
                     new_balance = await self.get_balance(balance_selectors[0], fallback_selectors=balance_selectors[1:])
@@ -1074,7 +1073,6 @@ class FireFaucetBot(FaucetBot):
                     # Extract amount from success message if available
                     amount = "unknown"
                     if success_msg_text:
-                        import re
                         amount_match = re.search(r'(\d+\.?\d*)\s*(satoshi|sat|btc)', success_msg_text.lower())
                         if amount_match:
                             amount = amount_match.group(1)
@@ -1098,7 +1096,7 @@ class FireFaucetBot(FaucetBot):
                 try:
                     visible_text = await self.page.evaluate("() => document.body.innerText")
                     logger.info(f"[{self.faucet_name}] Page visible text (first 500 chars): {visible_text[:500]}")
-                except:
+                except Exception:
                     pass
                 
                 await self.page.screenshot(path=f"claim_failed_{self.faucet_name}.png", full_page=True)

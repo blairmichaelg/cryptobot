@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from core.config import BotSettings
 from core.logging_setup import setup_logging
 from browser.instance import BrowserManager
-from faucets.pick import PickFaucetBot
+from faucets.pick_base import PickFaucetBot
 
 logger = logging.getLogger(__name__)
 

@@ -8,8 +8,11 @@ import json
 import os
 import time
 import logging
+import math
+import asyncio
+import concurrent.futures
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from collections import defaultdict
@@ -70,7 +73,7 @@ class CryptoPriceFeed:
         """Load cached prices from disk."""
         try:
             if os.path.exists(self.cache_file):
-                with open(self.cache_file, "r") as f:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     # Only load non-expired entries
                     now = time.time()
@@ -86,7 +89,7 @@ class CryptoPriceFeed:
         """Save cache to disk."""
         try:
             os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-            with open(self.cache_file, "w") as f:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f)
         except Exception as e:
             logger.debug(f"Could not save price cache: {e}")
@@ -211,7 +214,7 @@ class EarningsTracker:
         self.last_flush_time = time.time()  # Track last auto-flush
         
         # Ensure file exists and is writable
-        if not os.path.exists(ANALYTICS_FILE):
+        if not os.path.exists(self.storage_file):
             self._save()
              
         self._load()
@@ -353,15 +356,12 @@ class EarningsTracker:
             log_msg += f" - {failure_reason}"
         logger.info(log_msg)
         
-        # Auto-flush if interval exceeded (5 minutes)
+        # Auto-flush with interval logging
         if time.time() - self.last_flush_time > self.AUTO_FLUSH_INTERVAL:
             logger.info("💾 Auto-flushing analytics (interval exceeded)")
-            self._save()
-        else:
-            # Regular save (on every claim for data protection)
-            self._save()
+        self._save()
 
-    def record_cost(self, cost_type: str, amount_usd: float, faucet: str = None) -> None:
+    def record_cost(self, cost_type: str, amount_usd: float, faucet: Optional[str] = None) -> None:
         """Record a cost incurred (e.g. captcha solve)."""
         record = CostRecord(
             timestamp=time.time(),
@@ -383,8 +383,6 @@ class EarningsTracker:
 
     def get_profitability(self, hours: int = 24) -> Dict[str, Any]:
         """Calculate net profit in USD using real-time price feed."""
-        import asyncio
-        
         cutoff = time.time() - (hours * 3600)
         
         # Get price feed
@@ -422,7 +420,6 @@ class EarningsTracker:
         
         if loop and loop.is_running():
             # Already in async context - create task
-            import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, _convert_all())
                 total_earnings_usd = future.result()
@@ -454,8 +451,6 @@ class EarningsTracker:
                 "profitability_score": float  # 0-100+
             }
         """
-        import asyncio
-        
         hours = days * 24
         cutoff = time.time() - (hours * 3600)
         now = time.time()
@@ -490,7 +485,7 @@ class EarningsTracker:
                 # Time decay: recent claims weighted higher (exponential decay)
                 # Formula: weight = e^(-0.1 * days_ago)
                 days_ago = (now - timestamp) / 86400
-                time_weight = 2.71828 ** (-0.1 * days_ago)  # e^(-0.1 * days_ago)
+                time_weight = math.exp(-0.1 * days_ago)
                 
                 earnings_by_currency[currency]["amount"] += amount
                 earnings_by_currency[currency]["weighted_amount"] += amount * time_weight
@@ -518,7 +513,6 @@ class EarningsTracker:
             loop = None
         
         if loop and loop.is_running():
-            import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 total_earned_usd, weighted_earned_usd = executor.submit(asyncio.run, _convert_to_usd()).result()
         else:
@@ -587,7 +581,6 @@ class EarningsTracker:
         Returns:
             Dict mapping faucet -> {hour: roi_percentage}
         """
-        import asyncio
         cutoff = time.time() - (days * 24 * 3600)
         claims = [c for c in self.claims if c.get("timestamp", 0) >= cutoff]
         costs = [c for c in self.costs if c.get("timestamp", 0) >= cutoff]
@@ -604,7 +597,7 @@ class EarningsTracker:
             if not c.get("success"):
                 continue
             ts = c.get("timestamp", 0)
-            hour = datetime.utcfromtimestamp(ts).hour
+            hour = datetime.fromtimestamp(ts, tz=timezone.utc).hour
             f = c.get("faucet")
             currency = c.get("currency")
             if currency:
@@ -613,7 +606,7 @@ class EarningsTracker:
         # Aggregate costs by faucet and hour
         for cost in costs:
             ts = cost.get("timestamp", 0)
-            hour = datetime.utcfromtimestamp(ts).hour
+            hour = datetime.fromtimestamp(ts, tz=timezone.utc).hour
             f = cost.get("faucet") or "global"
             costs_by_faucet_hour[f][hour] += cost.get("amount_usd", 0.0)
 
@@ -638,7 +631,6 @@ class EarningsTracker:
             loop = None
 
         if loop and loop.is_running():
-            import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 earnings_usd = executor.submit(asyncio.run, _convert_earnings_to_usd()).result()
         else:
@@ -748,7 +740,7 @@ class EarningsTracker:
         
         return dict(by_faucet)
     
-    def get_hourly_rate(self, faucet: str = None, hours: int = 24) -> Dict[str, float]:
+    def get_hourly_rate(self, faucet: Optional[str] = None, hours: int = 24) -> Dict[str, float]:
         """
         Calculate earnings per hour by faucet or overall.
         
@@ -996,7 +988,7 @@ class EarningsTracker:
                 os.makedirs(reports_dir, exist_ok=True)
                 
                 filename = os.path.join(reports_dir, f"daily_report_{now.strftime('%Y%m%d')}.txt")
-                with open(filename, "w") as f:
+                with open(filename, "w", encoding="utf-8") as f:
                     f.write(report)
                 logger.info(f"📄 Daily report saved to {filename}")
             except Exception as e:

@@ -156,7 +156,7 @@ class HealthMonitor:
         """Load restart backoff state from file"""
         if self.restart_backoff_file.exists():
             try:
-                with open(self.restart_backoff_file, 'r') as f:
+                with open(self.restart_backoff_file, 'r', encoding='utf-8') as f:
                     state = json.load(f)
                     self.restart_count = state.get('restart_count', 0)
                     last_restart = state.get('last_restart_time')
@@ -174,7 +174,7 @@ class HealthMonitor:
                 'last_restart_time': self.last_restart_time.isoformat() if self.last_restart_time else None,
                 'backoff_seconds': self.backoff_seconds
             }
-            with open(self.restart_backoff_file, 'w') as f:
+            with open(self.restart_backoff_file, 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save restart state: {e}")
@@ -541,14 +541,14 @@ class HealthMonitor:
             exit_code, stdout, _ = self._run_command("df -h / | tail -1 | awk '{print $5}' | sed 's/%//'")
             if exit_code == 0 and stdout:
                 return int(stdout)
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.warning(f"Failed to check disk usage: {e}")
         return 0
-    
+
     def check_memory_usage(self) -> int:
         """
         Check memory usage percentage
-        
+
         Returns:
             Memory usage percentage (0-100)
         """
@@ -558,7 +558,7 @@ class HealthMonitor:
             )
             if exit_code == 0 and stdout:
                 return int(stdout)
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.warning(f"Failed to check memory usage: {e}")
         return 0
     

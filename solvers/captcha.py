@@ -17,11 +17,15 @@ Features:
 """
 
 import asyncio
+import base64
 import logging
 import aiohttp
+import os
+import random
 import time
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +297,6 @@ class CaptchaSolver:
         else:
             test_url = proxy_url
             
-        from urllib.parse import urlparse
         parsed = urlparse(test_url)
         
         proxy_type = "SOCKS5" if "socks" in parsed.scheme.lower() else "HTTP"
@@ -570,11 +573,11 @@ class CaptchaSolver:
 
         # Image Captcha Detection (Fragmented/Custom)
         if not method:
-             # Check for image captchas that might need coordinates (e.g. Cointiply/Freebitco.in custom ones)
-             image_captcha = await page.query_selector("img[src*='captcha'], div.captcha-img, .adcopy-puzzle-image")
-             if image_captcha:
-                 method = "image"
-                 logger.info("Custom Image Captcha detected.")
+            # Check for image captchas that might need coordinates (e.g. Cointiply/Freebitco.in custom ones)
+            image_captcha = await page.query_selector("img[src*='captcha'], div.captcha-img, .adcopy-puzzle-image")
+            if image_captcha:
+                method = "image"
+                logger.info("Custom Image Captcha detected.")
 
         # Normalize/validate sitekey
         if sitekey is not None and not isinstance(sitekey, str):
@@ -736,7 +739,6 @@ class CaptchaSolver:
                 return await self._wait_for_human(page, 120)
             
             # Capture screenshot of the captcha element
-            import base64
             screenshot_bytes = await captcha_element.screenshot()
             screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
             
@@ -802,7 +804,6 @@ class CaptchaSolver:
                     click_points.append((int(parts[0]), int(parts[1])))
             
             # Click at each coordinate (relative to captcha element)
-            import random
             for x, y in click_points:
                 # Translate to page coordinates
                 page_x = box['x'] + x + random.uniform(-2, 2)
@@ -957,7 +958,6 @@ class CaptchaSolver:
                 logger.warning("Could not get captcha bounding box")
                 return None
 
-            import base64
             screenshot_bytes = await captcha_element.screenshot()
             screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
 
@@ -1126,7 +1126,7 @@ class CaptchaSolver:
         elif method == "hcaptcha":
             task_type = "HCaptchaTask" if use_proxy else "HCaptchaTaskProxyLess"
         else:
-             # ReCaptchaV2Task / ReCaptchaV2TaskProxyLess
+            # ReCaptchaV2Task / ReCaptchaV2TaskProxyLess
             task_type = "ReCaptchaV2Task" if use_proxy else "ReCaptchaV2TaskProxyLess"
             
         task_payload = {
@@ -1136,9 +1136,9 @@ class CaptchaSolver:
         }
         
         if use_proxy:
-             task_payload["proxy"] = proxy_context.get("proxy_string")
-             # CapSolver might auto-detect type, but for safety:
-             # task_payload["proxyType"] = proxy_context.get("proxy_type", "http").lower()
+            task_payload["proxy"] = proxy_context.get("proxy_string")
+            # CapSolver might auto-detect type, but for safety:
+            # task_payload["proxyType"] = proxy_context.get("proxy_type", "http").lower()
 
         payload = {
             "clientKey": api_key,
@@ -1245,7 +1245,6 @@ class CaptchaSolver:
             True if the captcha was solved (token detected), False if timed out.
         """
         # HEADLESS CHECK: If running headless, we cannot solve manually.
-        import os
         is_headless = os.environ.get("HEADLESS", "false").lower() == "true"
         
         if is_headless:
@@ -1259,9 +1258,9 @@ class CaptchaSolver:
             logger.info("⚠️ PAUSED FOR MANUAL CAPTCHA SOLVE ⚠️")
             logger.info(f"Please solve the captcha in the browser within {timeout} seconds.")
         
-        start_time = asyncio.get_event_loop().time()
-        
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
+        start_time = time.monotonic()
+
+        while (time.monotonic() - start_time) < timeout:
             await asyncio.sleep(2)
             
             # Check for tokens to see if user solved it

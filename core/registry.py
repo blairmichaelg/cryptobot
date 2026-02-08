@@ -44,14 +44,15 @@ FAUCET_REGISTRY: Dict[str, Union[type, str]] = {
     "litepick": "faucets.litepick.LitePickBot",
     "tronpick": "faucets.tronpick.TronPickBot",
     "dogepick": "faucets.dogepick.DogePickBot",
-    "bchpick": "faucets.bchpick.BchPickBot",
     "solpick": "faucets.solpick.SolPickBot",
     "tonpick": "faucets.tonpick.TonPickBot",
-    "polygonpick": "faucets.polygonpick.PolygonPickBot",
     "binpick": "faucets.binpick.BinPickBot",
-    "dashpick": "faucets.dashpick.DashPickBot",
     "ethpick": "faucets.ethpick.EthPickBot",
     "usdpick": "faucets.usdpick.UsdPickBot",
+    # Dead domains (NXDOMAIN) - disabled:
+    # "bchpick": "faucets.bchpick.BchPickBot",
+    # "polygonpick": "faucets.polygonpick.PolygonPickBot",
+    # "dashpick": "faucets.dashpick.DashPickBot",
 }
 
 def get_faucet_class(faucet_type: str) -> Optional[type]:

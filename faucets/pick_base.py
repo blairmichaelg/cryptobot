@@ -46,7 +46,7 @@ class PickFaucetBase(FaucetBot):
         """
         # Use longer timeout for Pick.io sites - they're consistently slow behind Cloudflare
         # Minimum 90s to account for CF challenges + slow page loads
-        nav_timeout = max(getattr(self.settings, "timeout", 60000), 90000)  # At least 90s for Pick.io
+        nav_timeout = max(getattr(self.settings, "timeout", 60000), 90000)  # At least 90s for Pick.io 
 
         for attempt in range(max_retries):
             try:
@@ -617,7 +617,7 @@ class PickFaucetBase(FaucetBot):
             # Try to wait for button to be visible
             try:
                 await claim_btn.first.wait_for(state="visible", timeout=5000)
-            except:
+            except Exception:
                 pass
             
             if not await claim_btn.first.is_visible():
@@ -748,3 +748,18 @@ class PickFaucetBase(FaucetBot):
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
             return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=720)
+
+
+class PickFaucetBot(PickFaucetBase):
+    """Generic Pick.io family bot instantiated by site name and URL.
+
+    Used for batch registration and testing utilities where a specific
+    per-coin subclass is not needed.  For production claiming, prefer
+    the dedicated subclasses (``LitePickBot``, ``TronPickBot``, etc.).
+    """
+
+    def __init__(self, settings, page, site_name, site_url, **kwargs):
+        super().__init__(settings, page, **kwargs)
+        self.faucet_name = site_name
+        self.base_url = site_url
+        self.coin = site_name.replace("Pick", "").upper()

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.config import BotSettings
 from browser.instance import BrowserManager
-from faucets.registry import get_faucet_class
+from core.registry import get_faucet_class
 
 # Configure logging
 logging.basicConfig(
