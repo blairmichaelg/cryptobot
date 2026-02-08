@@ -1875,6 +1875,7 @@ class ProxyManager:
             ),
         }
 
+        data = None
         try:
             timeout = aiohttp.ClientTimeout(total=20)
             async with aiohttp.ClientSession() as session:

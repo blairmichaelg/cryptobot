@@ -1804,25 +1804,38 @@ class JobScheduler:
                 analytics = get_analytics()
                 analytics.record_withdrawal(
                     faucet=faucet_name,
-                    cryptocurrency="BTC",  # Default, may not be accurate
+                    cryptocurrency="BTC",
                     amount=0.0,
                     network_fee=0.0,
                     platform_fee=0.0,
                     withdrawal_method="unknown",
                     status="failed",
-                    notes=str(e)
+                    notes=str(e),
                 )
             except Exception:
                 pass
 
-            return ClaimResult(success=False, status=f"Error: {str(e)}", next_claim_minutes=360)
+            return ClaimResult(
+                success=False,
+                status=f"Error: {e}",
+                next_claim_minutes=360,
+            )
         finally:
             if context:
                 try:
                     # Use safe context closure
-                    await self.browser_manager.safe_close_context(context, profile_name=profile.username)
+                    await (
+                        self.browser_manager
+                        .safe_close_context(
+                            context,
+                            profile_name=profile.username,
+                        )
+                    )
                 except Exception as cleanup_error:
-                    logger.debug(f"Final cleanup exception for {faucet_name}: {cleanup_error}")
+                    logger.debug(
+                        f"Final cleanup exception for "
+                        f"{faucet_name}: {cleanup_error}"
+                    )
 
     def add_job(self, job: Job) -> None:
         """Enqueue a job with deduplication.
@@ -1837,7 +1850,9 @@ class JobScheduler:
             job: The :class:`Job` to add.
         """
         if not job.profile:
-            logger.warning(f"⚠️ Skipping job {job.name}: no profile assigned")
+            logger.warning(
+                f"Skipping job {job.name}: no profile assigned"
+            )
             return
         username = job.profile.username
         # 1. Check if an identical job is already in the queue
@@ -1846,7 +1861,10 @@ class JobScheduler:
                 pending_job.job_type == job.job_type and
                 pending_job.faucet_type == job.faucet_type and
                     pending_job.name == job.name):
-                logger.debug(f"⏭️ Skipping duplicate job add: {job.name} for {username}")
+                logger.debug(
+                    f"Skipping duplicate job add: "
+                    f"{job.name} for {username}"
+                )
                 return
 
         # 2. Check if an identical job is currently running
@@ -1854,7 +1872,10 @@ class JobScheduler:
             # running_key is username + job.name, but we want more granular check
             # If job.name matches, it's likely the same job_type/faucet_type
             if running_key.startswith(f"{username}:") and job.name in running_key:
-                logger.debug(f"⏭️ Skipping job add (already running): {job.name} for {username}")
+                logger.debug(
+                    f"Skipping job add (already running): "
+                    f"{job.name} for {username}"
+                )
                 return
 
         # Apply dynamic priority based on recent performance
@@ -1864,11 +1885,18 @@ class JobScheduler:
                 adjusted_priority = int(round(job.priority / max(priority_multiplier, 0.1)))
                 job.priority = max(1, adjusted_priority)
         except Exception as e:
-            logger.debug(f"Dynamic priority adjustment failed for {job.faucet_type}: {e}")
+            logger.debug(
+                "Dynamic priority adjustment failed "
+                f"for {job.faucet_type}: {e}"
+            )
 
         self.queue.append(job)
-        self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
-        logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")
+        self.queue.sort()
+        logger.debug(
+            f"Added job: {job.name} for {username} "
+            f"(Prio: {job.priority}, "
+            f"Time: {job.next_run})"
+        )
 
     def _should_bypass_proxy(
         self, faucet_type: Optional[str],
@@ -1974,7 +2002,11 @@ class JobScheduler:
             for b in bypass
         )
 
-    def get_next_proxy(self, profile: AccountProfile, faucet_type: Optional[str] = None) -> Optional[str]:
+    def get_next_proxy(
+        self,
+        profile: AccountProfile,
+        faucet_type: Optional[str] = None,
+    ) -> Optional[str]:
         """Select the next proxy for a profile.
 
         Delegates to :class:`ProxyManager` when available, otherwise
@@ -2004,15 +2036,23 @@ class JobScheduler:
         # Filter out failed proxies
         healthy_pool = [
             p for p in profile.proxy_pool
-            if self.proxy_failures.get(p, {}).get('failures', 0) < MAX_PROXY_FAILURES
-            and not self.proxy_failures.get(p, {}).get('burned', False)
+            if (
+                self.proxy_failures.get(
+                    p, {},
+                ).get('failures', 0) < MAX_PROXY_FAILURES
+                and not self.proxy_failures.get(
+                    p, {},
+                ).get('burned', False)
+            )
         ]
 
         if not healthy_pool:
             return profile.proxy
 
         # Determine strategy
-        strategy = getattr(profile, 'proxy_rotation_strategy', 'round_robin')
+        strategy = getattr(
+            profile, 'proxy_rotation_strategy', 'round_robin',
+        )
 
         if strategy == "random":
             return random.choice(healthy_pool)
@@ -2051,16 +2091,31 @@ class JobScheduler:
             return
 
         if proxy not in self.proxy_failures:
-            self.proxy_failures[proxy] = {'failures': 0, 'last_failure_time': 0, 'burned': False}
+            self.proxy_failures[proxy] = {
+                'failures': 0,
+                'last_failure_time': 0,
+                'burned': False,
+            }
 
         self.proxy_failures[proxy]['failures'] += 1
-        self.proxy_failures[proxy]['last_failure_time'] = time.time()
+        self.proxy_failures[proxy]['last_failure_time'] = (
+            time.time()
+        )
 
         if detected:
             self.proxy_failures[proxy]['burned'] = True
-            logger.error(f"❌ PROXY BURNED (Detected by site): {proxy}. Blacklisted for 12 hours.")
+            logger.error(
+                f"PROXY BURNED (Detected by site): "
+                f"{proxy}. Blacklisted for 12 hours."
+            )
         else:
-            logger.warning(f"⚠️ Proxy connection failure: {proxy}. Failures: {self.proxy_failures[proxy]['failures']}")
+            failures = (
+                self.proxy_failures[proxy]['failures']
+            )
+            logger.warning(
+                f"Proxy connection failure: {proxy}. "
+                f"Failures: {failures}"
+            )
 
     def _track_error_type(
         self, faucet_type: str, error_type: ErrorType,
@@ -2168,14 +2223,16 @@ class JobScheduler:
         """
         return self._get_recovery_delay(error_type, retry_count, current_proxy)
 
-    async def _run_job_wrapper(self, job: Job):
-        """Wraps job execution with context management and error handling."""
+    async def _run_job_wrapper(self, job: Job) -> None:
+        """Wrap job execution with context management and error handling."""
         context = None
         username = job.profile.username
         current_proxy = None
         start_time = time.time()
         try:
-            self.profile_concurrency[username] = self.profile_concurrency.get(username, 0) + 1
+            self.profile_concurrency[username] = (
+                self.profile_concurrency.get(username, 0) + 1
+            )
 
             # Get proxy using rotation logic
             current_proxy = self.get_next_proxy(
@@ -2190,50 +2247,94 @@ class JobScheduler:
                 "proxy": current_proxy,
             }
 
-            # Create isolated context for the job with retry on failure
-            ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
+            # Create isolated context for the job
+            ua = (
+                random.choice(self.settings.user_agents)
+                if self.settings.user_agents
+                else None
+            )
             # Sticky Session: Pass profile_name
-            locale_hint, timezone_hint = await self._get_proxy_locale_timezone(current_proxy)
+            locale_hint, timezone_hint = (
+                await self._get_proxy_locale_timezone(
+                    current_proxy,
+                )
+            )
 
             context_creation_attempts = 0
             max_context_attempts = 3
             while context_creation_attempts < max_context_attempts:
                 try:
-                    context = await self.browser_manager.create_context(
-                        proxy=current_proxy,
-                        user_agent=ua,
-                        profile_name=username,
-                        locale_override=locale_hint,
-                        timezone_override=timezone_hint,
-                        allow_sticky_proxy=not self._should_bypass_proxy(job.faucet_type),
-                        block_images_override=False if self._should_disable_image_block(job.faucet_type) else None
+                    bypass = self._should_bypass_proxy(
+                        job.faucet_type,
                     )
-                    page = await self.browser_manager.new_page(context=context)
+                    img_off = self._should_disable_image_block(
+                        job.faucet_type,
+                    )
+                    context = await (
+                        self.browser_manager.create_context(
+                            proxy=current_proxy,
+                            user_agent=ua,
+                            profile_name=username,
+                            locale_override=locale_hint,
+                            timezone_override=timezone_hint,
+                            allow_sticky_proxy=not bypass,
+                            block_images_override=(
+                                False if img_off else None
+                            ),
+                        )
+                    )
+                    page = await (
+                        self.browser_manager.new_page(
+                            context=context,
+                        )
+                    )
                     break  # Success - exit retry loop
                 except Exception as ctx_error:
                     context_creation_attempts += 1
                     if context_creation_attempts >= max_context_attempts:
-                        logger.error(f"Failed to create context after {max_context_attempts} attempts: {ctx_error}")
+                        logger.error(
+                            f"Failed to create context after "
+                            f"{max_context_attempts} "
+                            f"attempts: {ctx_error}"
+                        )
                         raise
                     logger.warning(
-                        f"Context creation failed (attempt {context_creation_attempts}/{max_context_attempts}): {ctx_error}")
+                        f"Context creation failed "
+                        f"(attempt "
+                        f"{context_creation_attempts}"
+                        f"/{max_context_attempts}): "
+                        f"{ctx_error}"
+                    )
                     # Check if browser is still healthy
-                    browser_healthy = await self.browser_manager.check_health()
+                    browser_healthy = await (
+                        self.browser_manager.check_health()
+                    )
                     if not browser_healthy:
-                        logger.warning("Browser appears unhealthy - restarting before retry")
+                        logger.warning(
+                            "Browser appears unhealthy - "
+                            "restarting before retry"
+                        )
                         await self.browser_manager.restart()
-                    await asyncio.sleep(2 * context_creation_attempts)  # Exponential backoff
+                    # Exponential backoff
+                    await asyncio.sleep(
+                        2 * context_creation_attempts,
+                    )
 
-            # Check for legacy/test jobs BEFORE attempting to instantiate
+            # Skip legacy/test jobs
             if job.faucet_type.lower() == "test":
-                logger.debug(f"⏭️ Skipping legacy/test faucet job: {job.name}")
+                logger.debug(
+                    f"Skipping legacy/test faucet job: "
+                    f"{job.name}"
+                )
                 return  # Silently complete without rescheduling
 
             # Instantiate Bot dynamically
             from core.registry import get_faucet_class
             bot_class = get_faucet_class(job.faucet_type)
             if not bot_class:
-                raise ValueError(f"Unknown faucet type: {job.faucet_type}")
+                raise ValueError(
+                    f"Unknown faucet type: {job.faucet_type}"
+                )
 
             bot = bot_class(self.settings, page)
             override = {
@@ -2243,56 +2344,141 @@ class JobScheduler:
             if "pick" in job.faucet_type.lower():
                 override["email"] = job.profile.username
             bot.settings_account_override = override
-            bot.set_behavior_profile(profile_name=username, profile_hint=getattr(job.profile, "behavior_profile", None))
+            bot.set_behavior_profile(
+                profile_name=username,
+                profile_hint=getattr(
+                    job.profile, "behavior_profile", None,
+                ),
+            )
             # Ensure bot knows about proxy
             if current_proxy:
                 bot.set_proxy(current_proxy)
 
             # Execute the job function
-            logger.info(f"🚀 Executing {job.name} ({job.job_type}) for {username}... (Proxy: {current_proxy or 'None'})")
+            logger.info(
+                f"Executing {job.name} ({job.job_type}) "
+                f"for {username}... "
+                f"(Proxy: {current_proxy or 'None'})"
+            )
             start_time = time.time()
-            job_timeout = max(60, int(getattr(self.settings, "job_timeout_seconds", 600)))
+            job_timeout = max(
+                60,
+                int(getattr(
+                    self.settings, "job_timeout_seconds",
+                    600,
+                )),
+            )
 
             # Handle special job types
             if job.job_type == "auto_withdrawal_check":
-                # Auto-withdrawal check doesn't need a page/bot
-                result = await asyncio.wait_for(self.execute_auto_withdrawal_check(job), timeout=job_timeout)
+                result = await asyncio.wait_for(
+                    self.execute_auto_withdrawal_check(job),
+                    timeout=job_timeout,
+                )
             else:
                 # Regular faucet bot method
                 method = getattr(bot, job.job_type)
-                result = await asyncio.wait_for(method(page), timeout=job_timeout)
+                result = await asyncio.wait_for(
+                    method(page), timeout=job_timeout,
+                )
 
-            # Post-execution status check - only if page is still alive
-            page_alive = await self.browser_manager.check_page_alive(page)
+            # Post-execution status check
+            page_alive = await (
+                self.browser_manager.check_page_alive(page)
+            )
             if page_alive:
-                status_info = await self.browser_manager.check_page_status(page)
+                status_info = await (
+                    self.browser_manager.check_page_status(
+                        page,
+                    )
+                )
                 if status_info["blocked"]:
-                    logger.error(f"❌ SITE BLOCK DETECTED for {job.name} ({username}). Status: {status_info['status']}")
+                    logger.error(
+                        f"SITE BLOCK DETECTED for "
+                        f"{job.name} ({username}). "
+                        f"Status: {status_info['status']}"
+                    )
                     if current_proxy:
-                        self.record_proxy_failure(current_proxy, detected=True,
-                                                  status_code=status_info.get("status", 0))
-                        if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
-                            self.proxy_manager.record_soft_signal(current_proxy, signal_type="blocked")
+                        self.record_proxy_failure(
+                            current_proxy,
+                            detected=True,
+                            status_code=status_info.get(
+                                "status", 0,
+                            ),
+                        )
+                        rep_enabled = getattr(
+                            self.settings,
+                            "proxy_reputation_enabled",
+                            True,
+                        )
+                        if (
+                            self.proxy_manager
+                            and rep_enabled
+                        ):
+                            self.proxy_manager.record_soft_signal(
+                                current_proxy,
+                                signal_type="blocked",
+                            )
                 elif status_info["network_error"]:
-                    logger.warning(f"⚠️ NETWORK ERROR DETECTED for {job.name} ({username}).")
+                    logger.warning(
+                        f"NETWORK ERROR DETECTED for "
+                        f"{job.name} ({username})."
+                    )
                     if current_proxy:
-                        self.record_proxy_failure(current_proxy, detected=False,
-                                                  status_code=status_info.get("status", 0))
-                        if self.proxy_manager and getattr(self.settings, "proxy_reputation_enabled", True):
-                            self.proxy_manager.record_soft_signal(current_proxy, signal_type="network_error")
+                        self.record_proxy_failure(
+                            current_proxy,
+                            detected=False,
+                            status_code=status_info.get(
+                                "status", 0,
+                            ),
+                        )
+                        rep_enabled = getattr(
+                            self.settings,
+                            "proxy_reputation_enabled",
+                            True,
+                        )
+                        if (
+                            self.proxy_manager
+                            and rep_enabled
+                        ):
+                            self.proxy_manager.record_soft_signal(
+                                current_proxy,
+                                signal_type="network_error",
+                            )
             else:
-                logger.debug(f"Page already closed for {job.name} - skipping status check")
+                logger.debug(
+                    f"Page already closed for {job.name} "
+                    "- skipping status check"
+                )
 
             duration = time.time() - start_time
-            logger.info(f"[DONE] Finished {job.name} for {username} in {duration:.1f}s")
+            logger.info(
+                f"[DONE] Finished {job.name} for "
+                f"{username} in {duration:.1f}s"
+            )
 
             # Check if result indicates proxy detection
-            if hasattr(result, 'status') and "Proxy Detected" in result.status:
-                logger.error(f"❌ Proxy detected for {job.name} ({username}). Rotating proxy...")
+            if (
+                hasattr(result, 'status')
+                and "Proxy Detected" in result.status
+            ):
+                logger.error(
+                    f"Proxy detected for "
+                    f"{job.name} ({username}). "
+                    "Rotating proxy..."
+                )
                 if current_proxy:
-                    self.record_proxy_failure(current_proxy, detected=True, status_code=403)
-                # Reschedule with exponential backoff for proxy issues
-                job.next_run = time.time() + PROXY_RETRY_DELAY_SECONDS * (2 ** min(job.retry_count, 4))
+                    self.record_proxy_failure(
+                        current_proxy,
+                        detected=True,
+                        status_code=403,
+                    )
+                # Reschedule with exponential backoff
+                job.next_run = (
+                    time.time()
+                    + PROXY_RETRY_DELAY_SECONDS
+                    * (2 ** min(job.retry_count, 4))
+                )
                 job.retry_count += 1  # Track consecutive proxy failures
                 self.add_job(job)
                 return
@@ -2302,63 +2488,145 @@ class JobScheduler:
                 if result.success:
                     # Reset Circuit Breaker on success
                     self.faucet_failures[job.faucet_type] = 0
-                    job.retry_count = 0  # Reset retry count on success
-                    # Clear error type tracking on success
+                    # Reset retry count on success
+                    job.retry_count = 0
+                    # Clear error type tracking
                     if job.faucet_type in self.faucet_error_types:
-                        self.faucet_error_types[job.faucet_type] = []
+                        self.faucet_error_types[
+                            job.faucet_type
+                        ] = []
                     # Reset backoff state on success
                     if job.faucet_type in self.faucet_backoff:
-                        self.faucet_backoff[job.faucet_type] = {'consecutive_failures': 0, 'next_allowed_time': 0}
-                    # Record success for health monitoring
-                    self.health_monitor.record_faucet_attempt(job.faucet_type, success=True)
+                        self.faucet_backoff[
+                            job.faucet_type
+                        ] = {
+                            'consecutive_failures': 0,
+                            'next_allowed_time': 0,
+                        }
+                    # Record for health monitoring
+                    self.health_monitor.record_faucet_attempt(
+                        job.faucet_type, success=True,
+                    )
 
-                    # Log CAPTCHA cost details for profitability tracking
-                    if hasattr(bot, 'solver') and bot.solver:
-                        solver_stats = bot.solver.provider_stats.get(bot.solver.provider, {})
+                    # Log CAPTCHA cost details
+                    if (
+                        hasattr(bot, 'solver')
+                        and bot.solver
+                    ):
+                        solver_stats = (
+                            bot.solver.provider_stats.get(
+                                bot.solver.provider, {},
+                            )
+                        )
                         if solver_stats.get('cost', 0) > 0:
-                            logger.info(f"💰 CAPTCHA Cost for {job.faucet_type}: ${solver_stats['cost']:.4f} | "
-                                        f"Earned: {result.amount} | Balance: {result.balance}")
+                            logger.info(
+                                f"CAPTCHA Cost for "
+                                f"{job.faucet_type}: "
+                                f"${solver_stats['cost']:.4f}"
+                                f" | Earned: "
+                                f"{result.amount} | "
+                                f"Balance: {result.balance}"
+                            )
                 else:
                     # Record failure for health monitoring
-                    self.health_monitor.record_faucet_attempt(job.faucet_type, success=False)
+                    self.health_monitor.record_faucet_attempt(
+                        job.faucet_type, success=False,
+                    )
 
                     # Classify the error type
                     error_type = ErrorType.UNKNOWN
-                    if hasattr(result, 'error_type') and isinstance(result.error_type, ErrorType):
+                    if (
+                        hasattr(result, 'error_type')
+                        and isinstance(
+                            result.error_type, ErrorType,
+                        )
+                    ):
                         error_type = result.error_type
                     else:
-                        # Fallback classification based on status message
+                        # Fallback classification
                         status_lower = result.status.lower()
-                        # Check for configuration errors first (more specific than permanent)
-                        if any(config in status_lower for config in ["hcaptcha", "recaptcha", "turnstile", "captcha config", "solver config", "api key"]):
+                        config_terms = [
+                            "hcaptcha", "recaptcha",
+                            "turnstile", "captcha config",
+                            "solver config", "api key",
+                        ]
+                        security_terms = [
+                            "cloudflare", "security check",
+                            "maintenance", "ddos protection",
+                            "blocked", "challenge",
+                        ]
+                        perm_terms = [
+                            "banned", "suspended",
+                            "invalid credentials",
+                            "auth failed",
+                        ]
+                        rate_terms = [
+                            "too many requests",
+                            "slow down", "rate limit",
+                        ]
+                        proxy_terms = [
+                            "proxy", "vpn detected",
+                            "unusual activity",
+                        ]
+                        if any(
+                            c in status_lower
+                            for c in config_terms
+                        ):
                             error_type = ErrorType.CONFIG_ERROR
-                        # Security/Cloudflare challenges should be retryable, not permanent
-                        elif any(security in status_lower for security in ["cloudflare", "security check", "maintenance", "ddos protection", "blocked", "challenge"]):
+                        elif any(
+                            s in status_lower
+                            for s in security_terms
+                        ):
                             error_type = ErrorType.RATE_LIMIT
-                        elif any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
+                        elif any(
+                            p in status_lower
+                            for p in perm_terms
+                        ):
                             error_type = ErrorType.PERMANENT
-                        elif any(rate in status_lower for rate in ["too many requests", "slow down", "rate limit"]):
+                        elif any(
+                            r in status_lower
+                            for r in rate_terms
+                        ):
                             error_type = ErrorType.RATE_LIMIT
-                        elif any(proxy in status_lower for proxy in ["proxy", "vpn detected", "unusual activity"]):
+                        elif any(
+                            px in status_lower
+                            for px in proxy_terms
+                        ):
                             error_type = ErrorType.PROXY_ISSUE
-                        elif "captcha" in status_lower and "failed" in status_lower:
+                        elif (
+                            "captcha" in status_lower
+                            and "failed" in status_lower
+                        ):
                             error_type = ErrorType.CAPTCHA_FAILED
-                        elif "timeout" in status_lower or "connection" in status_lower:
+                        elif (
+                            "timeout" in status_lower
+                            or "connection" in status_lower
+                        ):
                             error_type = ErrorType.TRANSIENT
 
-                    # Track error type for circuit breaker intelligence
-                    self._track_error_type(job.faucet_type, error_type)
+                    # Track error type for circuit breaker
+                    self._track_error_type(
+                        job.faucet_type, error_type,
+                    )
 
-                    logger.info(f"🔍 Error classified as: {error_type.value} for {job.name}")
+                    logger.info(
+                        f"Error classified as: "
+                        f"{error_type.value} "
+                        f"for {job.name}"
+                    )
 
-                    # Handle withdrawal job failures differently
+                    # Handle withdrawal job failures
                     if "withdraw" in job.job_type.lower():
-                        # Withdrawal-specific retry logic with exponential backoff
-                        if job.retry_count >= self.settings.withdrawal_max_retries:
+                        max_retries = (
+                            self.settings.withdrawal_max_retries
+                        )
+                        if job.retry_count >= max_retries:
                             logger.error(
-                                f"❌ Withdrawal failed {job.retry_count} times for {job.name}. Max retries reached. Skipping.")
-                            # Don't reschedule - mark as permanently failed
-                            # Log to analytics
+                                f"Withdrawal failed "
+                                f"{job.retry_count} times "
+                                f"for {job.name}. "
+                                "Max retries reached."
+                            )
                             try:
                                 from core.withdrawal_analytics import get_analytics
                                 analytics = get_analytics()
@@ -2370,131 +2638,301 @@ class JobScheduler:
                                     platform_fee=0.0,
                                     withdrawal_method="unknown",
                                     status="failed",
-                                    notes=f"Max retries ({self.settings.withdrawal_max_retries}) exceeded: {result.status}"
+                                    notes=(
+                                        f"Max retries "
+                                        f"({max_retries}) "
+                                        f"exceeded: "
+                                        f"{result.status}"
+                                    ),
                                 )
                             except Exception:
                                 pass
                             return
-                        else:
-                            # Use configured retry intervals
-                            retry_interval = self.settings.withdrawal_retry_intervals[min(
-                                job.retry_count, len(self.settings.withdrawal_retry_intervals) - 1)]
-                            job.next_run = time.time() + retry_interval
-                            job.retry_count += 1
-                            logger.warning(
-                                f"⚠️ Withdrawal failed for {job.name}. Retry {job.retry_count}/{self.settings.withdrawal_max_retries} in {retry_interval/3600:.1f}h")
-                            self.add_job(job)
-                            return
+                        # Use configured retry intervals
+                        intervals = (
+                            self.settings
+                            .withdrawal_retry_intervals
+                        )
+                        retry_interval = intervals[
+                            min(
+                                job.retry_count,
+                                len(intervals) - 1,
+                            )
+                        ]
+                        job.next_run = (
+                            time.time() + retry_interval
+                        )
+                        job.retry_count += 1
+                        logger.warning(
+                            f"Withdrawal failed for "
+                            f"{job.name}. Retry "
+                            f"{job.retry_count}"
+                            f"/{max_retries} in "
+                            f"{retry_interval / 3600:.1f}h"
+                        )
+                        self.add_job(job)
+                        return
                     else:
-                        # Handle PERMANENT errors - disable account (with retry logic for security challenges)
+                        # Handle PERMANENT errors
                         if error_type == ErrorType.PERMANENT:
-                            # Check if this is a misclassified security challenge (should have been caught by fallback)
-                            status_lower = result.status.lower()
-                            is_security_challenge = any(security in status_lower for security in
-                                                        ["cloudflare", "security check", "maintenance", "ddos protection", "blocked", "challenge"])
+                            status_lower = (
+                                result.status.lower()
+                            )
+                            sec_terms = [
+                                "cloudflare",
+                                "security check",
+                                "maintenance",
+                                "ddos protection",
+                                "blocked", "challenge",
+                            ]
+                            is_security = any(
+                                s in status_lower
+                                for s in sec_terms
+                            )
 
-                            if is_security_challenge:
-                                # Treat as RATE_LIMIT instead
+                            if is_security:
                                 logger.warning(
-                                    f"⚠️ Reclassifying security challenge as RATE_LIMIT instead of PERMANENT for {job.name}")
-                                error_type = ErrorType.RATE_LIMIT
+                                    f"Reclassifying security "
+                                    "challenge as RATE_LIMIT "
+                                    "instead of PERMANENT "
+                                    f"for {job.name}"
+                                )
+                                error_type = (
+                                    ErrorType.RATE_LIMIT
+                                )
                             else:
-                                # True permanent failure (banned, invalid credentials, etc.)
-                                logger.error(f"❌ PERMANENT FAILURE: {job.name} - {result.status}")
-                                logger.error(f"🚫 Disabling account: {job.profile.username} for {job.faucet_type}")
-                                # Don't requeue permanent failures
+                                logger.error(
+                                    f"PERMANENT FAILURE: "
+                                    f"{job.name} - "
+                                    f"{result.status}"
+                                )
+                                logger.error(
+                                    f"Disabling account: "
+                                    f"{job.profile.username}"
+                                    f" for "
+                                    f"{job.faucet_type}"
+                                )
                                 return
 
-                        # Track security challenge retries (for RATE_LIMIT errors that might be challenges)
+                        # Track security challenge retries
                         if error_type == ErrorType.RATE_LIMIT:
-                            retry_key = f"{job.faucet_type}:{job.profile.username}"
+                            retry_key = (
+                                f"{job.faucet_type}:"
+                                f"{job.profile.username}"
+                            )
                             current_time = time.time()
 
                             if retry_key not in self.security_challenge_retries:
                                 self.security_challenge_retries[retry_key] = {
                                     "security_retries": 0,
-                                    "last_retry_time": current_time
+                                    "last_retry_time": current_time,
                                 }
 
-                            retry_state = self.security_challenge_retries[retry_key]
+                            retry_state = (
+                                self.security_challenge_retries[
+                                    retry_key
+                                ]
+                            )
 
-                            # Reset counter if last retry was more than 24 hours ago
-                            if current_time - retry_state["last_retry_time"] > (self.security_retry_reset_hours * 3600):
+                            # Reset counter if last retry > 24h ago
+                            reset_secs = (
+                                self.security_retry_reset_hours
+                                * 3600
+                            )
+                            last_retry = (
+                                retry_state["last_retry_time"]
+                            )
+                            if current_time - last_retry > reset_secs:
+                                hrs_ago = (
+                                    (current_time - last_retry)
+                                    / 3600
+                                )
                                 logger.info(
-                                    f"🔄 Resetting security retry counter for {retry_key} (last retry was {(current_time - retry_state['last_retry_time'])/3600:.1f}h ago)")
-                                retry_state["security_retries"] = 0
+                                    f"Resetting security "
+                                    f"retry counter for "
+                                    f"{retry_key} (last "
+                                    f"retry was "
+                                    f"{hrs_ago:.1f}h ago)"
+                                )
+                                retry_state[
+                                    "security_retries"
+                                ] = 0
 
                             retry_state["security_retries"] += 1
-                            retry_state["last_retry_time"] = current_time
+                            retry_state["last_retry_time"] = (
+                                current_time
+                            )
 
-                            # Check if we've exceeded max security retries
-                            if retry_state["security_retries"] >= self.max_security_retries:
+                            # Check max security retries
+                            max_sec = (
+                                self.max_security_retries
+                            )
+                            sec_retries = (
+                                retry_state["security_retries"]
+                            )
+                            if sec_retries >= max_sec:
                                 logger.error(
-                                    f"❌ Security challenge retry limit exceeded ({self.max_security_retries}) for {job.name}")
+                                    f"Security challenge "
+                                    f"retry limit exceeded "
+                                    f"({max_sec}) "
+                                    f"for {job.name}"
+                                )
                                 logger.error(
-                                    f"🚫 Temporarily disabling account: {job.profile.username} for {job.faucet_type}")
+                                    f"Temporarily disabling"
+                                    f" account: "
+                                    f"{job.profile.username}"
+                                    f" for "
+                                    f"{job.faucet_type}"
+                                )
+                                reset_hrs = (
+                                    self
+                                    .security_retry_reset_hours
+                                )
                                 logger.info(
-                                    f"💡 TIP: Retry counter will reset after {self.security_retry_reset_hours}h of no challenges")
-                                logger.info(f"💡 To manually re-enable, restart the bot or use reset_security_retries()")
-                                # Don't requeue if retry limit exceeded
+                                    f"Retry counter will "
+                                    f"reset after "
+                                    f"{reset_hrs}h of "
+                                    "no challenges"
+                                )
                                 return
-                            else:
-                                logger.info(
-                                    f"⚠️ Security challenge retry {retry_state['security_retries']}/{self.max_security_retries} for {job.name}")
+                            logger.info(
+                                f"Security challenge "
+                                f"retry "
+                                f"{sec_retries}"
+                                f"/{max_sec} "
+                                f"for {job.name}"
+                            )
 
-                        # Update backoff state - increment consecutive failures
+                        # Update backoff state
                         if job.faucet_type not in self.faucet_backoff:
-                            self.faucet_backoff[job.faucet_type] = {'consecutive_failures': 0, 'next_allowed_time': 0}
-                        self.faucet_backoff[job.faucet_type]['consecutive_failures'] += 1
+                            self.faucet_backoff[
+                                job.faucet_type
+                            ] = {
+                                'consecutive_failures': 0,
+                                'next_allowed_time': 0,
+                            }
+                        self.faucet_backoff[
+                            job.faucet_type
+                        ]['consecutive_failures'] += 1
 
-                        # Calculate intelligent retry delay with exponential backoff + jitter
-                        retry_delay = self.calculate_retry_delay(job.faucet_type, error_type)
+                        # Calculate intelligent retry delay
+                        retry_delay = (
+                            self.calculate_retry_delay(
+                                job.faucet_type, error_type,
+                            )
+                        )
 
                         if retry_delay == float('inf'):
-                            logger.error(f"❌ Permanent error - not rescheduling {job.name}")
+                            logger.error(
+                                "Permanent error - not "
+                                f"rescheduling {job.name}"
+                            )
                             return
 
-                        # Update next allowed time for this faucet
-                        next_allowed = time.time() + retry_delay
-                        self.faucet_backoff[job.faucet_type]['next_allowed_time'] = next_allowed
+                        # Update next allowed time
+                        next_allowed = (
+                            time.time() + retry_delay
+                        )
+                        self.faucet_backoff[
+                            job.faucet_type
+                        ]['next_allowed_time'] = next_allowed
 
-                        logger.info(f"📅 Rescheduling {job.name} in {retry_delay:.0f}s with backoff "
-                                    f"(failures: {self.faucet_backoff[job.faucet_type]['consecutive_failures']})")
+                        consec = self.faucet_backoff[
+                            job.faucet_type
+                        ]['consecutive_failures']
+                        logger.info(
+                            f"Rescheduling {job.name} "
+                            f"in {retry_delay:.0f}s with "
+                            f"backoff (failures: {consec})"
+                        )
 
-                        # Handle FAUCET_DOWN - skip entire faucet
+                        # Handle FAUCET_DOWN
                         if error_type == ErrorType.FAUCET_DOWN:
                             logger.warning(
-                                f"⚠️ Faucet appears down: {job.faucet_type}. Skipping for {retry_delay/3600:.1f}h.")
-                            self.faucet_cooldowns[job.faucet_type] = next_allowed
+                                f"Faucet appears down: "
+                                f"{job.faucet_type}. "
+                                f"Skipping for "
+                                f"{retry_delay / 3600:.1f}h."
+                            )
+                            self.faucet_cooldowns[
+                                job.faucet_type
+                            ] = next_allowed
 
-                        # Check if circuit breaker should trip
-                        if self._should_trip_circuit_breaker(job.faucet_type, error_type):
-                            self.faucet_failures[job.faucet_type] = self.faucet_failures.get(job.faucet_type, 0) + 1
-                            if self.faucet_failures[job.faucet_type] >= self.CIRCUIT_BREAKER_THRESHOLD:
+                        # Check circuit breaker
+                        if self._should_trip_circuit_breaker(
+                            job.faucet_type, error_type,
+                        ):
+                            self.faucet_failures[
+                                job.faucet_type
+                            ] = (
+                                self.faucet_failures.get(
+                                    job.faucet_type, 0,
+                                ) + 1
+                            )
+                            threshold = (
+                                self.CIRCUIT_BREAKER_THRESHOLD
+                            )
+                            failures = (
+                                self.faucet_failures[
+                                    job.faucet_type
+                                ]
+                            )
+                            if failures >= threshold:
                                 logger.error(
-                                    f"🔌 CIRCUIT BREAKER TRIPPED: {job.faucet_type} failed {self.CIRCUIT_BREAKER_THRESHOLD} times (error: {error_type.value})")
-                                self.faucet_cooldowns[job.faucet_type] = time.time() + self.CIRCUIT_BREAKER_COOLDOWN
+                                    f"CIRCUIT BREAKER "
+                                    f"TRIPPED: "
+                                    f"{job.faucet_type} "
+                                    f"failed {threshold} "
+                                    f"times (error: "
+                                    f"{error_type.value})"
+                                )
+                                self.faucet_cooldowns[
+                                    job.faucet_type
+                                ] = (
+                                    time.time()
+                                    + self
+                                    .CIRCUIT_BREAKER_COOLDOWN
+                                )
                         else:
-                            logger.debug("⚡ Transient error - not counting toward circuit breaker")
+                            logger.debug(
+                                "Transient error - not "
+                                "counting toward "
+                                "circuit breaker"
+                            )
 
                         # Set next run time with backoff delay
                         job.next_run = next_allowed
 
-                # For successful claims, use normal timing with small jitter
+                # For successful claims, use normal timing
                 if result.success:
-                    wait_time = result.next_claim_minutes * 60
+                    wait_time = (
+                        result.next_claim_minutes * 60
+                    )
                     # Add jitter for non-withdrawal jobs
                     if "withdraw" not in job.job_type.lower():
-                        wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
+                        wait_time += random.uniform(
+                            JITTER_MIN_SECONDS,
+                            JITTER_MAX_SECONDS,
+                        )
                     job.next_run = time.time() + wait_time
                     job.retry_count = 0
                 self.add_job(job)
 
         except asyncio.TimeoutError:
+            timeout_secs = getattr(
+                self.settings, 'job_timeout_seconds', 600,
+            )
             logger.error(
-                f"⏱️ Job timeout for {job.name} ({username}) after {getattr(self.settings, 'job_timeout_seconds', 600)}s")
+                f"Job timeout for {job.name} "
+                f"({username}) after {timeout_secs}s"
+            )
             from faucets.base import ClaimResult
-            result = ClaimResult(success=False, status="Timeout", next_claim_minutes=15, error_type=ErrorType.TRANSIENT)
+            result = ClaimResult(
+                success=False,
+                status="Timeout",
+                next_claim_minutes=15,
+                error_type=ErrorType.TRANSIENT,
+            )
             try:
                 self.health_monitor.record_faucet_attempt(job.faucet_type, success=False)
             except Exception:
@@ -2503,20 +2941,36 @@ class JobScheduler:
             job.next_run = time.time() + PROXY_COOLDOWN_SECONDS
             self.add_job(job)
         except Exception as e:
-            logger.error(f"❌ Error in job {job.name} for {username}: {e}")
+            logger.error(
+                f"Error in job {job.name} "
+                f"for {username}: {e}"
+            )
             # Retry logic
             self.consecutive_job_failures += 1
-            if self.consecutive_job_failures >= MAX_CONSECUTIVE_JOB_FAILURES:
+            if (
+                self.consecutive_job_failures
+                >= MAX_CONSECUTIVE_JOB_FAILURES
+            ):
                 logger.warning(
-                    f"⚠️ {self.consecutive_job_failures} consecutive job failures. Triggering browser restart.")
+                    f"{self.consecutive_job_failures} "
+                    "consecutive job failures. "
+                    "Triggering browser restart."
+                )
                 await self.browser_manager.restart()
                 self.consecutive_job_failures = 0
 
             # Withdrawal-specific exception handling
             if "withdraw" in job.job_type.lower():
-                if job.retry_count >= self.settings.withdrawal_max_retries:
+                max_retries = (
+                    self.settings.withdrawal_max_retries
+                )
+                if job.retry_count >= max_retries:
                     logger.error(
-                        f"❌ Withdrawal exception for {job.name} after {job.retry_count} retries. Max retries reached.")
+                        f"Withdrawal exception for "
+                        f"{job.name} after "
+                        f"{job.retry_count} retries. "
+                        "Max retries reached."
+                    )
                     # Log failed withdrawal
                     try:
                         from core.withdrawal_analytics import get_analytics
@@ -2529,52 +2983,96 @@ class JobScheduler:
                             platform_fee=0.0,
                             withdrawal_method="unknown",
                             status="failed",
-                            notes=f"Exception after {job.retry_count} retries: {str(e)}"
+                            notes=(
+                                f"Exception after "
+                                f"{job.retry_count} "
+                                f"retries: {e}"
+                            ),
                         )
                     except Exception:
                         pass
                     return  # Don't reschedule
                 else:
-                    # Use configured retry intervals for withdrawals
-                    retry_interval = self.settings.withdrawal_retry_intervals[min(
-                        job.retry_count, len(self.settings.withdrawal_retry_intervals) - 1)]
-                    job.next_run = time.time() + retry_interval
+                    # Use configured retry intervals
+                    intervals = (
+                        self.settings
+                        .withdrawal_retry_intervals
+                    )
+                    retry_interval = intervals[
+                        min(
+                            job.retry_count,
+                            len(intervals) - 1,
+                        )
+                    ]
+                    job.next_run = (
+                        time.time() + retry_interval
+                    )
                     job.retry_count += 1
                     logger.warning(
-                        f"⚠️ Withdrawal exception for {job.name}. Retry {job.retry_count}/{self.settings.withdrawal_max_retries} in {retry_interval/3600:.1f}h")
+                        f"Withdrawal exception for "
+                        f"{job.name}. Retry "
+                        f"{job.retry_count}"
+                        f"/{max_retries} in "
+                        f"{retry_interval / 3600:.1f}h"
+                    )
                     self.add_job(job)
             else:
-                # Standard exponential backoff for non-withdrawal jobs
+                # Standard exponential backoff
                 job.retry_count += 1
-                retry_delay = min(PROXY_COOLDOWN_SECONDS * (2 ** job.retry_count), MAX_RETRY_BACKOFF_SECONDS)
+                retry_delay = min(
+                    PROXY_COOLDOWN_SECONDS
+                    * (2 ** job.retry_count),
+                    MAX_RETRY_BACKOFF_SECONDS,
+                )
                 job.next_run = time.time() + retry_delay
                 self.add_job(job)
 
         finally:
             # Record runtime costs (time/proxy) per faucet
             try:
-                duration = max(0.0, time.time() - start_time)
+                duration = max(
+                    0.0, time.time() - start_time,
+                )
                 from core.analytics import get_tracker
                 tracker = get_tracker()
                 tracker.record_runtime_cost(
                     faucet=job.faucet_type,
                     duration_seconds=duration,
-                    time_cost_per_hour=getattr(self.settings, "time_cost_per_hour_usd", 0.0),
-                    proxy_cost_per_hour=getattr(self.settings, "proxy_cost_per_hour_usd", 0.0),
-                    proxy_used=bool(current_proxy)
+                    time_cost_per_hour=getattr(
+                        self.settings,
+                        "time_cost_per_hour_usd", 0.0,
+                    ),
+                    proxy_cost_per_hour=getattr(
+                        self.settings,
+                        "proxy_cost_per_hour_usd", 0.0,
+                    ),
+                    proxy_used=bool(current_proxy),
                 )
             except Exception as cost_error:
-                logger.debug(f"Runtime cost tracking failed: {cost_error}")
+                logger.debug(
+                    f"Runtime cost tracking failed: "
+                    f"{cost_error}"
+                )
             try:
                 if context:
-                    # Use safe context closure with automatic health checks and cookie saving
-                    await self.browser_manager.safe_close_context(
-                        context,
-                        profile_name=username if "withdraw" not in job.job_type else None
+                    # Safe context closure
+                    profile_name = (
+                        username
+                        if "withdraw" not in job.job_type
+                        else None
+                    )
+                    await (
+                        self.browser_manager
+                        .safe_close_context(
+                            context,
+                            profile_name=profile_name,
+                        )
                     )
             except Exception as cleanup_error:
-                # Additional safety net - shouldn't normally reach here with safe_close_context
-                logger.debug(f"Final cleanup exception for {job.name}: {cleanup_error}")
+                logger.debug(
+                    f"Final cleanup exception for "
+                    f"{job.name}: {cleanup_error}"
+                )
             self.profile_concurrency[username] -= 1
             job_key = f"{username}:{job.name}"
             if job_key in self.running_jobs:
@@ -2613,23 +3111,57 @@ class JobScheduler:
                 proxy_count = len(self.proxy_manager.proxies)
                 if proxy_count == 0:
                     degraded_mode = "maintenance"
-                elif proxy_count < self.settings.low_proxy_threshold:
+                low_threshold = (
+                    self.settings.low_proxy_threshold
+                )
+                if proxy_count < low_threshold:
                     degraded_mode = "low_proxy"
-                    effective_max_concurrent_bots = min(effective_max_concurrent_bots,
-                                                        self.settings.low_proxy_max_concurrent_bots)
+                    effective_max_concurrent_bots = min(
+                        effective_max_concurrent_bots,
+                        self.settings
+                        .low_proxy_max_concurrent_bots,
+                    )
 
-            if self.consecutive_job_failures >= self.settings.degraded_failure_threshold:
-                delay_multiplier = self.settings.degraded_slow_delay_multiplier
-                effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
-                degraded_mode = f"{degraded_mode}+slow" if degraded_mode else "slow"
+            if (
+                self.consecutive_job_failures
+                >= self.settings.degraded_failure_threshold
+            ):
+                delay_multiplier = (
+                    self.settings
+                    .degraded_slow_delay_multiplier
+                )
+                effective_max_concurrent_bots = max(
+                    1,
+                    int(effective_max_concurrent_bots / 2),
+                )
+                degraded_mode = (
+                    f"{degraded_mode}+slow"
+                    if degraded_mode
+                    else "slow"
+                )
 
             if mode_delay > delay_multiplier:
                 delay_multiplier = mode_delay
 
-            if self.performance_alert_score >= self.settings.performance_alert_slow_threshold:
-                delay_multiplier = max(delay_multiplier, self.settings.degraded_slow_delay_multiplier)
-                effective_max_concurrent_bots = max(1, int(effective_max_concurrent_bots / 2))
-                degraded_mode = f"{degraded_mode}+perf" if degraded_mode else "perf"
+            if (
+                self.performance_alert_score
+                >= self.settings
+                .performance_alert_slow_threshold
+            ):
+                delay_multiplier = max(
+                    delay_multiplier,
+                    self.settings
+                    .degraded_slow_delay_multiplier,
+                )
+                effective_max_concurrent_bots = max(
+                    1,
+                    int(effective_max_concurrent_bots / 2),
+                )
+                degraded_mode = (
+                    f"{degraded_mode}+perf"
+                    if degraded_mode
+                    else "perf"
+                )
 
             # Schedule withdrawal jobs once at startup
             if not withdrawal_jobs_scheduled:
@@ -2640,7 +3172,10 @@ class JobScheduler:
                         await self.schedule_auto_withdrawal_check()
                     withdrawal_jobs_scheduled = True
                 except Exception as e:
-                    logger.warning(f"Failed to schedule withdrawal jobs: {e}")
+                    logger.warning(
+                        f"Failed to schedule "
+                        f"withdrawal jobs: {e}"
+                    )
                     withdrawal_jobs_scheduled = True  # Don't retry every loop
 
             # Maintenance tasks (heartbeat and session persistence)
@@ -2652,54 +3187,101 @@ class JobScheduler:
                 self._persist_session()
                 self.last_persist_time = now
 
-                # Check for performance alerts every persist interval (5 mins)
-                # This ensures we don't spam logs but stay updated on drops
+                # Check for performance alerts
                 from core.analytics import get_tracker
-                alerts = get_tracker().check_performance_alerts(hours=2)
+                alerts = get_tracker().check_performance_alerts(
+                    hours=2,
+                )
                 self.performance_alert_score = len(alerts)
                 for alert in alerts:
                     logger.warning(f"🔔 ALERT: {alert}")
 
-                # Fix #27: Log profitability summary every 5 minutes
-                profit = get_tracker().get_profitability(hours=24)
+                # Log profitability summary
+                profit = get_tracker().get_profitability(
+                    hours=24,
+                )
                 logger.info(
-                    f"💰 PROFITABILITY: Earnings ${profit['earnings_usd']:.4f} | "
-                    f"Costs ${profit['costs_usd']:.4f} | "
-                    f"Net ${profit['net_profit_usd']:.4f} | ROI {profit['roi']:.2f}x"
+                    f"PROFITABILITY: "
+                    f"Earnings "
+                    f"${profit['earnings_usd']:.4f} | "
+                    f"Costs "
+                    f"${profit['costs_usd']:.4f} | "
+                    f"Net "
+                    f"${profit['net_profit_usd']:.4f} | "
+                    f"ROI {profit['roi']:.2f}x"
                 )
 
             if now - self.last_health_check_time >= BROWSER_HEALTH_CHECK_INTERVAL:
-                logger.info("🏥 Performing comprehensive health check...")
+                logger.info(
+                    "Performing comprehensive health check..."
+                )
 
                 # Run full health check (browser, proxy, faucet, system)
                 try:
-                    health_results = await self.health_monitor.run_full_health_check()
+                    health_results = await (
+                        self.health_monitor
+                        .run_full_health_check()
+                    )
 
                     # Auto-restart browser if needed
-                    if self.health_monitor.should_restart_browser():
-                        logger.critical("🔄 Browser health critical - triggering automatic restart")
+                    if (
+                        self.health_monitor
+                        .should_restart_browser()
+                    ):
+                        logger.critical(
+                            "Browser health critical - "
+                            "triggering automatic restart"
+                        )
                         await self.browser_manager.restart()
                         # Reset failure count after restart
                         self.health_monitor.browser_context_failures = 0
 
-                    # Auto-response: replenish proxies if unhealthy
-                    proxy_health = health_results.get("proxy", {})
-                    if self.proxy_manager and not proxy_health.get("healthy", True):
-                        await self.proxy_manager.auto_provision_proxies(
-                            min_threshold=self.settings.low_proxy_threshold,
-                            provision_count=5
+                    # Auto-response: replenish proxies
+                    proxy_health = health_results.get(
+                        "proxy", {},
+                    )
+                    if (
+                        self.proxy_manager
+                        and not proxy_health.get(
+                            "healthy", True,
+                        )
+                    ):
+                        await (
+                            self.proxy_manager
+                            .auto_provision_proxies(
+                                min_threshold=(
+                                    self.settings
+                                    .low_proxy_threshold
+                                ),
+                                provision_count=5,
+                            )
                         )
 
-                    # Auto-response: degrade mode on system health issues
-                    system_health = health_results.get("system", {})
-                    if not system_health.get("healthy", True):
+                    # Auto-response: degrade mode
+                    system_health = health_results.get(
+                        "system", {},
+                    )
+                    if not system_health.get(
+                        "healthy", True,
+                    ):
                         from core.config import OperationMode
-                        self.current_mode = OperationMode.SLOW_MODE
-                        self.apply_mode_restrictions(self.current_mode)
+                        self.current_mode = (
+                            OperationMode.SLOW_MODE
+                        )
+                        self.apply_mode_restrictions(
+                            self.current_mode,
+                        )
 
                     # Log summary
+                    overall = (
+                        "HEALTHY"
+                        if health_results['overall_healthy']
+                        else "DEGRADED"
+                    )
                     logger.info(
-                        f"Health check complete - Overall: {'✅ HEALTHY' if health_results['overall_healthy'] else '⚠️ DEGRADED'}")
+                        "Health check complete - "
+                        f"Overall: {overall}"
+                    )
 
                 except Exception as e:
                     logger.error(f"Health check failed: {e}")
@@ -2717,15 +3299,21 @@ class JobScheduler:
                 active_profile = self.profile_concurrency.get(username, 0)
 
                 if degraded_mode == "maintenance":
-                    logger.warning("🛑 Maintenance Mode: No proxies available. Pausing new jobs.")
+                    logger.warning(
+                        "Maintenance Mode: No proxies "
+                        "available. Pausing new jobs."
+                    )
                     break
 
                 # Check constraints
                 if active_global >= effective_max_concurrent_bots:
                     break  # Global limit reached
 
-                # Use a default if max_concurrent_per_profile is not yet in config
-                max_per_profile = getattr(self.settings, 'max_concurrent_per_profile', 1)
+                # Use a default for max_concurrent_per_profile
+                max_per_profile = getattr(
+                    self.settings,
+                    'max_concurrent_per_profile', 1,
+                )
                 if active_profile >= max_per_profile:
                     continue  # Profile limit reached, try next job
 
@@ -2734,7 +3322,11 @@ class JobScheduler:
                 if delay_multiplier > 1.0:
                     domain_delay *= delay_multiplier
                 if domain_delay > 0:
-                    logger.debug(f"⏳ Rate limit: {job.name} must wait {domain_delay:.1f}s for {job.faucet_type}")
+                    logger.debug(
+                        f"Rate limit: {job.name} must "
+                        f"wait {domain_delay:.1f}s for "
+                        f"{job.faucet_type}"
+                    )
                     job.next_run = now + domain_delay
                     continue  # Skip for now, will be picked up next iteration
 
@@ -2743,38 +3335,71 @@ class JobScheduler:
                     cooldown_end = self.faucet_cooldowns[job.faucet_type]
                     if now < cooldown_end:
                         logger.debug(
-                            f"🔌 Circuit Breaker Active: Skipping {job.faucet_type} until {time.ctime(cooldown_end)}")
+                            f"Circuit Breaker Active: "
+                            f"Skipping {job.faucet_type} "
+                            f"until "
+                            f"{time.ctime(cooldown_end)}"
+                        )
                         job.next_run = now + 600  # Check back in 10 mins
                         continue
                     else:
                         # Cooldown expired, reset
                         del self.faucet_cooldowns[job.faucet_type]
                         self.faucet_failures[job.faucet_type] = 0
-                        logger.info(f"🟢 Circuit Breaker Reset: Resuming {job.faucet_type}")
+                        logger.info(
+                            "Circuit Breaker Reset: "
+                            f"Resuming {job.faucet_type}"
+                        )
 
                 # Budget-Aware Job Selection (Skip jobs we can't afford)
-                if "withdraw" not in job.job_type.lower():  # Only check for claim jobs
+                if "withdraw" not in job.job_type.lower():
                     try:
-                        # Get captcha solver budget status
                         from solvers.captcha import CaptchaSolver
-                        api_key = self.settings.twocaptcha_api_key or self.settings.capsolver_api_key
+                        api_key = (
+                            self.settings.twocaptcha_api_key
+                            or self.settings.capsolver_api_key
+                        )
                         if not api_key:
-                            logger.warning("Captcha API key missing; skipping budget check.")
-                            budget_stats = {"remaining": float("inf")}
+                            logger.warning(
+                                "Captcha API key missing; "
+                                "skipping budget check."
+                            )
+                            budget_stats = {
+                                "remaining": float("inf"),
+                            }
                         else:
                             temp_solver = CaptchaSolver(
                                 api_key=api_key,
-                                provider=self.settings.captcha_provider,
-                                daily_budget=self.settings.captcha_daily_budget
+                                provider=(
+                                    self.settings
+                                    .captcha_provider
+                                ),
+                                daily_budget=(
+                                    self.settings
+                                    .captcha_daily_budget
+                                ),
                             )
-                            budget_stats = temp_solver.get_budget_stats()
-                        estimated_cost = self.estimate_claim_cost(job.faucet_type)
+                            budget_stats = (
+                                temp_solver.get_budget_stats()
+                            )
+                        estimated_cost = (
+                            self.estimate_claim_cost(
+                                job.faucet_type,
+                            )
+                        )
 
-                        if budget_stats["remaining"] < estimated_cost:
+                        if (
+                            budget_stats["remaining"]
+                            < estimated_cost
+                        ):
                             logger.warning(
-                                f"💰 Budget insufficient for {job.name}: "
-                                f"Need ${estimated_cost:.4f}, have ${budget_stats['remaining']:.4f}. "
-                                f"Deferring claim."
+                                f"Budget insufficient for "
+                                f"{job.name}: "
+                                f"Need "
+                                f"${estimated_cost:.4f}, "
+                                f"have "
+                                f"${budget_stats['remaining']:.4f}. "
+                                "Deferring claim."
                             )
                             # Defer to next budget reset (tomorrow)
                             tomorrow = time.strftime(
@@ -2787,44 +3412,84 @@ class JobScheduler:
                             job.next_run = tomorrow_midnight + 300  # 5 min after midnight
                             continue
 
-                        # Check if this is a high-value claim but budget is very low
-                        if budget_stats["remaining"] < 0.50 and estimated_cost > 0.002:
-                            # Calculate profitability to determine if manual solve is worth it
+                        # Check high-value claim with low budget
+                        low_budget = (
+                            budget_stats["remaining"] < 0.50
+                            and estimated_cost > 0.002
+                        )
+                        if low_budget:
                             try:
                                 from core.analytics import get_tracker
                                 tracker = get_tracker()
-                                faucet_stats = tracker.get_faucet_stats(hours=168)
-                                avg_earnings = faucet_stats.get(job.faucet_type.lower(), {}).get("avg_earnings_usd", 0)
+                                faucet_stats = (
+                                    tracker.get_faucet_stats(
+                                        hours=168,
+                                    )
+                                )
+                                avg_earnings = (
+                                    faucet_stats.get(
+                                        job.faucet_type.lower(),
+                                        {},
+                                    ).get(
+                                        "avg_earnings_usd", 0,
+                                    )
+                                )
 
-                                if avg_earnings > estimated_cost * 2:  # At least 2x ROI
+                                if avg_earnings > estimated_cost * 2:
                                     logger.warning(
-                                        f"⚠️ Budget low but {job.name} is profitable (${avg_earnings:.4f} avg). "
-                                        f"Consider manual CAPTCHA solve if available."
+                                        f"Budget low but "
+                                        f"{job.name} is "
+                                        f"profitable "
+                                        f"(${avg_earnings:.4f} "
+                                        "avg). Consider manual "
+                                        "CAPTCHA solve."
                                     )
                                     # Continue with job, it might prompt for manual solve
                                 else:
                                     logger.info(
-                                        f"⏭️ Skipping low-value claim {job.name} "
-                                        f"(avg ${avg_earnings:.4f}, cost ${estimated_cost:.4f})"
+                                        f"Skipping low-value "
+                                        f"claim {job.name} "
+                                        f"(avg "
+                                        f"${avg_earnings:.4f}, "
+                                        f"cost "
+                                        f"${estimated_cost:.4f})"
                                     )
                                     job.next_run = now + 3600  # Try again in 1 hour
                                     continue
                             except Exception as e:
-                                logger.debug(f"Profitability check failed: {e}")
+                                logger.debug(
+                                    f"Profitability check "
+                                    f"failed: {e}"
+                                )
                     except Exception as e:
-                        logger.debug(f"Budget check failed for {job.name}: {e}")
+                        logger.debug(
+                            f"Budget check failed for "
+                            f"{job.name}: {e}"
+                        )
                         # If budget check fails, allow job to proceed (fail-safe)
 
                 # Auto-Suspend based on ROI and success rate
                 if self.settings.faucet_auto_suspend_enabled:
-                    should_suspend, reason = self._check_auto_suspend(job.faucet_type)
+                    should_suspend, reason = (
+                        self._check_auto_suspend(
+                            job.faucet_type,
+                        )
+                    )
                     if should_suspend:
-                        logger.warning(f"⏸️ AUTO-SUSPEND: {job.faucet_type} - {reason}")
-                        self.faucet_cooldowns[job.faucet_type] = now + self.settings.faucet_auto_suspend_duration
+                        logger.warning(
+                            f"AUTO-SUSPEND: "
+                            f"{job.faucet_type} - {reason}"
+                        )
+                        self.faucet_cooldowns[
+                            job.faucet_type
+                        ] = (
+                            now
+                            + self.settings
+                            .faucet_auto_suspend_duration
+                        )
                         job.next_run = now + 600  # Check back in 10 mins
                         continue
 
-                # Advanced Withdrawal Scheduling (New Gen 3.0 Logic)
                 if "withdraw" in job.job_type.lower() or "withdraw" in job.name.lower():
                     from core.withdrawal_analytics import get_analytics
                     from core.analytics import get_tracker
@@ -2845,14 +3510,25 @@ class JobScheduler:
                     )
 
                     if recommendation["action"] == "wait":
-                        logger.info(f"⏳ Withdrawal Deferred for {job.name}: {recommendation['reason']}")
+                        logger.info(
+                            f"Withdrawal Deferred for "
+                            f"{job.name}: "
+                            f"{recommendation['reason']}"
+                        )
                         job.next_run = time.time() + 3600  # Check again in 1 hour
                         continue
 
-                    # We can also check historical performance to skip low-yield faucets
-                    f_stats = analytics.get_faucet_performance(hours=168).get(job.faucet_type, {})
-                    if f_stats and f_stats.get("success_rate", 100) < 20:
-                        logger.warning(f"⚠️ Skipping low-performance faucet withdrawal: {job.faucet_type}")
+                    # Check historical performance to skip low-yield faucets
+                    f_stats = analytics.get_faucet_performance(
+                        hours=168,
+                    ).get(job.faucet_type, {})
+                    if f_stats and f_stats.get(
+                        "success_rate", 100,
+                    ) < 20:
+                        logger.warning(
+                            "Skipping low-performance faucet "
+                            f"withdrawal: {job.faucet_type}"
+                        )
                         job.next_run = now + 86400  # Try again tomorrow
                         continue
 

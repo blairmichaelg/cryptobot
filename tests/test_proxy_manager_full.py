@@ -106,6 +106,7 @@ class TestProxyDataclass:
         p = Proxy(ip="s.io", port=443, username="u", password="p", protocol="https")
         result = p.to_string()
         assert result.startswith("https://")
+        assert result == "https://u:p@s.io:443"
 
     def test_to_2captcha_string_username_only(self):
         """If username is set but password is empty, to_2captcha_string
@@ -292,7 +293,7 @@ class TestLoadHealthData:
         assert "active" in mgr.proxy_cooldowns
 
     def test_empty_data_returned(self):
-        """safe_json_read returning None/empty dict should be handled."""
+        """safe_json_read returning None should be handled."""
         mgr = _make_manager()
         with patch("os.path.exists", return_value=True), \
              patch("core.proxy_manager.safe_json_read", return_value=None):
@@ -303,10 +304,8 @@ class TestLoadHealthData:
         """Should handle JSON decode errors gracefully."""
         mgr = _make_manager()
         with patch("os.path.exists", return_value=True), \
-             patch("core.proxy_manager.safe_json_read", side_effect=json.JSONDecodeError("bad", "", 0)):
-            # The method catches JSONDecodeError internally; safe_json_read
-            # itself handles corruption, but if the error propagates,
-            # _load_health_data catches it.
+             patch("core.proxy_manager.safe_json_read",
+                   side_effect=json.JSONDecodeError("bad", "", 0)):
             mgr._load_health_data()
         assert mgr.proxy_latency == {}
 
@@ -332,7 +331,8 @@ class TestSaveHealthData:
 
     def test_save_exception_handled(self):
         mgr = _make_manager()
-        with patch("core.proxy_manager.safe_json_write", side_effect=OSError("disk full")):
+        with patch("core.proxy_manager.safe_json_write",
+                   side_effect=OSError("disk full")):
             mgr._save_health_data()  # should not raise
 
 
@@ -503,19 +503,22 @@ class TestGetProxyReputation:
 
     def test_latency_penalty(self):
         mgr = _make_manager()
-        mgr.proxy_latency["k"] = [2000.0]  # avg 2000ms -> penalty = min(2000/100, 20) = 20
+        # avg 2000ms -> penalty = min(2000/100, 20) = 20
+        mgr.proxy_latency["k"] = [2000.0]
         score = mgr.get_proxy_reputation("k")
         assert score == 80.0
 
     def test_failure_penalty(self):
         mgr = _make_manager()
-        mgr.proxy_failures["k"] = 4  # penalty = min(4*5, 30) = 20
+        # penalty = min(4*5, 30) = 20
+        mgr.proxy_failures["k"] = 4
         score = mgr.get_proxy_reputation("k")
         assert score == 80.0
 
     def test_soft_signal_penalty(self):
         mgr = _make_manager()
-        mgr.proxy_soft_signals["k"] = {"blocked": 4}  # sum=4, penalty = min(4*1.5, 30) = 6
+        # sum=4, penalty = min(4*1.5, 30) = 6
+        mgr.proxy_soft_signals["k"] = {"blocked": 4}
         score = mgr.get_proxy_reputation("k")
         assert score == 94.0
 
@@ -539,7 +542,7 @@ class TestGetProxyReputation:
         mgr.proxy_failures["k"] = 100
         mgr.proxy_soft_signals["k"] = {"blocked": 100}
         score = mgr.get_proxy_reputation("k")
-        # latency cap 20 + failure cap 30 + signal cap 30 = 80 off from 100
+        # latency cap 20 + failure cap 30 + signal cap 30 = 80 off 100
         assert score == 20.0
 
 
@@ -603,7 +606,8 @@ class TestHealthCheckAllProxies:
                 return None  # failure
             return 100.0
 
-        with patch.object(mgr, "measure_proxy_latency", side_effect=fake_latency):
+        with patch.object(mgr, "measure_proxy_latency",
+                          side_effect=fake_latency):
             result = await mgr.health_check_all_proxies()
         assert result["total"] == 3
         assert result["healthy"] == 2
@@ -615,8 +619,8 @@ class TestHealthCheckAllProxies:
 # ===================================================================
 
 class TestRemoveDeadProxies:
-    def test_salvage_when_all_dead(self):
-        """When all proxies are dead, at least one should be salvaged."""
+    def test_salvage_when_all_in_cooldown(self):
+        """When all proxies are in cooldown, at least one is salvaged."""
         mgr = _make_manager()
         p1 = Proxy(ip="1.1.1.1", port=80, username="u1", password="p")
         p2 = Proxy(ip="2.2.2.2", port=80, username="u2", password="p")
@@ -624,7 +628,6 @@ class TestRemoveDeadProxies:
         k2 = mgr._proxy_key(p2)
         mgr.all_proxies = [p1, p2]
         mgr.proxies = [p1, p2]
-        # Put both in cooldown
         now = time.time()
         mgr.proxy_cooldowns = {k1: now + 3600, k2: now + 7200}
         with patch("core.proxy_manager.safe_json_write"):
@@ -654,7 +657,7 @@ class TestRemoveDeadProxies:
         k1 = mgr._proxy_key(p1)
         mgr.all_proxies = [p1, p2]
         mgr.proxies = [p1, p2]
-        # Give p1 very high latencies (3 measurements required)
+        # 3 measurements needed, all above DEAD_PROXY_THRESHOLD_MS (5000)
         mgr.proxy_latency[k1] = [8000, 9000, 10000]
         removed = mgr.remove_dead_proxies()
         assert removed == 1
@@ -671,7 +674,6 @@ class TestRemoveDeadProxies:
         mgr.proxies = [p, good_p]
         mgr.proxy_reputation[key] = 5.0  # below min_score=20
         removed = mgr.remove_dead_proxies()
-        # p should be in cooldown, good_p stays
         assert removed == 1
         assert len(mgr.proxies) == 1
 
@@ -697,7 +699,7 @@ class TestRotateSessionId:
     def test_generates_unique_ids(self):
         mgr = _make_manager()
         results = {mgr.rotate_session_id("u") for _ in range(20)}
-        # Should generate many unique IDs (statistically impossible to get all same)
+        # Should generate many unique IDs
         assert len(results) > 1
 
 
@@ -741,8 +743,10 @@ class TestFetchProxiesFromProvider:
         mock_resp.status = 200
         mock_resp.json = AsyncMock(return_value={
             "results": [
-                {"proxy_address": "1.1.1.1", "port": 8080, "username": "u", "password": "p"},
-                {"proxy_address": "2.2.2.2", "port": 9090, "username": "u2", "password": "p2"},
+                {"proxy_address": "1.1.1.1", "port": 8080,
+                 "username": "u", "password": "p"},
+                {"proxy_address": "2.2.2.2", "port": 9090,
+                 "username": "u2", "password": "p2"},
             ]
         })
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -836,8 +840,11 @@ class TestAutoProvisionProxies:
         mgr.proxies = [
             Proxy(ip="1.1.1.1", port=80, username="u", password="p"),
         ]
-        with patch.object(mgr, "fetch_proxies_from_api", new_callable=AsyncMock, return_value=5):
-            result = await mgr.auto_provision_proxies(min_threshold=10, provision_count=5)
+        with patch.object(mgr, "fetch_proxies_from_api",
+                          new_callable=AsyncMock, return_value=5):
+            result = await mgr.auto_provision_proxies(
+                min_threshold=10, provision_count=5,
+            )
         assert result == 5
 
     async def test_unsupported_provider(self):
@@ -850,7 +857,9 @@ class TestAutoProvisionProxies:
     async def test_fetch_failure(self):
         mgr = _make_manager()
         mgr.proxies = []
-        with patch.object(mgr, "fetch_proxies_from_api", new_callable=AsyncMock, side_effect=Exception("fail")):
+        with patch.object(mgr, "fetch_proxies_from_api",
+                          new_callable=AsyncMock,
+                          side_effect=Exception("fail")):
             result = await mgr.auto_provision_proxies(min_threshold=10)
         assert result == 0
 
@@ -879,7 +888,9 @@ class TestAutoRemoveDeadProxies:
         mgr.proxies = [p]
         mgr.proxy_failures = {key: 5}
         with patch("core.proxy_manager.safe_json_write"):
-            removed = await mgr.auto_remove_dead_proxies(failure_threshold=3)
+            removed = await mgr.auto_remove_dead_proxies(
+                failure_threshold=3,
+            )
         assert removed == 1
         assert len(mgr.proxies) == 0
         assert key in mgr.dead_proxies
@@ -906,9 +917,14 @@ class TestAutoRefreshProxies:
 
     async def test_healthy_pool_no_refresh(self):
         mgr = _make_manager()
-        with patch.object(mgr, "health_check_all_proxies", new_callable=AsyncMock,
-                          return_value={"healthy": 60, "total": 60}):
-            result = await mgr.auto_refresh_proxies(min_healthy_count=50)
+        with patch.object(
+            mgr, "health_check_all_proxies",
+            new_callable=AsyncMock,
+            return_value={"healthy": 60, "total": 60},
+        ):
+            result = await mgr.auto_refresh_proxies(
+                min_healthy_count=50,
+            )
         assert result is True
 
     async def test_low_pool_triggers_refresh(self):
@@ -922,27 +938,47 @@ class TestAutoRefreshProxies:
                 return {"healthy": 10, "total": 20}
             return {"healthy": 80, "total": 100}
 
-        with patch.object(mgr, "health_check_all_proxies", new_callable=AsyncMock, side_effect=fake_health), \
-             patch.object(mgr, "fetch_2captcha_proxies", new_callable=AsyncMock, return_value=50), \
-             patch("core.proxy_manager.safe_json_write"):
-            result = await mgr.auto_refresh_proxies(min_healthy_count=50, target_count=100)
+        with patch.object(
+            mgr, "health_check_all_proxies",
+            new_callable=AsyncMock, side_effect=fake_health,
+        ), patch.object(
+            mgr, "fetch_2captcha_proxies",
+            new_callable=AsyncMock, return_value=50,
+        ), patch("core.proxy_manager.safe_json_write"):
+            result = await mgr.auto_refresh_proxies(
+                min_healthy_count=50, target_count=100,
+            )
         assert result is True
 
     async def test_refresh_fetch_fails(self):
         mgr = _make_manager()
-        with patch.object(mgr, "health_check_all_proxies", new_callable=AsyncMock,
-                          return_value={"healthy": 5, "total": 10}), \
-             patch.object(mgr, "fetch_2captcha_proxies", new_callable=AsyncMock, return_value=0):
-            result = await mgr.auto_refresh_proxies(min_healthy_count=50)
+        with patch.object(
+            mgr, "health_check_all_proxies",
+            new_callable=AsyncMock,
+            return_value={"healthy": 5, "total": 10},
+        ), patch.object(
+            mgr, "fetch_2captcha_proxies",
+            new_callable=AsyncMock, return_value=0,
+        ):
+            result = await mgr.auto_refresh_proxies(
+                min_healthy_count=50,
+            )
         assert result is False
 
     async def test_refresh_exception(self):
         mgr = _make_manager()
-        with patch.object(mgr, "health_check_all_proxies", new_callable=AsyncMock,
-                          return_value={"healthy": 5, "total": 10}), \
-             patch.object(mgr, "fetch_2captcha_proxies", new_callable=AsyncMock,
-                          side_effect=Exception("network error")):
-            result = await mgr.auto_refresh_proxies(min_healthy_count=50)
+        with patch.object(
+            mgr, "health_check_all_proxies",
+            new_callable=AsyncMock,
+            return_value={"healthy": 5, "total": 10},
+        ), patch.object(
+            mgr, "fetch_2captcha_proxies",
+            new_callable=AsyncMock,
+            side_effect=Exception("network error"),
+        ):
+            result = await mgr.auto_refresh_proxies(
+                min_healthy_count=50,
+            )
         assert result is False
 
 
@@ -1108,23 +1144,36 @@ class TestGetGeolocationForProxy:
 
     async def test_full_url(self):
         mgr = _make_manager()
-        with patch.object(mgr, "get_proxy_geolocation", new_callable=AsyncMock,
-                          return_value=("America/Chicago", "en-US")):
-            result = await mgr.get_geolocation_for_proxy("http://u:p@1.2.3.4:8080")
+        with patch.object(
+            mgr, "get_proxy_geolocation",
+            new_callable=AsyncMock,
+            return_value=("America/Chicago", "en-US"),
+        ):
+            result = await mgr.get_geolocation_for_proxy(
+                "http://u:p@1.2.3.4:8080",
+            )
         assert result == ("America/Chicago", "en-US")
 
     async def test_bare_host_port(self):
         mgr = _make_manager()
-        with patch.object(mgr, "get_proxy_geolocation", new_callable=AsyncMock,
-                          return_value=("Europe/London", "en-GB")):
+        with patch.object(
+            mgr, "get_proxy_geolocation",
+            new_callable=AsyncMock,
+            return_value=("Europe/London", "en-GB"),
+        ):
             result = await mgr.get_geolocation_for_proxy("10.0.0.1:3128")
         assert result == ("Europe/London", "en-GB")
 
     async def test_auth_no_protocol(self):
         mgr = _make_manager()
-        with patch.object(mgr, "get_proxy_geolocation", new_callable=AsyncMock,
-                          return_value=("Asia/Tokyo", "ja-JP")):
-            result = await mgr.get_geolocation_for_proxy("user:pass@jp.proxy.com:9090")
+        with patch.object(
+            mgr, "get_proxy_geolocation",
+            new_callable=AsyncMock,
+            return_value=("Asia/Tokyo", "ja-JP"),
+        ):
+            result = await mgr.get_geolocation_for_proxy(
+                "user:pass@jp.proxy.com:9090",
+            )
         assert result == ("Asia/Tokyo", "ja-JP")
 
 
@@ -1174,8 +1223,13 @@ class TestAssignProxiesEdgeCases:
 
     def test_session_proxies_preferred(self):
         mgr = _make_manager()
-        p_normal = Proxy(ip="1.1.1.1", port=80, username="u1", password="p")
-        p_session = Proxy(ip="2.2.2.2", port=80, username="u1-session-abc123", password="p")
+        p_normal = Proxy(
+            ip="1.1.1.1", port=80, username="u1", password="p",
+        )
+        p_session = Proxy(
+            ip="2.2.2.2", port=80,
+            username="u1-session-abc123", password="p",
+        )
         mgr.proxies = [p_normal, p_session]
         profile = _make_profile(faucet="test", username="user1")
         mgr.assign_proxies([profile])
@@ -1221,50 +1275,49 @@ class TestAssignProxiesEdgeCases:
 
 # ===================================================================
 # 24. record_failure edge cases
+# (mock remove_dead_proxies to isolate direct effects)
 # ===================================================================
 
 class TestRecordFailureEdgeCases:
     def test_detection_cooldown(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
-            mgr.record_failure("http://u:p@1.1.1.1:80", detected=True)
+            mgr.record_failure(
+                "http://u:p@1.1.1.1:80", detected=True,
+            )
         key = "u:p@1.1.1.1:80"
         assert key in mgr.proxy_cooldowns
         assert mgr.proxy_cooldowns[key] > time.time()
 
     def test_403_triggers_cooldown(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
-            mgr.record_failure("http://u:p@1.1.1.1:80", status_code=403)
+            mgr.record_failure(
+                "http://u:p@1.1.1.1:80", status_code=403,
+            )
         key = "u:p@1.1.1.1:80"
         assert key in mgr.proxy_cooldowns
 
     def test_host_level_cooldown_after_threshold(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         host = "1.1.1.1:80"
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
             for _ in range(mgr.HOST_DETECTION_THRESHOLD):
-                mgr.record_failure("http://u:p@1.1.1.1:80", detected=True)
+                mgr.record_failure(
+                    "http://u:p@1.1.1.1:80", detected=True,
+                )
         assert host in mgr.proxy_cooldowns
 
     def test_dead_proxy_after_failures(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
             for _ in range(mgr.DEAD_PROXY_FAILURE_COUNT):
                 mgr.record_failure("http://u:p@1.1.1.1:80")
@@ -1273,21 +1326,19 @@ class TestRecordFailureEdgeCases:
 
     def test_reputation_penalty_detected(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
-            mgr.record_failure("http://u:p@1.1.1.1:80", detected=True)
+            mgr.record_failure(
+                "http://u:p@1.1.1.1:80", detected=True,
+            )
         key = "u:p@1.1.1.1:80"
         assert mgr.proxy_reputation[key] == 85.0  # 100 - 15
 
     def test_reputation_penalty_normal(self):
         mgr = _make_manager()
-        p = Proxy(ip="1.1.1.1", port=80, username="u", password="p")
-        mgr.all_proxies = [p]
-        mgr.proxies = [p]
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task"):
             mgr.record_failure("http://u:p@1.1.1.1:80")
         key = "u:p@1.1.1.1:80"
@@ -1298,6 +1349,7 @@ class TestRecordFailureEdgeCases:
         mgr.proxies = []  # critically low
         mgr.settings.use_2captcha_proxies = True
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task") as mock_task:
             mgr.record_failure("http://u:p@1.1.1.1:80")
         mock_task.assert_called_once()
@@ -1310,6 +1362,7 @@ class TestRecordFailureEdgeCases:
         ]
         mgr.all_proxies = list(mgr.proxies)
         with patch("core.proxy_manager.safe_json_write"), \
+             patch.object(mgr, "remove_dead_proxies"), \
              patch("asyncio.create_task") as mock_task:
             mgr.record_failure("http://u:p@1.1.1.1:80")
         mock_task.assert_not_called()
@@ -1348,7 +1401,8 @@ class TestRotateProxy:
     def test_random_strategy(self):
         mgr = _make_manager()
         proxies = [
-            Proxy(ip=f"1.1.1.{i}", port=80, username=f"u{i}", password="p")
+            Proxy(ip=f"1.1.1.{i}", port=80,
+                  username=f"u{i}", password="p")
             for i in range(10)
         ]
         mgr.proxies = proxies
@@ -1417,13 +1471,12 @@ class TestRotateProxy:
         assert "2.2.2.2" in result
 
     def test_rotate_cooldown_salvage(self):
-        """When all healthy proxies are in cooldown, salvage info is reported."""
+        """When all proxies are in cooldown, returns None."""
         mgr = _make_manager()
         p1 = Proxy(ip="1.1.1.1", port=80, username="u1", password="p")
         k1 = mgr._proxy_key(p1)
         mgr.proxies = [p1]
         mgr.proxy_cooldowns = {k1: time.time() + 9999}
-        # Current proxy is also in cooldown
         profile = _make_profile(proxy="http://u1:p@1.1.1.1:80")
         profile.proxy_rotation_strategy = "round_robin"
         result = mgr.rotate_proxy(profile)
