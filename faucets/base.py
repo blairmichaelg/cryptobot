@@ -1161,7 +1161,7 @@ class FaucetBot:
         )
         return result is not None
 
-    async def safe_fill(self, selector: Union[str, Locator], text: str, **kwargs) -> bool:
+    async def safe_fill(self, selector: Union[str, Locator], text: str, **kwargs: Any) -> bool:
         """Fill an input field with page-health pre-checks.
 
         Args:
@@ -1181,7 +1181,7 @@ class FaucetBot:
         )
         return result is not None
 
-    async def safe_goto(self, url: str, **kwargs) -> bool:
+    async def safe_goto(self, url: str, **kwargs: Any) -> bool:
         """Navigate to *url* with page-health pre-checks.
 
         Args:

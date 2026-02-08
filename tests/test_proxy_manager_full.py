@@ -104,7 +104,7 @@ class TestProxyDataclass:
 
     def test_to_string_with_https_protocol(self):
         p = Proxy(ip="s.io", port=443, username="u", password="p", protocol="https")
-        assert result := p.to_string()
+        result = p.to_string()
         assert result.startswith("https://")
 
     def test_to_2captcha_string_username_only(self):
