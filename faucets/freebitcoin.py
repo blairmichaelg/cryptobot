@@ -606,9 +606,9 @@ class FreeBitcoinBot(FaucetBot):
                     await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
                     # Give strict SPAs a moment to update DOM/cookies
                     try:
-                         await self.page.wait_for_load_state("networkidle", timeout=5000)
+                        await self.page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
-                         pass 
+                        pass
                 except asyncio.TimeoutError:
                     logger.warning("[FreeBitcoin] Login redirect timeout")
 

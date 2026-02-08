@@ -998,13 +998,19 @@ class TestHasOnlyTestJobs:
 
 class TestClassConstants:
     def test_class_level_constants(self):
-        assert JobScheduler.CIRCUIT_BREAKER_THRESHOLD == 5
-        assert JobScheduler.CIRCUIT_BREAKER_COOLDOWN == 14400
-        assert JobScheduler.RETRYABLE_COOLDOWN == 600
-        assert JobScheduler.TIMER_HISTORY_SIZE == 10
-        assert JobScheduler.MODE_CHECK_INTERVAL == 600
-        assert JobScheduler.MAX_SECURITY_RETRIES == 5
-        assert JobScheduler.SECURITY_RETRY_RESET_HOURS == 24
+        from core.orchestrator import JobScheduler
+        from unittest.mock import MagicMock, AsyncMock
+        mock_settings = MagicMock()
+        mock_settings.accounts = []
+        mock_settings.max_concurrent = 3
+        scheduler = JobScheduler(mock_settings, AsyncMock())
+        assert scheduler.CIRCUIT_BREAKER_THRESHOLD == 5
+        assert scheduler.CIRCUIT_BREAKER_COOLDOWN == 14400
+        assert scheduler.RETRYABLE_COOLDOWN == 600
+        assert scheduler.TIMER_HISTORY_SIZE == 10
+        assert scheduler.MODE_CHECK_INTERVAL == 600
+        assert scheduler.max_security_retries == 5
+        assert scheduler.security_retry_reset_hours == 24
 
     def test_module_constants(self):
         assert MAX_PROXY_FAILURES == 3
@@ -2712,8 +2718,8 @@ class TestScheduleWithdrawalJobsDeep:
         def mock_source(method):
             return "def withdraw(self): return self.execute()"
 
-        # First get_faucet_class call returns None, second returns the class
-        with patch("core.registry.get_faucet_class", side_effect=[None, mock_class]) as mock_get, \
+        # Registry lookup now does single-pass normalization
+        with patch("core.registry.get_faucet_class", return_value=mock_class) as mock_get, \
              patch("core.registry.FAUCET_REGISTRY", {"fire_faucet": mock_class}), \
              patch("inspect.getsource", side_effect=mock_source), \
              patch("core.analytics.get_tracker") as mock_tracker:

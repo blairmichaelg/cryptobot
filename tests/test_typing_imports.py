@@ -23,7 +23,7 @@ except ImportError:
 
 def check_file_has_typing_import(file_path: Path, required_types: list) -> bool:
     """Check if a Python file has the required typing imports."""
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Parse the file to find imports
@@ -48,7 +48,7 @@ def test_browser_instance_typing_imports():
     file_path = Path(__file__).parent.parent / 'browser' / 'instance.py'
     
     # Check the file uses Dict, Optional, List, Any
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Find what typing constructs are used
@@ -78,7 +78,7 @@ def test_browser_secure_storage_typing_imports():
     """Verify browser/secure_storage.py has all required typing imports."""
     file_path = Path(__file__).parent.parent / 'browser' / 'secure_storage.py'
     
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     uses_dict = bool(re.search(r'\bDict\[', content))
@@ -106,7 +106,7 @@ def test_browser_stealth_hub_typing_imports():
     """Verify browser/stealth_hub.py has all required typing imports."""
     file_path = Path(__file__).parent.parent / 'browser' / 'stealth_hub.py'
     
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     uses_dict = bool(re.search(r'\bDict\[', content))
@@ -144,8 +144,14 @@ def test_browser_module_syntax():
         full_path = Path(__file__).parent.parent / file_path
         if full_path.exists():
             # Compile the file to check for syntax errors
-            with tempfile.NamedTemporaryFile(suffix='.pyc', delete=True) as tmp:
-                py_compile.compile(str(full_path), tmp.name, doraise=True)
+            tmp = tempfile.NamedTemporaryFile(suffix='.pyc', delete=False)
+            tmp_name = tmp.name
+            tmp.close()
+            try:
+                py_compile.compile(str(full_path), tmp_name, doraise=True)
+            finally:
+                import os
+                os.unlink(tmp_name)
             print(f"✅ {file_path} has valid syntax")
     return True
 

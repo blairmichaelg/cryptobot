@@ -520,8 +520,7 @@ class ProxyManager:
                 if self.proxy_host_failures[host_port] >= self.HOST_DETECTION_THRESHOLD:
                     self.proxy_cooldowns[host_port] = now + self.DETECTION_COOLDOWN
                     logger.warning(
-                        f"[COOLDOWN] Proxy host {host_port} flagged after {
-                            self.proxy_host_failures[host_port]} detections."
+                        f"[COOLDOWN] Proxy host {host_port} flagged after {self.proxy_host_failures[host_port]} detections."
                     )
 
             # If we see MANY sessions from the same IP failing, we could ban the IP,

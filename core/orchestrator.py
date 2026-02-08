@@ -126,7 +126,8 @@ class Job:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Job":
         """Deserialise a job from a dictionary (e.g. session_state.json)."""
-        data['profile'] = AccountProfile(**data['profile'])
+        if data.get('profile') is not None:
+            data['profile'] = AccountProfile(**data['profile'])
         return cls(**data)
 
 
@@ -844,7 +845,7 @@ class JobScheduler:
 
         if not enabled_profiles:
             logger.warning("No enabled account profiles found. Skipping withdrawal job scheduling.")
-            return
+            return 0
 
         scheduled_count = 0
 

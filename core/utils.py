@@ -25,7 +25,9 @@ def safe_json_read(filepath: str, max_backups: int = 3) -> Optional[dict]:
 def safe_json_write(filepath: str, data: dict, max_backups: int = 3) -> None:
     """Atomic JSON write with corruption protection and backups."""
     try:
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        dirpath = os.path.dirname(filepath)
+        if dirpath:
+            os.makedirs(dirpath, exist_ok=True)
 
         if os.path.exists(filepath):
             backup_base = filepath + ".backup"
