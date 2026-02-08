@@ -93,7 +93,7 @@ AD_DOMAINS = [
     r".*maxmind\.com.*",
     r".*sift\.com.*",
     r".*device-detector\.io.*",
-    # IP/Proxy Detection APIs  
+    # IP/Proxy Detection APIs
     r".*api\.ipify\.org.*",
     r".*ip-api\.com.*",
     r".*ipinfo\.io.*",
@@ -147,6 +147,7 @@ AD_DOMAINS = [
     r".*mellow\.ads.*",
 ]
 
+
 class ResourceBlocker:
     """Route-level resource blocker for Playwright browser contexts.
 
@@ -192,7 +193,7 @@ class ResourceBlocker:
         if not self.enabled:
             await route.continue_()
             return
-            
+
         request = route.request
         resource_type = request.resource_type
         url = request.url
@@ -209,12 +210,17 @@ class ResourceBlocker:
                 "challenges.cloudflare.com",
                 "cdn-cgi",
             )
-            if lower_url.startswith("data:image/") or any(token in lower_url for token in captcha_allowlist):
+            is_data_uri = lower_url.startswith("data:image/")
+            is_captcha = any(
+                token in lower_url
+                for token in captcha_allowlist
+            )
+            if is_data_uri or is_captcha:
                 await route.continue_()
                 return
             await route.abort()
             return
-        
+
         if self.block_media and resource_type in ["media", "font", "stylesheet"]:
             # We are careful with stylesheets, but for heavy optimization:
             # Maybe restrict stylesheet blocking to specific heavy domains if needed.

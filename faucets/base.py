@@ -149,14 +149,19 @@ class FaucetBot:
     }
     DEFAULT_BEHAVIOR_PROFILE = "balanced"
 
-    def __init__(self, settings: BotSettings, page: Page, action_lock: Optional[asyncio.Lock] = None):
-        """
-        Initialize the FaucetBot.
+    def __init__(
+        self,
+        settings: BotSettings,
+        page: Page,
+        action_lock: Optional[asyncio.Lock] = None,
+    ) -> None:
+        """Initialize the FaucetBot.
 
         Args:
             settings: Configuration settings for the bot.
             page: The Playwright Page instance to control.
-            action_lock: An asyncio.Lock to prevent simultaneous actions across multiple bot instances.
+            action_lock: Lock to prevent simultaneous actions
+                across multiple bot instances.
         """
         self.settings = settings
         self.page = page
@@ -216,7 +221,11 @@ class FaucetBot:
         if fallback_provider and fallback_key:
             self.solver.set_fallback_provider(fallback_provider, fallback_key)
 
-    def set_behavior_profile(self, profile_name: Optional[str] = None, profile_hint: Optional[str] = None) -> None:
+    def set_behavior_profile(
+        self,
+        profile_name: Optional[str] = None,
+        profile_hint: Optional[str] = None,
+    ) -> None:
         """Select a humanisation timing profile.
 
         If *profile_hint* is given and matches a known profile key it is used
@@ -294,6 +303,7 @@ class FaucetBot:
 
     @faucet_name.setter
     def faucet_name(self, value: str) -> None:
+        """Set the faucet name and propagate it to the solver."""
         self._faucet_name = value
         if hasattr(self, 'solver') and self.solver is not None:
             self.solver.set_faucet_name(value)
@@ -332,17 +342,29 @@ class FaucetBot:
         else:
             # Auto-classify based on status message and other signals
             status_lower = status.lower()
-            if any(config in status_lower for config in ["hcaptcha", "recaptcha",
-                   "turnstile", "captcha config", "solver config", "api key"]):
+            if any(
+                config in status_lower for config in [
+                    "hcaptcha", "recaptcha", "turnstile",
+                    "captcha config", "solver config", "api key",
+                ]
+            ):
                 error_type = ErrorType.CONFIG_ERROR
-            elif any(perm in status_lower for perm in ["banned", "suspended", "invalid credentials", "auth failed"]):
+            elif any(
+                perm in status_lower for perm in [
+                    "banned", "suspended",
+                    "invalid credentials", "auth failed",
+                ]
+            ):
                 error_type = ErrorType.PERMANENT
             elif exception or page_content or status_code:
                 error_type = self.classify_error(exception, page_content, status_code)
             else:
                 error_type = ErrorType.UNKNOWN
 
-        logger.debug(f"[{self.faucet_name}] Creating error result: {status} (type: {error_type.value})")
+        logger.debug(
+            f"[{self.faucet_name}] Creating error result:"
+            f" {status} (type: {error_type.value})"
+        )
 
         return ClaimResult(
             success=False,
@@ -351,51 +373,83 @@ class FaucetBot:
             error_type=error_type
         )
 
-    def classify_error(self, exception: Optional[Exception] = None, page_content: Optional[str]
-                       = None, status_code: Optional[int] = None) -> 'ErrorType':
-        """
-        Classify error type based on exception, page content, and HTTP status.
+    def classify_error(
+        self,
+        exception: Optional[Exception] = None,
+        page_content: Optional[str] = None,
+        status_code: Optional[int] = None,
+    ) -> 'ErrorType':
+        """Classify error type based on exception, page content, and HTTP status.
 
         Args:
-            exception: The exception that was raised (if any)
-            page_content: The page HTML/text content (if available)
-            status_code: HTTP status code (if available)
+            exception: The exception that was raised (if any).
+            page_content: The page HTML/text content (if available).
+            status_code: HTTP status code (if available).
 
         Returns:
-            ErrorType enum value for intelligent recovery
+            ErrorType enum value for intelligent recovery.
         """
 
         # Check status codes first
         if status_code:
             if status_code in [500, 502, 503, 504]:
-                logger.debug(f"[{self.faucet_name}] Classified as FAUCET_DOWN (status {status_code})")
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    f" FAUCET_DOWN (status {status_code})"
+                )
                 return ErrorType.FAUCET_DOWN
-            elif status_code == 429:
-                logger.debug(f"[{self.faucet_name}] Classified as RATE_LIMIT (status 429)")
+            if status_code == 429:
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    " RATE_LIMIT (status 429)"
+                )
                 return ErrorType.RATE_LIMIT
-            elif status_code == 403:
-                logger.debug(f"[{self.faucet_name}] Classified as PROXY_ISSUE (status 403)")
+            if status_code == 403:
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    " PROXY_ISSUE (status 403)"
+                )
                 return ErrorType.PROXY_ISSUE
 
         # Check exception type and message
         if exception:
             error_msg = str(exception).lower()
 
-            # Browser context closed errors - treat as transient (browser can be restarted)
-            if "closed" in error_msg and any(term in error_msg for term in [
-                "target", "context", "browser", "connection", "session"
-            ]):
-                logger.debug(f"[{self.faucet_name}] Classified as TRANSIENT (closed context/browser)")
+            # Browser context closed errors
+            if "closed" in error_msg and any(
+                term in error_msg for term in [
+                    "target", "context", "browser",
+                    "connection", "session",
+                ]
+            ):
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    " TRANSIENT (closed context/browser)"
+                )
                 return ErrorType.TRANSIENT
 
-            # Captcha failures - check before timeout since captcha timeouts are specific
-            if "captcha" in error_msg and any(term in error_msg for term in ["failed", "timeout", "error"]):
-                logger.debug(f"[{self.faucet_name}] Classified as CAPTCHA_FAILED")
+            # Captcha failures
+            if "captcha" in error_msg and any(
+                term in error_msg
+                for term in ["failed", "timeout", "error"]
+            ):
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    " CAPTCHA_FAILED"
+                )
                 return ErrorType.CAPTCHA_FAILED
 
             # Timeout/connection errors
-            if any(term in error_msg for term in ["timeout", "timed out", "connection reset", "connection refused"]):
-                logger.debug(f"[{self.faucet_name}] Classified as TRANSIENT (timeout/connection)")
+            if any(
+                term in error_msg for term in [
+                    "timeout", "timed out",
+                    "connection reset", "connection refused",
+                ]
+            ):
+                logger.debug(
+                    f"[{self.faucet_name}] Classified as"
+                    " TRANSIENT (timeout/connection)"
+                )
                 return ErrorType.TRANSIENT
 
         # Check page content for specific error messages
@@ -455,7 +509,7 @@ class FaucetBot:
             The base email address without the alias.
             Returns the input unchanged if it's None, empty, or doesn't contain '@'.
         """
-        if email is None or not email or '@' not in email:
+        if not email or '@' not in email:
             return email
 
         local_part, domain = email.rsplit('@', 1)
@@ -1846,9 +1900,7 @@ class FaucetBot:
         """
         # Structured logging: timer_check start
         logger.debug(
-            f"[LIFECYCLE] timer_check_start | faucet={
-                self.faucet_name} | selector={selector} | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] timer_check_start | faucet={self.faucet_name} | selector={selector} | timestamp={time.time():.0f}")
 
         try:
             el = self.page.locator(selector)
@@ -1858,9 +1910,7 @@ class FaucetBot:
                 minutes = DataExtractor.parse_timer_to_minutes(text)
                 # Structured logging: timer_check success
                 logger.info(
-                    f"[LIFECYCLE] timer_check | faucet={
-                        self.faucet_name} | timer_minutes={minutes} | timer_raw={text} | success=true | timestamp={
-                        time.time():.0f}")
+                     f"[LIFECYCLE] timer_check | faucet={self.faucet_name} | timer_minutes={minutes} | timer_raw={text} | success=true | timestamp={time.time():.0f}")
                 return minutes
         except Exception as e:
             logger.debug(f"[{self.faucet_name}] Timer extraction failed for {selector}: {e}")
@@ -1890,9 +1940,7 @@ class FaucetBot:
 
         # Structured logging: timer_check failed
         logger.warning(
-            f"[LIFECYCLE] timer_check | faucet={
-                self.faucet_name} | success=false | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] timer_check | faucet={self.faucet_name} | success=false | timestamp={time.time():.0f}")
         logger.warning(f"[{self.faucet_name}] Could not extract timer from {selector} or fallbacks")
         return 0.0
 
@@ -1903,9 +1951,7 @@ class FaucetBot:
         """
         # Structured logging: balance_check start
         logger.debug(
-            f"[LIFECYCLE] balance_check_start | faucet={
-                self.faucet_name} | selector={selector} | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] balance_check_start | faucet={self.faucet_name} | selector={selector} | timestamp={time.time():.0f}")
 
         try:
             el = self.page.locator(selector)
@@ -1915,9 +1961,7 @@ class FaucetBot:
                 balance = DataExtractor.extract_balance(text)
                 # Structured logging: balance_check success
                 logger.info(
-                    f"[LIFECYCLE] balance_check | faucet={
-                        self.faucet_name} | balance={balance} | success=true | timestamp={
-                        time.time():.0f}")
+                     f"[LIFECYCLE] balance_check | faucet={self.faucet_name} | balance={balance} | success=true | timestamp={time.time():.0f}")
                 return balance
         except Exception as e:
             logger.debug(f"[{self.faucet_name}] Balance extraction failed for {selector}: {e}")
@@ -1947,9 +1991,7 @@ class FaucetBot:
 
         # Structured logging: balance_check failed
         logger.warning(
-            f"[LIFECYCLE] balance_check | faucet={
-                self.faucet_name} | success=false | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] balance_check | faucet={self.faucet_name} | success=false | timestamp={time.time():.0f}")
         logger.warning(f"[{self.faucet_name}] Could not extract balance from {selector} or fallbacks")
         return "0"
 
@@ -2108,9 +2150,7 @@ class FaucetBot:
         creds = self.get_credentials(self.faucet_name)
         account = creds.get('username', 'unknown') if creds else 'unknown'
         logger.info(
-            f"[LIFECYCLE] login_start | faucet={
-                self.faucet_name} | account={account} | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] login_start | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
 
         # Attempt to clear Cloudflare/turnstile before failure checks
         try:
@@ -2154,9 +2194,7 @@ class FaucetBot:
         if await self.is_logged_in():
             # Structured logging: login_success (already logged in)
             logger.info(
-                f"[LIFECYCLE] login_success | faucet={
-                    self.faucet_name} | account={account} | already_logged_in=true | timestamp={
-                    time.time():.0f}")
+                 f"[LIFECYCLE] login_success | faucet={self.faucet_name} | account={account} | already_logged_in=true | timestamp={time.time():.0f}")
             return True
 
         logged_in = await self.login()
@@ -2188,16 +2226,11 @@ class FaucetBot:
 
                 # Structured logging: login_failed
                 logger.warning(
-                    f"[LIFECYCLE] login_failed | faucet={
-                        self.faucet_name} | account={account} | error_type={
-                        self.last_error_type.value if self.last_error_type else 'unknown'} | timestamp={
-                        time.time():.0f}")
+                     f"[LIFECYCLE] login_failed | faucet={self.faucet_name} | account={account} | error_type={self.last_error_type.value if self.last_error_type else 'unknown'} | timestamp={time.time():.0f}")
         else:
             # Structured logging: login_success
             logger.info(
-                f"[LIFECYCLE] login_success | faucet={
-                    self.faucet_name} | account={account} | timestamp={
-                    time.time():.0f}")
+                 f"[LIFECYCLE] login_success | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
 
         return logged_in
 
@@ -2383,20 +2416,7 @@ class FaucetBot:
         return result
 
     # Mapping of name substrings to cryptocurrency codes (order matters: check specific before general)
-    _CRYPTO_NAME_MAP: Dict[str, str] = {
-        "btc": "BTC", "bitcoin": "BTC",
-        "ltc": "LTC", "lite": "LTC",
-        "doge": "DOGE",
-        "trx": "TRX", "tron": "TRX",
-        "eth": "ETH",
-        "bnb": "BNB",
-        "sol": "SOL",
-        "ton": "TON",
-        "matic": "MATIC", "polygon": "MATIC",
-        "dash": "DASH",
-        "bch": "BCH",
-        "usdt": "USDT", "usd": "USDT",
-    }
+     _CRYPTO_NAME_MAP: Dict[str, str] = {"btc": "BTC", "bitcoin": "BTC", "ltc": "LTC", "lite": "LTC", "doge": "DOGE", "trx": "TRX", "tron": "TRX", "eth": "ETH", "bnb": "BNB", "sol": "SOL", "ton": "TON", "matic": "MATIC", "polygon": "MATIC", "dash": "DASH", "bch": "BCH", "usdt": "USDT", "usd": "USDT",}
 
     def _get_cryptocurrency_for_faucet(self) -> str:
         """
@@ -2446,9 +2466,7 @@ class FaucetBot:
 
         # Structured logging: claim_submit_start
         logger.info(
-            f"[LIFECYCLE] claim_submit_start | faucet={
-                self.faucet_name} | account={account} | proxy={proxy} | timestamp={
-                time.time():.0f}")
+             f"[LIFECYCLE] claim_submit_start | faucet={self.faucet_name} | account={account} | proxy={proxy} | timestamp={time.time():.0f}")
 
         try:
             await self.think_pause("pre_login")
@@ -2465,10 +2483,7 @@ class FaucetBot:
                 error_type = self.last_error_type or self.classify_error(None, page_content, status_code)
                 # Structured logging: claim_submit_failed (login)
                 logger.warning(
-                    f"[LIFECYCLE] claim_submit_failed | faucet={
-                        self.faucet_name} | account={account} | reason=login_failed | error_type={
-                        error_type.value if error_type else 'unknown'} | timestamp={
-                        time.time():.0f}")
+                     f"[LIFECYCLE] claim_submit_failed | faucet={self.faucet_name} | account={account} | reason=login_failed | error_type={error_type.value if error_type else 'unknown'} | timestamp={time.time():.0f}")
                 return ClaimResult(
                     success=False,
                     status="Login/Access Failed",
@@ -2499,9 +2514,7 @@ class FaucetBot:
 
             # Structured logging: claim_submit (executing)
             logger.info(
-                f"[LIFECYCLE] claim_submit | faucet={
-                    self.faucet_name} | account={account} | timestamp={
-                    time.time():.0f}")
+                 f"[LIFECYCLE] claim_submit | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
             result = await self.claim()
 
             # Handle cases where claim() might return a boolean (legacy)
@@ -2513,12 +2526,7 @@ class FaucetBot:
 
             # Structured logging: claim_verify
             logger.info(
-                f"[LIFECYCLE] claim_verify | faucet={
-                    self.faucet_name} | account={account} | success={
-                    result.success} | status={
-                    result.status[
-                        :50]} | timestamp={
-                        time.time():.0f}")
+                 f"[LIFECYCLE] claim_verify | faucet={self.faucet_name} | account={account} | success={result.success} | status={result.status[ :50]} | timestamp={time.time():.0f}")
 
             # If claim failed and no error_type was set, try to classify the error
             if not result.success and result.error_type is None:
@@ -2535,14 +2543,7 @@ class FaucetBot:
 
             # Structured logging: result_record
             logger.info(
-                f"[LIFECYCLE] result_record | faucet={
-                    self.faucet_name} | account={account} | success={
-                    result.success} | amount={
-                    result.amount} | balance={
-                    result.balance} | next_claim_min={
-                        result.next_claim_minutes} | error_type={
-                            result.error_type.value if result.error_type else 'none'} | timestamp={
-                                time.time():.0f}")
+                 f"[LIFECYCLE] result_record | faucet={self.faucet_name} | account={account} | success={result.success} | amount={result.amount} | balance={result.balance} | next_claim_min={result.next_claim_minutes} | error_type={result.error_type.value if result.error_type else 'none'} | timestamp={time.time():.0f}")
 
             return result
 
@@ -2558,12 +2559,7 @@ class FaucetBot:
 
             # Structured logging: result_record (exception)
             logger.error(
-                f"[LIFECYCLE] result_record | faucet={
-                    self.faucet_name} | account={account} | success=false | exception={
-                    str(e)[
-                        :100]} | error_type={
-                    error_type.value} | timestamp={
-                        time.time():.0f}")
+                 f"[LIFECYCLE] result_record | faucet={self.faucet_name} | account={account} | success=false | exception={str(e)[ :100]} | error_type={error_type.value} | timestamp={time.time():.0f}")
 
             return ClaimResult(
                 success=False,
