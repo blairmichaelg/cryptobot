@@ -18,7 +18,7 @@ import logging
 import subprocess
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, asdict
@@ -108,6 +108,7 @@ class HealthMonitor:
             enable_azure: Enable Azure Monitor integration
             browser_manager: Optional BrowserManager instance for browser health checks
             proxy_manager: Optional ProxyManager instance for proxy health checks
+            alert_webhook_url: Optional webhook URL for sending health alerts
         """
         self.root_dir = Path(__file__).parent.parent
         self.log_file = Path(log_file) if log_file else self.root_dir / "logs" / "vm_health.log"
@@ -152,7 +153,7 @@ class HealthMonitor:
         self.backoff_seconds = self.INITIAL_BACKOFF_SECONDS
         self._load_restart_state()
 
-    def _load_restart_state(self):
+    def _load_restart_state(self) -> None:
         """Load restart backoff state from file"""
         if self.restart_backoff_file.exists():
             try:
@@ -166,7 +167,7 @@ class HealthMonitor:
             except Exception as e:
                 logger.warning(f"Failed to load restart state: {e}")
 
-    def _save_restart_state(self):
+    def _save_restart_state(self) -> None:
         """Save restart backoff state to file"""
         try:
             state = {
