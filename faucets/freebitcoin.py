@@ -310,7 +310,9 @@ class FreeBitcoinBot(FaucetBot):
         try:
             login_input_forms = await self.page.evaluate(
                 """
-                () => Array.from(document.querySelectorAll('input[id^="login_form"]')).map(el => ({
+                () => Array.from(
+                    document.querySelectorAll('input[id^="login_form"]')
+                ).map(el => ({
                     id: el.id || null,
                     name: el.name || null,
                     form: el.form ? (el.form.id || el.form.name || null) : null
@@ -323,7 +325,9 @@ class FreeBitcoinBot(FaucetBot):
         try:
             script_sources = await self.page.evaluate(
                 """
-                () => Array.from(document.querySelectorAll('script[src]')).map(el => el.src).slice(0, 50)
+                () => Array.from(
+                    document.querySelectorAll('script[src]')
+                ).map(el => el.src).slice(0, 50)
                 """
             )
         except Exception:
@@ -663,7 +667,9 @@ class FreeBitcoinBot(FaucetBot):
                         visible_inputs = (
                             await self.page.evaluate(
                                 """
-                                () => Array.from(document.querySelectorAll('input:visible')).map(el => ({
+                                () => Array.from(
+                                    document.querySelectorAll('input:visible')
+                                ).map(el => ({
                                     type: el.type,
                                     name: el.name,
                                     id: el.id,
@@ -1152,11 +1158,20 @@ class FreeBitcoinBot(FaucetBot):
                         # Manually enable roll button
                         try:
                             await self.page.evaluate("""
-                                const btns = document.querySelectorAll('#free_play_form_button, button[id*="play"], button.claim-btn, button[type="submit"]');
+                                const sel = [
+                                    '#free_play_form_button',
+                                    'button[id*="play"]',
+                                    'button.claim-btn',
+                                    'button[type="submit"]'
+                                ].join(', ');
+                                const btns = document
+                                    .querySelectorAll(sel);
                                 btns.forEach(btn => {
                                     if (btn.disabled) {
                                         btn.disabled = false;
-                                        btn.removeAttribute('disabled');
+                                        btn.removeAttribute(
+                                            'disabled'
+                                        );
                                     }
                                 });
                             """)

@@ -20,4 +20,5 @@ Submodules:
     withdrawal_analytics: SQLite-backed withdrawal transaction tracking.
     dashboard_builder: Profitability report builder with Rich panels.
     logging_setup: Compressed rotating file + safe console logging.
+    utils: Corruption-safe JSON read/write helpers.
 """

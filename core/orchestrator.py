@@ -1,42 +1,60 @@
 """Job-scheduler and orchestration engine for Cryptobot Gen 3.0.
 
-This module implements the core scheduling loop that drives all faucet-claim
-activity.  It manages a min-heap priority queue of :class:`Job` objects,
-orchestrates their execution across browser contexts, and provides:
+This module implements the core scheduling loop that drives all
+faucet-claim activity.  It manages a min-heap priority queue of
+:class:`Job` objects, orchestrates their execution across browser
+contexts, and provides:
 
 * Concurrency control (global + per-profile limits).
 * Per-domain rate limiting to avoid triggering anti-bot defences.
 * Automatic proxy rotation on detection / failure.
 * Exponential back-off with jitter per faucet.
 * Circuit-breaker logic with error-type awareness.
-* Session persistence (``config/session_state.json``) for crash recovery.
+* Session persistence (``config/session_state.json``) for crash
+  recovery.
 * Integration with :class:`HealthMonitor` for service-level health.
-* ML-style timer prediction (stated vs. actual claim interval tracking).
+* ML-style timer prediction (stated vs. actual claim interval
+  tracking).
 
 Classes:
-    ErrorType: Enum classifying errors for intelligent retry/disable decisions.
+    ErrorType: Enum classifying errors for intelligent
+        retry/disable decisions.
     Job: Dataclass representing a single scheduled claim task.
     JobScheduler: Main orchestration engine.
 """
 
 import asyncio
-import logging
-import time
-import random
-import json
-import os
 import inspect
+import json
+import logging
+import os
+import random
 import shutil
+import time
+import traceback
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from core.config import BotSettings, AccountProfile, CONFIG_DIR, LOGS_DIR
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+)
+
+from core.config import (
+    AccountProfile,
+    BotSettings,
+    CONFIG_DIR,
+    LOGS_DIR,
+    OperationMode,
+)
 from core.health_monitor import HealthMonitor
 
 if TYPE_CHECKING:
     from faucets.base import ClaimResult
-    from core.config import OperationMode
 
 logger = logging.getLogger(__name__)
 
@@ -45,29 +63,39 @@ class ErrorType(Enum):
     """Classification of error types for intelligent recovery.
 
     Error Categories:
-    - TRANSIENT: Network timeouts, temporary connection issues (retryable, short delay)
-    - RATE_LIMIT: Rate limiting, Cloudflare challenges, security checks, maintenance (retryable, medium delay)
-    - PROXY_ISSUE: Proxy/VPN detection, IP blocks (retryable with proxy rotation)
-    - CAPTCHA_FAILED: CAPTCHA solve failures or timeouts (retryable, medium delay)
-    - CONFIG_ERROR: Configuration problems like invalid API keys (retryable after fix)
-    - FAUCET_DOWN: Server errors 500/503 (retryable, long delay)
-    - PERMANENT: Account banned, invalid credentials, auth failures (NOT retryable)
-    - UNKNOWN: Unclassified errors (retryable with caution)
+        TRANSIENT: Network timeouts, temporary connection issues
+            (retryable, short delay).
+        RATE_LIMIT: Rate limiting, Cloudflare challenges, security
+            checks, maintenance (retryable, medium delay).
+        PROXY_ISSUE: Proxy/VPN detection, IP blocks
+            (retryable with proxy rotation).
+        CAPTCHA_FAILED: CAPTCHA solve failures or timeouts
+            (retryable, medium delay).
+        CONFIG_ERROR: Configuration problems like invalid API keys
+            (retryable after fix).
+        FAUCET_DOWN: Server errors 500/503
+            (retryable, long delay).
+        PERMANENT: Account banned, invalid credentials, auth
+            failures (NOT retryable).
+        UNKNOWN: Unclassified errors (retryable with caution).
 
-    Note: Security challenges (Cloudflare, DDoS protection) are classified as RATE_LIMIT,
-    not PERMANENT, to allow retry with backoff before permanent disable.
+    Note:
+        Security challenges (Cloudflare, DDoS protection) are
+        classified as RATE_LIMIT, not PERMANENT, to allow retry
+        with backoff before permanent disable.
     """
-    TRANSIENT = "transient"  # Network timeout, temporary unavailable
-    RATE_LIMIT = "rate_limit"  # 429, cloudflare challenge, security checks, maintenance
-    PROXY_ISSUE = "proxy_issue"  # Proxy detection, IP blocked
-    PERMANENT = "permanent"  # Auth failed, account banned (only true permanent failures)
-    FAUCET_DOWN = "faucet_down"  # 500/503 server errors
-    CAPTCHA_FAILED = "captcha_failed"  # Captcha solve timeout
-    CONFIG_ERROR = "config_error"  # Configuration issue (hCaptcha, solver settings)
+
+    TRANSIENT = "transient"
+    RATE_LIMIT = "rate_limit"
+    PROXY_ISSUE = "proxy_issue"
+    PERMANENT = "permanent"
+    FAUCET_DOWN = "faucet_down"
+    CAPTCHA_FAILED = "captcha_failed"
+    CONFIG_ERROR = "config_error"
     UNKNOWN = "unknown"
 
 
-# Constants for magic numbers (Code Quality: extracted from hardcoded values)
+# Constants for magic numbers
 MAX_PROXY_FAILURES = 3
 PROXY_COOLDOWN_SECONDS = 300
 BURNED_PROXY_COOLDOWN = 43200  # 12 hours
@@ -140,24 +168,36 @@ class JobScheduler:
     proxy rotation, and robust error recovery.
     """
 
-    def __init__(self, settings: BotSettings, browser_manager: Any, proxy_manager: Optional[Any] = None):
-        """
-        Initialize the scheduler.
+    def __init__(
+        self,
+        settings: BotSettings,
+        browser_manager: Any,
+        proxy_manager: Optional[Any] = None,
+    ) -> None:
+        """Initialize the scheduler.
 
         Args:
             settings: Global configuration object.
-            browser_manager: Manager for Playwright/Camoufox instances.
-            proxy_manager: Optional manager for rotating residential proxies.
+            browser_manager: Manager for Playwright/Camoufox
+                instances.
+            proxy_manager: Optional manager for rotating
+                residential proxies.
         """
         self.settings = settings
         self.browser_manager = browser_manager
         self.proxy_manager = proxy_manager
         self.queue: List[Job] = []
-        self.running_jobs: Dict[str, asyncio.Task] = {}  # Key: profile.username + job.name
+        self.running_jobs: Dict[str, asyncio.Task] = {}
 
-        # Security challenge retry tracking (prevents permanent disable on first challenge)
-        # Format: {"faucet_type:username": {"security_retries": count, "last_retry_time": timestamp}}
-        self.security_challenge_retries: Dict[str, Dict[str, Any]] = {}
+        # Security challenge retry tracking (prevents permanent
+        # disable on first challenge).
+        # Format: {"faucet_type:username": {
+        #     "security_retries": count,
+        #     "last_retry_time": timestamp,
+        # }}
+        self.security_challenge_retries: Dict[
+            str, Dict[str, Any]
+        ] = {}
         self.max_security_retries = 5  # Allow up to 5 security challenge retries before permanent disable
         self.security_retry_reset_hours = 24  # Reset retry counter after 24 hours of no challenges
 

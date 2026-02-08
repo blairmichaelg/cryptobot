@@ -17,8 +17,7 @@ import time
 import logging
 import subprocess
 import json
-import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, asdict
@@ -809,7 +808,7 @@ class HealthMonitor:
             message += f"**Heartbeat Age:** {result.heartbeat_age_seconds}s\n"
 
             if result.alerts:
-                message += f"\n**Alerts:**\n"
+                message += "\n**Alerts:**\n"
                 for alert in result.alerts:
                     message += f"• {alert}\n"
 

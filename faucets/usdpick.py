@@ -1,43 +1,65 @@
-"""
-UsdPick Bot - USDT faucet from the Pick.io family.
+"""UsdPick Bot - USDT faucet from the Pick.io family.
 
 Inherits login from PickFaucetBase and implements USDT-specific claim logic.
 """
 import asyncio
 import logging
 import random
-from typing import Optional
+from typing import Any, Optional
+
 from playwright.async_api import Page
-from faucets.pick_base import PickFaucetBase
-from faucets.base import ClaimResult
+
 from core.extractor import DataExtractor
+from faucets.base import ClaimResult
+from faucets.pick_base import PickFaucetBase
 
 logger = logging.getLogger(__name__)
 
+
 class UsdPickBot(PickFaucetBase):
     """UsdPick faucet bot with Pick family login."""
-    
-    def __init__(self, settings, page: Page, action_lock: Optional[asyncio.Lock] = None):
+
+    def __init__(
+        self,
+        settings: Any,
+        page: Page,
+        action_lock: Optional[asyncio.Lock] = None,
+    ) -> None:
         """Initialize UsdPickBot.
-        
+
         Args:
-            settings: BotSettings configuration object
-            page: Playwright Page instance
-            action_lock: Optional lock for synchronized browser actions
+            settings: BotSettings configuration object.
+            page: Playwright Page instance.
+            action_lock: Optional lock for synchronized
+                browser actions.
         """
         super().__init__(settings, page, action_lock)
         self.faucet_name = "UsdPick"
         self.base_url = "https://usdpick.io"
         self.min_claim_amount = 0.001
         self.claim_interval_minutes = 60
-        
-        logger.info(f"[{self.faucet_name}] Initialized with base URL: {self.base_url}")
-    
-    async def get_balance(self, selector: str = ".balance", fallback_selectors: list = None) -> str:
+
+        logger.info(
+            f"[{self.faucet_name}] Initialized with "
+            f"base URL: {self.base_url}"
+        )
+
+    async def get_balance(
+        self,
+        selector: str = ".balance",
+        fallback_selectors: Optional[list[str]] = None,
+    ) -> str:
         """Extract USDT balance from the page.
-        
+
+        Args:
+            selector: Primary CSS selector for the
+                balance element.
+            fallback_selectors: Alternative selectors to
+                try if the primary selector fails.
+
         Returns:
-            str: Balance string (e.g., "0.125") or "0" on failure
+            Balance string (e.g., "0.125") or "0" on
+            failure.
         """
         try:
             selectors = [selector] + (fallback_selectors or [
@@ -47,7 +69,7 @@ class UsdPickBot(PickFaucetBase):
                 "span.balance",
                 "[data-balance]",
             ])
-            
+
             for sel in selectors:
                 try:
                     element = self.page.locator(sel)
@@ -56,24 +78,47 @@ class UsdPickBot(PickFaucetBase):
                         if balance_text:
                             balance = DataExtractor.extract_balance(balance_text)
                             if balance and balance != "0":
-                                logger.debug(f"[{self.faucet_name}] Balance extracted: {balance} USDT")
+                                logger.debug(
+                                    f"[{self.faucet_name}] Balance "
+                                    f"extracted: {balance} USDT"
+                                )
                                 return balance
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Selector {sel} failed: {e}")
+                    logger.debug(
+                        f"[{self.faucet_name}] Selector "
+                        f"{sel} failed: {e}"
+                    )
                     continue
-            
-            logger.warning(f"[{self.faucet_name}] Could not extract balance from any selector")
+
+            logger.warning(
+                f"[{self.faucet_name}] Could not extract "
+                "balance from any selector"
+            )
             return "0"
-            
+
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Balance extraction error: {e}")
+            logger.error(
+                f"[{self.faucet_name}] Balance "
+                f"extraction error: {e}"
+            )
             return "0"
-    
-    async def get_timer(self, selector: str = "#time", fallback_selectors: list = None) -> float:
+
+    async def get_timer(
+        self,
+        selector: str = "#time",
+        fallback_selectors: Optional[list[str]] = None,
+    ) -> float:
         """Extract claim timer and convert to minutes.
-        
+
+        Args:
+            selector: Primary CSS selector for the
+                timer element.
+            fallback_selectors: Alternative selectors to
+                try if the primary selector fails.
+
         Returns:
-            float: Remaining time in minutes, or 0.0 if ready to claim
+            Remaining time in minutes, or 0.0 if ready
+            to claim.
         """
         try:
             selectors = [selector] + (fallback_selectors or [
@@ -82,7 +127,7 @@ class UsdPickBot(PickFaucetBase):
                 "[data-timer]",
                 "#claim_timer",
             ])
-            
+
             for sel in selectors:
                 try:
                     element = self.page.locator(sel)
@@ -91,169 +136,236 @@ class UsdPickBot(PickFaucetBase):
                         if timer_text and any(c.isdigit() for c in timer_text):
                             minutes = DataExtractor.parse_timer_to_minutes(timer_text)
                             if minutes > 0:
-                                logger.debug(f"[{self.faucet_name}] Timer: {timer_text} -> {minutes:.2f} min")
+                                logger.debug(
+                                    f"[{self.faucet_name}] "
+                                    f"Timer: {timer_text} "
+                                    f"-> {minutes:.2f} min"
+                                )
                                 return minutes
                 except Exception as e:
-                    logger.debug(f"[{self.faucet_name}] Timer selector {sel} failed: {e}")
+                    logger.debug(
+                        f"[{self.faucet_name}] Timer "
+                        f"selector {sel} failed: {e}"
+                    )
                     continue
-            
-            logger.debug(f"[{self.faucet_name}] No active timer found - ready to claim")
+
+            logger.debug(
+                f"[{self.faucet_name}] No active timer "
+                "found - ready to claim"
+            )
             return 0.0
-            
+
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Timer extraction error: {e}")
+            logger.error(
+                f"[{self.faucet_name}] Timer "
+                f"extraction error: {e}"
+            )
             return 0.0
-    
+
     async def claim(self) -> ClaimResult:
         """Perform USDT claim with stealth and error handling.
-        
+
         Returns:
-            ClaimResult: Claim outcome with success status, message, and next_claim_minutes
+            ClaimResult with success status, message,
+            and next_claim_minutes.
         """
         logger.info(f"[{self.faucet_name}] Starting claim process")
-        
+
         faucet_url = f"{self.base_url}/faucet.php"
-        
+
         if not await self._navigate_with_retry(faucet_url):
-            logger.error(f"[{self.faucet_name}] Failed to navigate to faucet page after retries")
-            return ClaimResult(
-                success=False, 
-                status="Navigation Failed", 
-                next_claim_minutes=15,
-                balance=await self.get_balance()
+            logger.error(
+                f"[{self.faucet_name}] Failed to navigate "
+                "to faucet page after retries"
             )
-        
+            return ClaimResult(
+                success=False,
+                status="Navigation Failed",
+                next_claim_minutes=15,
+                balance=await self.get_balance(),
+            )
+
         # Full stealth setup for claim page
         await self.warm_up_page()
         if random.random() < 0.3:
             await self.simulate_tab_activity()
-        await self.natural_mouse_drift(duration=random.uniform(1.0, 2.0))
+        await self.natural_mouse_drift(
+            duration=random.uniform(1.0, 2.0)
+        )
         await self.random_delay(1, 3)
-        
+
         try:
             await self.handle_cloudflare()
             await self.close_popups()
-            
+
             current_balance = await self.get_balance()
-            logger.info(f"[{self.faucet_name}] Current balance: {current_balance} USDT")
-            
+            logger.info(
+                f"[{self.faucet_name}] Current balance: "
+                f"{current_balance} USDT"
+            )
+
             timer_minutes = await self.get_timer()
             if timer_minutes > 0:
-                logger.info(f"[{self.faucet_name}] Faucet on cooldown: {timer_minutes:.2f} min remaining")
-                return ClaimResult(
-                    success=True, 
-                    status="Cooldown", 
-                    next_claim_minutes=timer_minutes,
-                    balance=current_balance
+                logger.info(
+                    f"[{self.faucet_name}] Faucet on "
+                    f"cooldown: {timer_minutes:.2f} "
+                    "min remaining"
                 )
-            
-            captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
+                return ClaimResult(
+                    success=True,
+                    status="Cooldown",
+                    next_claim_minutes=timer_minutes,
+                    balance=current_balance,
+                )
+
+            captcha_locator = self.page.locator(
+                ".h-captcha, .cf-turnstile, .g-recaptcha"
+            )
             captcha_count = await captcha_locator.count()
             captcha_present = captcha_count > 0
             if captcha_present:
-                logger.info(f"[{self.faucet_name}] CAPTCHA detected, solving...")
+                logger.info(
+                    f"[{self.faucet_name}] CAPTCHA "
+                    "detected, solving..."
+                )
                 await self.idle_mouse(duration=1.5)
-                
+
                 captcha_solved = False
                 for attempt in range(3):
                     try:
                         if await self.solver.solve_captcha(self.page):
                             captcha_solved = True
-                            logger.info(f"[{self.faucet_name}] CAPTCHA solved on attempt {attempt + 1}")
+                            logger.info(
+                                f"[{self.faucet_name}] "
+                                "CAPTCHA solved on "
+                                f"attempt {attempt + 1}"
+                            )
                             break
                         await self.human_wait(2)
                     except Exception as e:
-                        logger.warning(f"[{self.faucet_name}] CAPTCHA attempt {attempt + 1} failed: {e}")
+                        logger.warning(
+                            f"[{self.faucet_name}] "
+                            f"CAPTCHA attempt "
+                            f"{attempt + 1} failed: {e}"
+                        )
                         await self.human_wait(3)
-                
+
                 if not captcha_solved:
-                    logger.error(f"[{self.faucet_name}] CAPTCHA solving failed after 3 attempts")
+                    logger.error(
+                        f"[{self.faucet_name}] CAPTCHA "
+                        "solving failed after 3 attempts"
+                    )
                     return ClaimResult(
                         success=False,
                         status="CAPTCHA Failed",
                         next_claim_minutes=10,
-                        balance=current_balance
+                        balance=current_balance,
                     )
-                
+
                 await self.random_delay(2, 4)
-            
+
             # Simulate reading page before claiming
-            await self.simulate_reading(duration=random.uniform(1.5, 3.0))
-            await self.thinking_pause()
-            
-            claim_btn = self.page.locator(
-                'button.btn-primary, button:has-text("Claim"), '
-                'button:has-text("Roll"), button#claim, button.process_btn'
+            await self.simulate_reading(
+                duration=random.uniform(1.5, 3.0)
             )
-            
+            await self.thinking_pause()
+
+            claim_btn = self.page.locator(
+                'button.btn-primary, '
+                'button:has-text("Claim"), '
+                'button:has-text("Roll"), '
+                'button#claim, button.process_btn'
+            )
+
             if not await claim_btn.is_visible():
-                logger.warning(f"[{self.faucet_name}] Claim button not visible")
+                logger.warning(
+                    f"[{self.faucet_name}] "
+                    "Claim button not visible"
+                )
                 return ClaimResult(
                     success=False,
                     status="Button Not Found",
                     next_claim_minutes=self.claim_interval_minutes,
-                    balance=current_balance
+                    balance=current_balance,
                 )
-            
-            logger.info(f"[{self.faucet_name}] Clicking claim button")
+
+            logger.info(
+                f"[{self.faucet_name}] Clicking claim button"
+            )
             await self.human_like_click(claim_btn)
-            
+
             await self.random_delay(3, 6)
-            await self.page.wait_for_load_state("networkidle", timeout=15000)
-            
+            await self.page.wait_for_load_state(
+                "networkidle", timeout=15000
+            )
+
             result_selectors = [
-                ".alert-success", 
-                "#success", 
-                ".message", 
+                ".alert-success",
+                "#success",
+                ".message",
                 ".success-message",
-                "[class*='success']"
+                "[class*='success']",
             ]
-            
-            for selector in result_selectors:
-                result_loc = self.page.locator(selector)
+
+            for sel in result_selectors:
+                result_loc = self.page.locator(sel)
                 if await result_loc.count() > 0:
                     result_msg = await result_loc.first.text_content()
                     if result_msg:
                         result_msg = result_msg.strip()
-                        logger.info(f"[{self.faucet_name}] ✅ Claim successful: {result_msg}")
-                        
+                        logger.info(
+                            f"[{self.faucet_name}] Claim "
+                            f"successful: {result_msg}"
+                        )
+
                         new_balance = await self.get_balance()
-                        
+
                         return ClaimResult(
                             success=True,
                             status="Claimed",
                             next_claim_minutes=self.claim_interval_minutes,
                             amount=result_msg,
-                            balance=new_balance
+                            balance=new_balance,
                         )
-            
-            error_selectors = [".alert-danger", ".error", "[class*='error']"]
-            for selector in error_selectors:
-                error_loc = self.page.locator(selector)
+
+            error_selectors = [
+                ".alert-danger", ".error", "[class*='error']",
+            ]
+            for sel in error_selectors:
+                error_loc = self.page.locator(sel)
                 if await error_loc.count() > 0:
                     error_msg = await error_loc.first.text_content()
                     if error_msg:
-                        logger.warning(f"[{self.faucet_name}] Claim error: {error_msg.strip()}")
+                        logger.warning(
+                            f"[{self.faucet_name}] "
+                            f"Claim error: {error_msg.strip()}"
+                        )
                         return ClaimResult(
                             success=False,
                             status=f"Error: {error_msg.strip()}",
                             next_claim_minutes=self.claim_interval_minutes,
-                            balance=current_balance
+                            balance=current_balance,
                         )
-            
-            logger.warning(f"[{self.faucet_name}] Claim completed but no result message found")
+
+            logger.warning(
+                f"[{self.faucet_name}] Claim completed "
+                "but no result message found"
+            )
             return ClaimResult(
                 success=False,
                 status="Unknown Result",
                 next_claim_minutes=10,
-                balance=current_balance
+                balance=current_balance,
             )
-            
+
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Claim error: {e}", exc_info=True)
+            logger.error(
+                f"[{self.faucet_name}] Claim error: {e}",
+                exc_info=True,
+            )
             return ClaimResult(
                 success=False,
                 status=f"Exception: {str(e)[:100]}",
                 next_claim_minutes=15,
-                balance=await self.get_balance()
+                balance=await self.get_balance(),
             )

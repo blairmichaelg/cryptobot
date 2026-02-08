@@ -935,8 +935,14 @@ class FaucetBot:
             overlays.forEach(el => el.remove());
         }""")
 
-    async def human_type(self, selector: Union[str, Locator], text: str, delay_min: Optional[int]
-                         = None, delay_max: Optional[int] = None, simulate_typos: bool = False) -> None:
+    async def human_type(
+        self,
+        selector: Union[str, Locator],
+        text: str,
+        delay_min: Optional[int] = None,
+        delay_max: Optional[int] = None,
+        simulate_typos: bool = False,
+    ) -> None:
         """Type text with realistic keystroke dynamics.
 
         Simulates human typing patterns:
@@ -984,8 +990,10 @@ class FaucetBot:
         }
 
         for i, char in enumerate(text):
-            # Simulate occasional typo (2-4% chance, only for non-credential simulate_typos mode)
-            if simulate_typos and char.isalpha() and random.random() < 0.03 and i > 2 and i < len(text) - 2:
+            # Simulate occasional typo (2-4% chance)
+            if (simulate_typos and char.isalpha()
+                    and random.random() < 0.03
+                    and 2 < i < len(text) - 2):
                 # Type a wrong adjacent key
                 wrong_char = random.choice(adjacent_keys.get(char.lower(), char.lower()))
                 if char.isupper():
@@ -1064,18 +1072,25 @@ class FaucetBot:
                 logger.debug(f"[{self.faucet_name}] Page health check failed: {e}")
             return False
 
-    async def safe_page_operation(self, operation_name: str, operation_func, *args, **kwargs):
-        """
-        Safely execute a page operation with health checks.
-        Returns None if page is closed or operation fails.
+    async def safe_page_operation(
+        self,
+        operation_name: str,
+        operation_func: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Safely execute a page operation with health checks.
+
+        Returns ``None`` if page is closed or operation fails.
 
         Args:
-            operation_name: Name of the operation for logging
-            operation_func: Async function to execute
-            *args, **kwargs: Arguments to pass to operation_func
+            operation_name: Name of the operation for logging.
+            operation_func: Async function to execute.
+            *args: Positional arguments for *operation_func*.
+            **kwargs: Keyword arguments for *operation_func*.
 
         Returns:
-            Result of operation_func or None if failed
+            Result of *operation_func* or ``None`` if failed.
         """
         try:
             # Check page health before operation
@@ -1151,7 +1166,7 @@ class FaucetBot:
         )
         return result is not None
 
-    async def idle_mouse(self, duration: Optional[float] = None):
+    async def idle_mouse(self, duration: Optional[float] = None) -> None:
         """
         Move mouse randomly to simulate user reading/thinking
         with natural movement patterns including:
@@ -1223,7 +1238,7 @@ class FaucetBot:
                 cur_x, cur_y = new_x, new_y
                 await asyncio.sleep(random.uniform(0.2, 0.8))
 
-    async def simulate_reading(self, duration: Optional[float] = None):
+    async def simulate_reading(self, duration: Optional[float] = None) -> None:
         """
         Simulate a user reading content with natural scrolling behavior.
 
@@ -1305,7 +1320,7 @@ class FaucetBot:
                 else:
                     await self.idle_mouse(duration=self._behavior_rng.uniform(0.5, 1.5))
 
-    async def natural_scroll(self, distance: int = 300, direction: int = 1):
+    async def natural_scroll(self, distance: int = 300, direction: int = 1) -> None:
         """
         Perform a physically realistic scroll with momentum and deceleration.
 
@@ -1369,7 +1384,7 @@ class FaucetBot:
             except Exception:
                 pass
 
-    async def natural_mouse_drift(self, duration: float = 2.0):
+    async def natural_mouse_drift(self, duration: float = 2.0) -> None:
         """
         Generate Perlin-noise-like mouse drift for idle periods.
 
@@ -1441,7 +1456,7 @@ class FaucetBot:
         except Exception:
             await asyncio.sleep(duration)
 
-    async def random_micro_interaction(self):
+    async def random_micro_interaction(self) -> None:
         """
         Perform a small random interaction that makes the session appear
         more organic. Called periodically during long waits.
@@ -1496,7 +1511,7 @@ class FaucetBot:
             # Micro-interactions should never crash the bot
             pass
 
-    async def random_focus_blur(self):
+    async def random_focus_blur(self) -> None:
         """
         Simulate tab switching/focus events to appear more human.
 
@@ -1539,7 +1554,7 @@ class FaucetBot:
         # Actually wait the away time
         await asyncio.sleep(away_time)
 
-    async def human_wait(self, seconds: float, with_interactions: bool = True):
+    async def human_wait(self, seconds: float, with_interactions: bool = True) -> None:
         """
         Wait for a specified duration while performing periodic human-like
         micro-interactions to maintain session liveness.
@@ -1615,7 +1630,10 @@ class FaucetBot:
             try:
                 # Check for page crash/unresponsiveness
                 if not await self.detect_page_crash():
-                    logger.warning(f"[{self.faucet_name}] Page unresponsive during CF check. Refreshing...")
+                    logger.warning(
+                        f"[{self.faucet_name}] Page unresponsive"
+                        " during CF check. Refreshing..."
+                    )
                     await self.page.reload()
                     await asyncio.sleep(5)
                     continue
@@ -1653,7 +1671,11 @@ class FaucetBot:
 
                 # If Turnstile is broken, wait max 10s then proceed (site issue, not ours)
                 if turnstile_error_detected and (time.time() - start_time) > 10:
-                    logger.info(f"[{self.faucet_name}] Proceeding despite broken Turnstile (site misconfiguration)")
+                    logger.info(
+                        f"[{self.faucet_name}] Proceeding"
+                        " despite broken Turnstile"
+                        " (site misconfiguration)"
+                    )
                     return True
 
                 # Check page title for Cloudflare indicators
@@ -1697,7 +1719,11 @@ class FaucetBot:
 
                 if title_detected or element_detected:
                     if checks == 1:
-                        logger.info(f"[{self.faucet_name}] ⏳ Cloudflare/Turnstile challenge detected, waiting...")
+                        logger.info(
+                            f"[{self.faucet_name}]"
+                            " Cloudflare/Turnstile challenge"
+                            " detected, waiting..."
+                        )
 
                     # Simulate human-like behavior while waiting
                     await asyncio.sleep(random.uniform(2.0, 4.0))
@@ -1747,87 +1773,118 @@ class FaucetBot:
             logger.error(f"[{self.faucet_name}] Page crash detected: {e}")
             return False
 
-    async def safe_navigate(self, url: str, wait_until: str = "commit", timeout: int = None,
-                            retry_on_proxy_error: bool = True) -> bool:
-        """
-        Navigate to URL with automatic proxy error handling and retry logic.
+    async def safe_navigate(
+        self,
+        url: str,
+        wait_until: str = "commit",
+        timeout: Optional[int] = None,
+        retry_on_proxy_error: bool = True,
+    ) -> bool:
+        """Navigate to URL with proxy error handling and retry logic.
 
         Handles common navigation failures including:
-        - NS_ERROR_PROXY_CONNECTION_REFUSED (bad proxy)
-        - Timeout errors
-        - Network errors
+
+        * ``NS_ERROR_PROXY_CONNECTION_REFUSED`` (bad proxy).
+        * Timeout errors.
+        * Network errors.
 
         Args:
-            url: Target URL to navigate to
-            wait_until: Playwright wait strategy (domcontentloaded, networkidle, load, commit)
-            timeout: Navigation timeout in ms (uses settings.timeout if None)
-            retry_on_proxy_error: If True, retries without proxy on proxy failures
+            url: Target URL to navigate to.
+            wait_until: Playwright wait strategy
+                (domcontentloaded, networkidle, load, commit).
+            timeout: Navigation timeout in ms (uses
+                ``settings.timeout`` if ``None``).
+            retry_on_proxy_error: If ``True``, retries on proxy
+                failures.
 
         Returns:
-            True if navigation succeeded, False otherwise
+            ``True`` if navigation succeeded, ``False`` otherwise.
         """
         if timeout is None:
-            timeout = getattr(self.settings, "timeout", 60000)  # Use configured timeout
+            timeout = getattr(self.settings, "timeout", 60000)
 
-        max_attempts = 2  # Reduced from 3 - fail faster
+        max_attempts = 2
         for attempt in range(1, max_attempts + 1):
             try:
-                # On retry, use half timeout but respect configured minimum (no hardcoded 30s cap)
-                # With 120s timeout: attempt 1 = 120s, attempt 2 = 60s
-                # With 180s timeout: attempt 1 = 180s, attempt 2 = 90s
-                attempt_timeout = timeout if attempt == 1 else max(timeout // 2, 60000)
+                # On retry, halve timeout but keep >= 60s
+                attempt_timeout = (
+                    timeout if attempt == 1
+                    else max(timeout // 2, 60000)
+                )
                 logger.debug(
-                    f"[{self.faucet_name}] Navigating to {url} "
-                    f"(attempt {attempt}/{max_attempts}, timeout={attempt_timeout}ms)")
-                await self.page.goto(url, wait_until=wait_until, timeout=attempt_timeout)
-                logger.debug(f"[{self.faucet_name}] Navigation succeeded")
+                    f"[{self.faucet_name}] Navigating to {url}"
+                    f" (attempt {attempt}/{max_attempts},"
+                    f" timeout={attempt_timeout}ms)"
+                )
+                await self.page.goto(
+                    url,
+                    wait_until=wait_until,
+                    timeout=attempt_timeout,
+                )
+                logger.debug(
+                    f"[{self.faucet_name}] Navigation succeeded"
+                )
                 return True
 
             except Exception as e:
                 error_str = str(e)
 
                 # Check for proxy-related errors
-                is_proxy_error = any(proxy_error in error_str for proxy_error in [
-                    "NS_ERROR_PROXY_CONNECTION_REFUSED",
-                    "PROXY_CONNECTION_FAILED",
-                    "ERR_PROXY_CONNECTION_FAILED",
-                    "ECONNREFUSED",
-                    "proxy"
-                ]) or ("Timeout" in error_str and attempt == 1)  # First attempt timeout likely proxy issue
+                is_proxy_error = any(
+                    proxy_err in error_str for proxy_err in [
+                        "NS_ERROR_PROXY_CONNECTION_REFUSED",
+                        "PROXY_CONNECTION_FAILED",
+                        "ERR_PROXY_CONNECTION_FAILED",
+                        "ECONNREFUSED",
+                        "proxy",
+                    ]
+                ) or (
+                    "Timeout" in error_str and attempt == 1
+                )
 
                 if is_proxy_error:
                     logger.warning(
-                        f"[{self.faucet_name}] Proxy/connection error on attempt {attempt}: {error_str[:150]}")
-
-                    # On last attempt with proxy errors, try to get fresh context without proxy as fallback
+                        f"[{self.faucet_name}] Proxy/connection"
+                        f" error on attempt {attempt}:"
+                        f" {error_str[:120]}"
+                    )
                     if attempt == max_attempts:
                         logger.warning(
-                            f"[{self.faucet_name}] All proxy attempts failed, proxy may be blocking this site")
+                            f"[{self.faucet_name}] All proxy"
+                            " attempts failed, proxy may be"
+                            " blocking this site"
+                        )
                         return False
-
-                    # Immediate retry with exponentially longer wait
-                    wait_time = min(attempt * 2, 5)  # 2s, 4s max 5s
+                    wait_time = min(attempt * 2, 5)
                     await asyncio.sleep(wait_time)
                     continue
 
-                # Check for timeout errors
-                elif "Timeout" in error_str or "timeout" in error_str:
-                    logger.warning(f"[{self.faucet_name}] Timeout on attempt {attempt}: {error_str[:150]}")
-
+                if "Timeout" in error_str or "timeout" in error_str:
+                    logger.warning(
+                        f"[{self.faucet_name}] Timeout on"
+                        f" attempt {attempt}:"
+                        f" {error_str[:120]}"
+                    )
                     if attempt < max_attempts:
-                        # On timeout, extend base timeout for next attempt (proxies need more time)
-                        timeout = min(timeout + 30000, 150000)  # Add 30s, max 150s
-                        logger.info(f"[{self.faucet_name}] Extending timeout to {timeout}ms for retry")
-                        await asyncio.sleep(1)  # Shorter wait
+                        timeout = min(timeout + 30000, 150000)
+                        logger.info(
+                            f"[{self.faucet_name}] Extending"
+                            f" timeout to {timeout}ms for retry"
+                        )
+                        await asyncio.sleep(1)
                         continue
-                    else:
-                        logger.error(f"[{self.faucet_name}] Navigation failed after {max_attempts} timeout attempts")
-                        return False
+                    logger.error(
+                        f"[{self.faucet_name}] Navigation failed"
+                        f" after {max_attempts} timeout attempts"
+                    )
+                    return False
 
                 # Other errors - don't retry
-                else:
-                    logger.error(f"[{self.faucet_name}] Navigation error: {error_str[:150]}")
-                    return False
+                logger.error(
+                    f"[{self.faucet_name}] Navigation error:"
+                    f" {error_str[:120]}"
+                )
+                return False
 
         # If we get here, all attempts failed (shouldn't reach this)
         return False
@@ -1916,17 +1973,30 @@ class FaucetBot:
         """
         # Structured logging: timer_check start
         logger.debug(
-             f"[LIFECYCLE] timer_check_start | faucet={self.faucet_name} | selector={selector} | timestamp={time.time():.0f}")
+            f"[LIFECYCLE] timer_check_start"
+            f" | faucet={self.faucet_name}"
+            f" | selector={selector}"
+            f" | timestamp={time.time():.0f}"
+        )
 
         try:
             el = self.page.locator(selector)
             if await el.count() > 0 and await el.first.is_visible():
                 text = await el.first.text_content()
-                logger.debug(f"[{self.faucet_name}] Timer extracted from {selector}: {text}")
+                logger.debug(
+                    f"[{self.faucet_name}] Timer extracted"
+                    f" from {selector}: {text}"
+                )
                 minutes = DataExtractor.parse_timer_to_minutes(text)
                 # Structured logging: timer_check success
                 logger.info(
-                     f"[LIFECYCLE] timer_check | faucet={self.faucet_name} | timer_minutes={minutes} | timer_raw={text} | success=true | timestamp={time.time():.0f}")
+                    f"[LIFECYCLE] timer_check"
+                    f" | faucet={self.faucet_name}"
+                    f" | timer_minutes={minutes}"
+                    f" | timer_raw={text}"
+                    f" | success=true"
+                    f" | timestamp={time.time():.0f}"
+                )
                 return minutes
         except Exception as e:
             logger.debug(f"[{self.faucet_name}] Timer extraction failed for {selector}: {e}")
@@ -1956,31 +2026,67 @@ class FaucetBot:
 
         # Structured logging: timer_check failed
         logger.warning(
-             f"[LIFECYCLE] timer_check | faucet={self.faucet_name} | success=false | timestamp={time.time():.0f}")
-        logger.warning(f"[{self.faucet_name}] Could not extract timer from {selector} or fallbacks")
+            f"[LIFECYCLE] timer_check"
+            f" | faucet={self.faucet_name}"
+            f" | success=false"
+            f" | timestamp={time.time():.0f}"
+        )
+        logger.warning(
+            f"[{self.faucet_name}] Could not extract timer"
+            f" from {selector} or fallbacks"
+        )
         return 0.0
 
-    async def get_balance(self, selector: str, fallback_selectors: Optional[List[str]] = None) -> str:
-        """
-        Extract balance from a selector.
-        With automatic fallback to DOM auto-detection if selector fails.
+    async def get_balance(
+        self,
+        selector: str,
+        fallback_selectors: Optional[List[str]] = None,
+    ) -> str:
+        """Extract the account balance from the page.
+
+        Tries the primary *selector*; if invisible or absent, tries
+        each entry in *fallback_selectors*; finally falls back to
+        :meth:`DataExtractor.find_balance_selector_in_dom` for
+        automatic discovery.
+
+        Args:
+            selector: Primary CSS selector for the balance element.
+            fallback_selectors: Optional list of alternative selectors.
+
+        Returns:
+            Balance as a string, or ``"0"`` if extraction failed.
         """
         # Structured logging: balance_check start
         logger.debug(
-             f"[LIFECYCLE] balance_check_start | faucet={self.faucet_name} | selector={selector} | timestamp={time.time():.0f}")
+            f"[LIFECYCLE] balance_check_start"
+            f" | faucet={self.faucet_name}"
+            f" | selector={selector}"
+            f" | timestamp={time.time():.0f}"
+        )
 
         try:
             el = self.page.locator(selector)
             if await el.count() > 0 and await el.first.is_visible():
                 text = await el.first.text_content()
-                logger.debug(f"[{self.faucet_name}] Balance extracted from {selector}: {text}")
+                logger.debug(
+                    f"[{self.faucet_name}] Balance extracted"
+                    f" from {selector}: {text}"
+                )
                 balance = DataExtractor.extract_balance(text)
                 # Structured logging: balance_check success
                 logger.info(
-                     f"[LIFECYCLE] balance_check | faucet={self.faucet_name} | balance={balance} | success=true | timestamp={time.time():.0f}")
+                    f"[LIFECYCLE] balance_check"
+                    f" | faucet={self.faucet_name}"
+                    f" | balance={balance}"
+                    f" | success=true"
+                    f" | timestamp={time.time():.0f}"
+                )
                 return balance
         except Exception as e:
-            logger.debug(f"[{self.faucet_name}] Balance extraction failed for {selector}: {e}")
+            logger.debug(
+                f"[{self.faucet_name}] Balance extraction"
+                f" failed for {selector}: {e}"
+            )
 
         # Try fallback selectors
         if fallback_selectors:
@@ -1989,7 +2095,11 @@ class FaucetBot:
                     el = self.page.locator(fb_sel)
                     if await el.count() > 0 and await el.first.is_visible():
                         text = await el.first.text_content()
-                        logger.info(f"[{self.faucet_name}] Balance extracted from fallback {fb_sel}: {text}")
+                        logger.info(
+                            f"[{self.faucet_name}] Balance"
+                            f" extracted from fallback"
+                            f" {fb_sel}: {text}"
+                        )
                         return DataExtractor.extract_balance(text)
                 except Exception:
                     continue
@@ -2000,15 +2110,29 @@ class FaucetBot:
             if auto_sel:
                 el = self.page.locator(auto_sel)
                 text = await el.first.text_content()
-                logger.warning(f"[{self.faucet_name}] Balance auto-detected from DOM: {auto_sel} = {text}")
+                logger.warning(
+                    f"[{self.faucet_name}] Balance"
+                    f" auto-detected from DOM:"
+                    f" {auto_sel} = {text}"
+                )
                 return DataExtractor.extract_balance(text)
         except Exception as e:
-            logger.debug(f"[{self.faucet_name}] Auto-detection failed: {e}")
+            logger.debug(
+                f"[{self.faucet_name}] Auto-detection"
+                f" failed: {e}"
+            )
 
         # Structured logging: balance_check failed
         logger.warning(
-             f"[LIFECYCLE] balance_check | faucet={self.faucet_name} | success=false | timestamp={time.time():.0f}")
-        logger.warning(f"[{self.faucet_name}] Could not extract balance from {selector} or fallbacks")
+            f"[LIFECYCLE] balance_check"
+            f" | faucet={self.faucet_name}"
+            f" | success=false"
+            f" | timestamp={time.time():.0f}"
+        )
+        logger.warning(
+            f"[{self.faucet_name}] Could not extract balance"
+            f" from {selector} or fallbacks"
+        )
         return "0"
 
     async def is_logged_in(self) -> bool:
@@ -2077,7 +2201,11 @@ class FaucetBot:
             visible_text = await self.page.evaluate("() => document.body.innerText.toLowerCase()")
             for indicator in cf_challenge_indicators:
                 if indicator in visible_text:
-                    logger.info(f"[{self.faucet_name}] Cloudflare challenge pattern in visible text: '{indicator}'")
+                    logger.info(
+                        f"[{self.faucet_name}] Cloudflare"
+                        " challenge pattern in visible"
+                        f" text: '{indicator}'"
+                    )
                     return "Site Maintenance / Blocked"
         except Exception:
             pass
@@ -2166,7 +2294,11 @@ class FaucetBot:
         creds = self.get_credentials(self.faucet_name)
         account = creds.get('username', 'unknown') if creds else 'unknown'
         logger.info(
-             f"[LIFECYCLE] login_start | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
+            f"[LIFECYCLE] login_start"
+            f" | faucet={self.faucet_name}"
+            f" | account={account}"
+            f" | timestamp={time.time():.0f}"
+        )
 
         # Attempt to clear Cloudflare/turnstile before failure checks
         try:
@@ -2210,7 +2342,12 @@ class FaucetBot:
         if await self.is_logged_in():
             # Structured logging: login_success (already logged in)
             logger.info(
-                 f"[LIFECYCLE] login_success | faucet={self.faucet_name} | account={account} | already_logged_in=true | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] login_success"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | already_logged_in=true"
+                f" | timestamp={time.time():.0f}"
+            )
             return True
 
         logged_in = await self.login()
@@ -2241,12 +2378,25 @@ class FaucetBot:
                     self.last_error_type = None
 
                 # Structured logging: login_failed
+                err_type_val = (
+                    self.last_error_type.value
+                    if self.last_error_type else 'unknown'
+                )
                 logger.warning(
-                     f"[LIFECYCLE] login_failed | faucet={self.faucet_name} | account={account} | error_type={self.last_error_type.value if self.last_error_type else 'unknown'} | timestamp={time.time():.0f}")
+                    f"[LIFECYCLE] login_failed"
+                    f" | faucet={self.faucet_name}"
+                    f" | account={account}"
+                    f" | error_type={err_type_val}"
+                    f" | timestamp={time.time():.0f}"
+                )
         else:
             # Structured logging: login_success
             logger.info(
-                 f"[LIFECYCLE] login_success | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] login_success"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | timestamp={time.time():.0f}"
+            )
 
         return logged_in
 
@@ -2297,7 +2447,7 @@ class FaucetBot:
         logger.warning(f"[{self.faucet_name}] Withdrawal not implemented for this faucet.")
         return ClaimResult(success=False, status="Not Implemented", next_claim_minutes=1440)
 
-    def get_jobs(self) -> list:
+    def get_jobs(self) -> List[Any]:
         """Build :class:`Job` objects for the scheduler.
 
         Creates three jobs per faucet:
@@ -2372,16 +2522,33 @@ class FaucetBot:
             return ClaimResult(success=False, status="Login/Access Failed", next_claim_minutes=30)
 
         # 2. Check balance against threshold
-        current_balance = await self.get_balance(getattr(self, 'balance_selector', '.balance'))
+        current_balance = await self.get_balance(
+            getattr(self, 'balance_selector', '.balance')
+        )
         balance_before = 0.0
         try:
             balance_before = float(current_balance.replace(',', ''))
-            threshold = getattr(self.settings, f"{self.faucet_name.lower()}_min_withdraw", 1000)
+            threshold = getattr(
+                self.settings,
+                f"{self.faucet_name.lower()}_min_withdraw",
+                1000,
+            )
             if balance_before < threshold:
-                logger.info(f"[{self.faucet_name}] Balance {balance_before} below threshold {threshold}. Skipping.")
-                return ClaimResult(success=True, status="Below Threshold", next_claim_minutes=1440)
+                logger.info(
+                    f"[{self.faucet_name}] Balance"
+                    f" {balance_before} below threshold"
+                    f" {threshold}. Skipping."
+                )
+                return ClaimResult(
+                    success=True,
+                    status="Below Threshold",
+                    next_claim_minutes=1440,
+                )
         except (ValueError, AttributeError) as e:
-            logger.debug(f"[{self.faucet_name}] Balance parsing failed: {e}. Proceeding with withdrawal.")
+            logger.debug(
+                f"[{self.faucet_name}] Balance parsing"
+                f" failed: {e}. Proceeding with withdrawal."
+            )
             # Continue if parsing fails
 
         # 3. Execute withdrawal
@@ -2404,10 +2571,12 @@ class FaucetBot:
                     balance_after = 0.0
 
                 # Calculate withdrawn amount
-                amount_withdrawn = float(
-                    result.amount.replace(
-                        ',', '')) if result.amount != "0" else (
-                    balance_before - balance_after)
+                if result.amount != "0":
+                    amount_withdrawn = float(
+                        result.amount.replace(',', '')
+                    )
+                else:
+                    amount_withdrawn = balance_before - balance_after
 
                 # Determine cryptocurrency from faucet name or settings
                 crypto = self._get_cryptocurrency_for_faucet()
@@ -2431,8 +2600,21 @@ class FaucetBot:
 
         return result
 
-    # Mapping of name substrings to cryptocurrency codes (order matters: check specific before general)
-    _CRYPTO_NAME_MAP: Dict[str, str] = {"btc": "BTC", "bitcoin": "BTC", "ltc": "LTC", "lite": "LTC", "doge": "DOGE", "trx": "TRX", "tron": "TRX", "eth": "ETH", "bnb": "BNB", "sol": "SOL", "ton": "TON", "matic": "MATIC", "polygon": "MATIC", "dash": "DASH", "bch": "BCH", "usdt": "USDT", "usd": "USDT",}
+    # Mapping of name substrings to cryptocurrency codes
+    _CRYPTO_NAME_MAP: Dict[str, str] = {
+        "btc": "BTC", "bitcoin": "BTC",
+        "ltc": "LTC", "lite": "LTC",
+        "doge": "DOGE",
+        "trx": "TRX", "tron": "TRX",
+        "eth": "ETH",
+        "bnb": "BNB",
+        "sol": "SOL",
+        "ton": "TON",
+        "matic": "MATIC", "polygon": "MATIC",
+        "dash": "DASH",
+        "bch": "BCH",
+        "usdt": "USDT", "usd": "USDT",
+    }
 
     def _get_cryptocurrency_for_faucet(self) -> str:
         """
@@ -2470,19 +2652,23 @@ class FaucetBot:
 
         # Get account and proxy info for logging
         creds = self.get_credentials(self.faucet_name)
-        account = creds.get('username', 'unknown') if creds else 'unknown'
+        account = (
+            creds.get('username', 'unknown') if creds
+            else 'unknown'
+        )
+        ctx = getattr(self.page, 'context', None)
         proxy = getattr(
-            self.page.context,
-            '_proxy',
-            {}).get(
-            'server',
-            'none') if hasattr(
-            self.page,
-            'context') else 'none'
+            ctx, '_proxy', {}
+        ).get('server', 'none')
 
         # Structured logging: claim_submit_start
         logger.info(
-             f"[LIFECYCLE] claim_submit_start | faucet={self.faucet_name} | account={account} | proxy={proxy} | timestamp={time.time():.0f}")
+            f"[LIFECYCLE] claim_submit_start"
+            f" | faucet={self.faucet_name}"
+            f" | account={account}"
+            f" | proxy={proxy}"
+            f" | timestamp={time.time():.0f}"
+        )
 
         try:
             await self.think_pause("pre_login")
@@ -2491,15 +2677,29 @@ class FaucetBot:
                 # Try to get page content for error classification
                 try:
                     page_content = await page.content()
-                    # Try to infer status from page state
                 except Exception:
                     pass
 
                 # Classify login failure
-                error_type = self.last_error_type or self.classify_error(None, page_content, status_code)
-                # Structured logging: claim_submit_failed (login)
+                error_type = (
+                    self.last_error_type
+                    or self.classify_error(
+                        None, page_content, status_code
+                    )
+                )
+                err_val = (
+                    error_type.value if error_type
+                    else 'unknown'
+                )
+                # Structured logging: claim_submit_failed
                 logger.warning(
-                     f"[LIFECYCLE] claim_submit_failed | faucet={self.faucet_name} | account={account} | reason=login_failed | error_type={error_type.value if error_type else 'unknown'} | timestamp={time.time():.0f}")
+                    f"[LIFECYCLE] claim_submit_failed"
+                    f" | faucet={self.faucet_name}"
+                    f" | account={account}"
+                    f" | reason=login_failed"
+                    f" | error_type={err_val}"
+                    f" | timestamp={time.time():.0f}"
+                )
                 return ClaimResult(
                     success=False,
                     status="Login/Access Failed",
@@ -2530,7 +2730,11 @@ class FaucetBot:
 
             # Structured logging: claim_submit (executing)
             logger.info(
-                 f"[LIFECYCLE] claim_submit | faucet={self.faucet_name} | account={account} | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] claim_submit"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | timestamp={time.time():.0f}"
+            )
             result = await self.claim()
 
             # Handle cases where claim() might return a boolean (legacy)
@@ -2542,7 +2746,13 @@ class FaucetBot:
 
             # Structured logging: claim_verify
             logger.info(
-                 f"[LIFECYCLE] claim_verify | faucet={self.faucet_name} | account={account} | success={result.success} | status={result.status[ :50]} | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] claim_verify"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | success={result.success}"
+                f" | status={result.status[:50]}"
+                f" | timestamp={time.time():.0f}"
+            )
 
             # If claim failed and no error_type was set, try to classify the error
             if not result.success and result.error_type is None:
@@ -2551,15 +2761,34 @@ class FaucetBot:
                 except Exception:
                     page_content = None
 
-                result.error_type = self.classify_error(None, page_content, status_code)
-                logger.info(f"[{self.faucet_name}] Claim failed - classified as {result.error_type.value}")
+                result.error_type = self.classify_error(
+                    None, page_content, status_code
+                )
+                logger.info(
+                    f"[{self.faucet_name}] Claim failed"
+                    f" - classified as"
+                    f" {result.error_type.value}"
+                )
 
             # Record analytics for the claim
             await self._record_analytics(result)
 
             # Structured logging: result_record
+            err_type_str = (
+                result.error_type.value
+                if result.error_type else 'none'
+            )
             logger.info(
-                 f"[LIFECYCLE] result_record | faucet={self.faucet_name} | account={account} | success={result.success} | amount={result.amount} | balance={result.balance} | next_claim_min={result.next_claim_minutes} | error_type={result.error_type.value if result.error_type else 'none'} | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] result_record"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | success={result.success}"
+                f" | amount={result.amount}"
+                f" | balance={result.balance}"
+                f" | next_claim_min={result.next_claim_minutes}"
+                f" | error_type={err_type_str}"
+                f" | timestamp={time.time():.0f}"
+            )
 
             return result
 
@@ -2571,11 +2800,22 @@ class FaucetBot:
                 page_content = None
 
             error_type = self.classify_error(e, page_content, status_code)
-            logger.error(f"[{self.faucet_name}] Exception in claim_wrapper: {e} (classified as {error_type.value})")
+            logger.error(
+                f"[{self.faucet_name}] Exception in"
+                f" claim_wrapper: {e}"
+                f" (classified as {error_type.value})"
+            )
 
             # Structured logging: result_record (exception)
             logger.error(
-                 f"[LIFECYCLE] result_record | faucet={self.faucet_name} | account={account} | success=false | exception={str(e)[ :100]} | error_type={error_type.value} | timestamp={time.time():.0f}")
+                f"[LIFECYCLE] result_record"
+                f" | faucet={self.faucet_name}"
+                f" | account={account}"
+                f" | success=false"
+                f" | exception={str(e)[:100]}"
+                f" | error_type={error_type.value}"
+                f" | timestamp={time.time():.0f}"
+            )
 
             return ClaimResult(
                 success=False,
@@ -2604,7 +2844,7 @@ class FaucetBot:
         return ClaimResult(success=True, status="PTC Done",
                            next_claim_minutes=self.settings.exploration_frequency_minutes)
 
-    async def _record_analytics(self, result: ClaimResult):
+    async def _record_analytics(self, result: ClaimResult) -> None:
         """Helper to record analytics for a result with enhanced validation."""
         try:
             tracker = get_tracker()

@@ -19,354 +19,564 @@ Features:
 import asyncio
 import base64
 import logging
-import aiohttp
 import os
 import random
-import time
 import re
-from typing import Optional
+import time
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
 # Rate limiting constants per 2Captcha API best practices
-INITIAL_POLL_DELAY_SECONDS = 5  # Wait 5s before first poll
-POLL_INTERVAL_SECONDS = 5  # Retry every 5s
-RECAPTCHA_INITIAL_DELAY = 15  # reCAPTCHA needs longer initial wait
-ERROR_NO_SLOT_DELAY = 5  # Wait 5s if no slots available
-ERROR_ZERO_BALANCE_DELAY = 60  # Wait 60s if balance is zero
-MAX_POLL_ATTEMPTS = 24  # 24 * 5s = 2 minutes max wait
-DEFAULT_DAILY_BUDGET_USD = 5.0  # Default daily budget limit
+INITIAL_POLL_DELAY_SECONDS = 5
+POLL_INTERVAL_SECONDS = 5
+RECAPTCHA_INITIAL_DELAY = 15
+ERROR_NO_SLOT_DELAY = 5
+ERROR_ZERO_BALANCE_DELAY = 60
+MAX_POLL_ATTEMPTS = 24
+DEFAULT_DAILY_BUDGET_USD = 5.0
 
 
 class CaptchaSolver:
-    """Hybrid CAPTCHA solver with multi-provider support and budget tracking.
+    """Hybrid CAPTCHA solver with multi-provider support.
 
     Primary workflow:
-        1. Detect CAPTCHA type on the page (Turnstile, hCaptcha, reCAPTCHA, image).
-        2. Select the optimal provider (fixed or adaptive routing).
+        1. Detect CAPTCHA type on the page.
+        2. Select the optimal provider.
         3. Submit the task and poll for the solution token.
         4. Inject the token into the page and trigger callbacks.
         5. Record cost and update per-faucet statistics.
 
-    If no API key is configured, falls back to manual human solving
-    (browser must be running in visible, non-headless mode).
-
     Attributes:
         api_key: API key for the primary solving provider.
-        provider: Primary provider name (``2captcha`` or ``capsolver``).
+        provider: Primary provider name.
         fallback_provider: Optional secondary provider name.
         daily_budget: Maximum daily CAPTCHA spend in USD.
         adaptive_routing: Enable cost-based provider selection.
     """
 
-    def __init__(self, api_key: str = None, provider: str = "2captcha", daily_budget: float = DEFAULT_DAILY_BUDGET_USD,
-                 fallback_provider: Optional[str] = None, fallback_api_key: Optional[str] = None, adaptive_routing: bool = False, routing_min_samples: int = 20):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        provider: str = "2captcha",
+        daily_budget: float = DEFAULT_DAILY_BUDGET_USD,
+        fallback_provider: Optional[str] = None,
+        fallback_api_key: Optional[str] = None,
+        adaptive_routing: bool = False,
+        routing_min_samples: int = 20,
+    ) -> None:
         """Initialise the CaptchaSolver.
 
         Args:
-            api_key: API key for the primary captcha-solving service.
-            provider: Primary provider name (default ``"2captcha"``).
-            daily_budget: Maximum daily spend in USD (default $5.00).
-            fallback_provider: Optional secondary provider name.
-            fallback_api_key: API key for the fallback provider.
-            adaptive_routing: If ``True``, choose the cheapest provider
-                per captcha type based on historical success rates.
-            routing_min_samples: Minimum solve attempts before adaptive
-                routing takes effect.
+            api_key: API key for the primary service.
+            provider: Primary provider name.
+            daily_budget: Maximum daily spend in USD.
+            fallback_provider: Optional secondary provider.
+            fallback_api_key: API key for fallback provider.
+            adaptive_routing: If True, choose cheapest provider.
+            routing_min_samples: Min samples for routing.
         """
         self.api_key = api_key
-        self.provider = provider.lower().replace("twocaptcha", "2captcha")
-        # Fallback support (optional secondary provider)
-        self.fallback_provider = fallback_provider.lower().replace("twocaptcha", "2captcha") if fallback_provider else None
+        self.provider = provider.lower().replace(
+            "twocaptcha", "2captcha"
+        )
+        if fallback_provider:
+            self.fallback_provider: Optional[str] = (
+                fallback_provider.lower().replace(
+                    "twocaptcha", "2captcha"
+                )
+            )
+        else:
+            self.fallback_provider = None
         self.fallback_api_key = fallback_api_key
-        self.provider_stats = {self.provider: {"solves": 0, "failures": 0, "cost": 0.0}}
-        self.faucet_provider_stats = {}
+        self.provider_stats: Dict[str, Dict[str, Any]] = {
+            self.provider: {
+                "solves": 0,
+                "failures": 0,
+                "cost": 0.0,
+            },
+        }
+        self.faucet_provider_stats: Dict[
+            str, Dict[str, Dict[str, Any]]
+        ] = {}
         self.adaptive_routing = adaptive_routing
         self.routing_min_samples = routing_min_samples
-        self.session = None
+        self.session: Optional[aiohttp.ClientSession] = None
         self.daily_budget = daily_budget
-        self.faucet_name = None
-
-        # Rate limiting state
-        self.last_request_time = 0
-        self.consecutive_errors = 0
-
-        # Budget tracking
-        self._daily_spend = 0.0
-        self._budget_reset_date = time.strftime("%Y-%m-%d")
-        self._solve_count_today = 0
-
-        # Approximate costs per solve (2Captcha prices as of 2024)
-        self._cost_per_solve = {
+        self.faucet_name: Optional[str] = None
+        self.last_request_time: float = 0
+        self.consecutive_errors: int = 0
+        self._daily_spend: float = 0.0
+        self._budget_reset_date: str = time.strftime(
+            "%Y-%m-%d"
+        )
+        self._solve_count_today: int = 0
+        self._cost_per_solve: Dict[str, float] = {
             "turnstile": 0.003,
             "hcaptcha": 0.003,
             "userrecaptcha": 0.003,
             "image": 0.001,
-            "altcha": 0.0  # Free - solved locally via proof-of-work
+            "altcha": 0.0,
         }
-
         if not self.api_key:
-            logger.warning("⚠️ No CAPTCHA API key provided. Switching to MANUAL mode.")
-            logger.warning("You must solve CAPTCHAs yourself in the browser window.")
+            logger.warning(
+                "No CAPTCHA API key provided. "
+                "Switching to MANUAL mode."
+            )
+            logger.warning(
+                "You must solve CAPTCHAs yourself "
+                "in the browser window."
+            )
+        self.proxy_string: Optional[str] = None
+        self.headless: bool = False
 
-        self.proxy_string = None  # Store proxy for sticky sessions
-        self.headless = False
+    def set_faucet_name(
+        self, faucet_name: Optional[str]
+    ) -> None:
+        """Associate solver with a faucet for cost tracking.
 
-    def set_faucet_name(self, faucet_name: Optional[str]) -> None:
-        """Associate this solver instance with a faucet for cost attribution."""
+        Args:
+            faucet_name: The faucet identifier or None.
+        """
         self.faucet_name = faucet_name
-        if faucet_name and faucet_name not in self.faucet_provider_stats:
+        if (
+            faucet_name
+            and faucet_name not in self.faucet_provider_stats
+        ):
             self.faucet_provider_stats[faucet_name] = {}
 
-    def set_proxy(self, proxy_string: str):
-        """Set the proxy to be used for all 2Captcha requests."""
+    def set_proxy(self, proxy_string: str) -> None:
+        """Set proxy for all CAPTCHA API requests.
+
+        Args:
+            proxy_string: Full proxy URL.
+        """
         self.proxy_string = proxy_string
 
-    def set_headless(self, headless: bool):
-        """Set whether the browser is running headless (manual solving unavailable)."""
+    def set_headless(self, headless: bool) -> None:
+        """Set whether the browser is running headless.
+
+        Args:
+            headless: True if headless mode.
+        """
         self.headless = bool(headless)
 
-    def set_fallback_provider(self, provider: str, api_key: str):
-        """Set a fallback captcha provider in case primary fails."""
-        self.fallback_provider = provider.lower().replace("twocaptcha", "2captcha")
-        self.fallback_api_key = api_key
-        logger.info(f"Fallback provider configured: {self.fallback_provider}")
-        if self.fallback_provider not in self.provider_stats:
-            self.provider_stats[self.fallback_provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+    def set_fallback_provider(
+        self, provider: str, api_key: str
+    ) -> None:
+        """Configure a fallback CAPTCHA provider.
 
-    def _record_provider_result(self, provider: str, captcha_type: str, success: bool) -> None:
-        """Record provider success/failure statistics (global + per-faucet)."""
+        Args:
+            provider: Provider name.
+            api_key: API key for the fallback provider.
+        """
+        self.fallback_provider = provider.lower().replace(
+            "twocaptcha", "2captcha"
+        )
+        self.fallback_api_key = api_key
+        logger.info(
+            "Fallback provider configured: %s",
+            self.fallback_provider,
+        )
+        if self.fallback_provider not in self.provider_stats:
+            self.provider_stats[self.fallback_provider] = {
+                "solves": 0,
+                "failures": 0,
+                "cost": 0.0,
+            }
+
+    def _record_provider_result(
+        self,
+        provider: str,
+        captcha_type: str,
+        success: bool,
+    ) -> None:
+        """Record provider success/failure statistics.
+
+        Args:
+            provider: Provider name.
+            captcha_type: CAPTCHA type string.
+            success: Whether the solve succeeded.
+        """
         if provider not in self.provider_stats:
-            self.provider_stats[provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+            self.provider_stats[provider] = {
+                "solves": 0,
+                "failures": 0,
+                "cost": 0.0,
+            }
         if success:
             self.provider_stats[provider]["solves"] += 1
-            self.provider_stats[provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+            self.provider_stats[provider]["cost"] += (
+                self._cost_per_solve.get(
+                    captcha_type, 0.003
+                )
+            )
         else:
             self.provider_stats[provider]["failures"] += 1
 
         if self.faucet_name:
-            if self.faucet_name not in self.faucet_provider_stats:
-                self.faucet_provider_stats[self.faucet_name] = {}
-            faucet_stats = self.faucet_provider_stats[self.faucet_name]
-            if provider not in faucet_stats:
-                faucet_stats[provider] = {"solves": 0, "failures": 0, "cost": 0.0}
+            if (
+                self.faucet_name
+                not in self.faucet_provider_stats
+            ):
+                self.faucet_provider_stats[
+                    self.faucet_name
+                ] = {}
+            fstats = self.faucet_provider_stats[
+                self.faucet_name
+            ]
+            if provider not in fstats:
+                fstats[provider] = {
+                    "solves": 0,
+                    "failures": 0,
+                    "cost": 0.0,
+                }
             if success:
-                faucet_stats[provider]["solves"] += 1
-                faucet_stats[provider]["cost"] += self._cost_per_solve.get(captcha_type, 0.003)
+                fstats[provider]["solves"] += 1
+                fstats[provider]["cost"] += (
+                    self._cost_per_solve.get(
+                        captcha_type, 0.003
+                    )
+                )
             else:
-                faucet_stats[provider]["failures"] += 1
+                fstats[provider]["failures"] += 1
 
-    def _expected_cost(self, provider: str, captcha_type: str) -> Optional[float]:
-        """Estimate expected cost per successful solve for a provider."""
+    def _expected_cost(
+        self, provider: str, captcha_type: str
+    ) -> Optional[float]:
+        """Estimate expected cost per successful solve.
+
+        Args:
+            provider: Provider name to evaluate.
+            captcha_type: CAPTCHA type for cost lookup.
+
+        Returns:
+            Estimated cost per solve or None.
+        """
         stats = None
-        if self.faucet_name and self.faucet_name in self.faucet_provider_stats:
-            stats = self.faucet_provider_stats[self.faucet_name].get(provider)
+        if (
+            self.faucet_name
+            and self.faucet_name
+            in self.faucet_provider_stats
+        ):
+            stats = self.faucet_provider_stats[
+                self.faucet_name
+            ].get(provider)
         if not stats:
             stats = self.provider_stats.get(provider)
         if not stats:
             return None
-        total = stats.get("solves", 0) + stats.get("failures", 0)
+        total = (
+            stats.get("solves", 0)
+            + stats.get("failures", 0)
+        )
         if total < self.routing_min_samples:
             return None
-        success_rate = stats.get("solves", 0) / max(total, 1)
-        return self._cost_per_solve.get(captcha_type, 0.003) / max(success_rate, 0.1)
+        success_rate = (
+            stats.get("solves", 0) / max(total, 1)
+        )
+        base = self._cost_per_solve.get(
+            captcha_type, 0.003
+        )
+        return base / max(success_rate, 0.1)
 
-    def _choose_provider_order(self, captcha_type: str) -> list:
-        """Return provider order based on expected cost if adaptive routing is enabled."""
+    def _choose_provider_order(
+        self, captcha_type: str
+    ) -> List[str]:
+        """Return providers ordered by expected cost.
+
+        Args:
+            captcha_type: CAPTCHA type for cost estimation.
+
+        Returns:
+            Ordered list of provider names.
+        """
         providers = [self.provider]
-        if self.fallback_provider and self.fallback_api_key and self.fallback_provider != self.provider:
+        if (
+            self.fallback_provider
+            and self.fallback_api_key
+            and self.fallback_provider != self.provider
+        ):
             providers.append(self.fallback_provider)
-
-        if not self.adaptive_routing or len(providers) == 1:
+        if (
+            not self.adaptive_routing
+            or len(providers) == 1
+        ):
             return providers
-
         scored = []
         for p in providers:
-            expected = self._expected_cost(p, captcha_type)
+            expected = self._expected_cost(
+                p, captcha_type
+            )
             scored.append((p, expected))
-
         if all(exp is None for _, exp in scored):
             return providers
-
-        scored.sort(key=lambda item: (item[1] is None, item[1] if item[1] is not None else 0))
+        scored.sort(key=lambda item: (
+            item[1] is None,
+            item[1] if item[1] is not None else 0,
+        ))
         return [p for p, _ in scored]
 
-    def _check_and_reset_daily_budget(self):
-        """Reset daily budget counter if new day."""
+    def _check_and_reset_daily_budget(self) -> None:
+        """Reset daily budget if a new day started."""
         today = time.strftime("%Y-%m-%d")
         if today != self._budget_reset_date:
-            logger.info(f"📅 New day detected. Resetting captcha budget. Yesterday's spend: ${self._daily_spend:.4f}")
+            logger.info(
+                "New day. Resetting captcha budget. "
+                "Yesterday: $%.4f",
+                self._daily_spend,
+            )
             self._daily_spend = 0.0
             self._solve_count_today = 0
             self._budget_reset_date = today
 
     def _can_afford_solve(self, method: str) -> bool:
-        """Check if we can afford another solve within daily budget."""
+        """Check if budget allows another solve.
+
+        Args:
+            method: CAPTCHA method/type name.
+
+        Returns:
+            True if budget has room.
+        """
         self._check_and_reset_daily_budget()
         cost = self._cost_per_solve.get(method, 0.003)
         if self._daily_spend + cost > self.daily_budget:
-            logger.warning(f"💰 Daily captcha budget exhausted (${self._daily_spend:.4f}/${self.daily_budget:.2f})")
+            logger.warning(
+                "Daily captcha budget exhausted "
+                "($%.4f/$%.2f)",
+                self._daily_spend,
+                self.daily_budget,
+            )
             return False
         return True
 
-    def can_afford_captcha(self, captcha_type: str) -> bool:
-        """Check if we can afford this captcha solve within daily budget.
-
-        Returns False if:
-        - Daily budget exhausted
-        - This solve would exceed budget
-        - Provider balance too low
+    def can_afford_captcha(
+        self, captcha_type: str
+    ) -> bool:
+        """Check if budget allows this CAPTCHA solve.
 
         Args:
-            captcha_type: Type of captcha (turnstile, hcaptcha, userrecaptcha, image)
+            captcha_type: Type of captcha.
 
         Returns:
-            bool: True if we can afford this solve
+            True if the solve is within budget.
         """
         self._check_and_reset_daily_budget()
-
-        cost = self._cost_per_solve.get(captcha_type, 0.003)
-        remaining_budget = self.daily_budget - self._daily_spend
-
-        # Check if this solve would exceed budget
-        if cost > remaining_budget:
+        cost = self._cost_per_solve.get(
+            captcha_type, 0.003
+        )
+        remaining = (
+            self.daily_budget - self._daily_spend
+        )
+        if cost > remaining:
             logger.warning(
-                f"💰 Cannot afford {captcha_type} solve (${cost:.4f}). "
-                f"Remaining budget: ${remaining_budget:.4f}"
+                "Cannot afford %s solve ($%.4f). "
+                "Remaining: $%.4f",
+                captcha_type,
+                cost,
+                remaining,
             )
             return False
-
-        # Check if we're very close to budget limit (save for critical claims)
-        if remaining_budget < 0.50:  # Less than $0.50 remaining
+        if remaining < 0.50:
             logger.warning(
-                f"⚠️ Low budget warning: ${remaining_budget:.4f} remaining. "
-                f"Consider manual solve for critical claims."
+                "Low budget: $%.4f remaining.",
+                remaining,
             )
-            return remaining_budget >= cost
-
+            return remaining >= cost
         return True
 
-    def _record_solve(self, method: str, success: bool):
-        """Record a solve attempt for budget tracking."""
-        cost = self._cost_per_solve.get(method, 0.003) if success else 0
+    def _record_solve(
+        self, method: str, success: bool
+    ) -> None:
+        """Record a solve attempt for budget tracking.
+
+        Args:
+            method: CAPTCHA method/type name.
+            success: Whether the solve succeeded.
+        """
+        cost = (
+            self._cost_per_solve.get(method, 0.003)
+            if success
+            else 0
+        )
         self._daily_spend += cost
         self._solve_count_today += 1
         if success:
             logger.debug(
- f"💰 Captcha cost: ${cost:.4f} (Today: ${self._daily_spend:.4f}, Solves: {self._solve_count_today})")
+                "Captcha cost: $%.4f "
+                "(Today: $%.4f, Solves: %d)",
+                cost,
+                self._daily_spend,
+                self._solve_count_today,
+            )
             try:
                 from core.analytics import get_tracker
-                get_tracker().record_cost("captcha", cost, faucet=self.faucet_name)
+                get_tracker().record_cost(
+                    "captcha",
+                    cost,
+                    faucet=self.faucet_name,
+                )
             except Exception as e:
-                logger.debug(f"Captcha cost tracking failed: {e}")
+                logger.debug(
+                    "Captcha cost tracking failed: %s",
+                    e,
+                )
 
-    def get_budget_stats(self) -> dict:
-        """Get current budget statistics."""
+    def get_budget_stats(self) -> Dict[str, Any]:
+        """Return current daily budget statistics.
+
+        Returns:
+            Dictionary with budget info.
+        """
         self._check_and_reset_daily_budget()
         return {
             "daily_budget": self.daily_budget,
             "spent_today": self._daily_spend,
-            "remaining": self.daily_budget - self._daily_spend,
+            "remaining": (
+                self.daily_budget - self._daily_spend
+            ),
             "solves_today": self._solve_count_today,
-            "date": self._budget_reset_date
+            "date": self._budget_reset_date,
         }
 
-    def get_provider_stats(self) -> dict:
-        """Get statistics for all providers.
+    def get_provider_stats(self) -> Dict[str, Any]:
+        """Return statistics for all providers.
 
         Returns:
-            dict: Provider statistics including solves, failures, costs
+            Dictionary with provider stats.
         """
         return {
             "providers": self.provider_stats.copy(),
             "primary": self.provider,
-            "fallback": self.fallback_provider
+            "fallback": self.fallback_provider,
         }
 
-    def _parse_proxy(self, proxy_url: str) -> dict:
-        """Parse proxy URL into components for 2Captcha API.
+    def _parse_proxy(
+        self, proxy_url: str
+    ) -> Dict[str, str]:
+        """Parse proxy URL into 2Captcha API components.
 
         Args:
-            proxy_url: Full proxy URL (e.g., http://user:pass@host:port)
+            proxy_url: Full proxy URL.
 
         Returns:
-            Dict with proxytype and proxy (formatted for 2Captcha legacy API)
+            Dict with proxytype and proxy string.
         """
-        # Ensure we have a protocol for urlparse
         if "://" not in proxy_url:
             test_url = f"http://{proxy_url}"
         else:
             test_url = proxy_url
-
         parsed = urlparse(test_url)
-
-        proxy_type = "SOCKS5" if "socks" in parsed.scheme.lower() else "HTTP"
-
-        # 2Captcha legacy API wants: user:pass@host:port (no protocol)
+        proxy_type = (
+            "SOCKS5"
+            if "socks" in parsed.scheme.lower()
+            else "HTTP"
+        )
         if parsed.username and parsed.password:
-            proxy_string = f"{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port}"
+            proxy_str = (
+                f"{parsed.username}:{parsed.password}"
+                f"@{parsed.hostname}:{parsed.port}"
+            )
         else:
-            proxy_string = f"{parsed.hostname}:{parsed.port}"
+            proxy_str = (
+                f"{parsed.hostname}:{parsed.port}"
+            )
+        return {
+            "proxytype": proxy_type,
+            "proxy": proxy_str,
+        }
 
-        return {"proxytype": proxy_type, "proxy": proxy_string}
+    async def _get_session(
+        self,
+    ) -> aiohttp.ClientSession:
+        """Return the shared aiohttp session.
 
-    async def _get_session(self):
+        Returns:
+            An open ClientSession.
+        """
         if not self.session or self.session.closed:
             self.session = aiohttp.ClientSession()
         return self.session
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "CaptchaSolver":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> bool:
         """Async context manager exit with cleanup."""
         await self.close()
         return False
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the underlying aiohttp session."""
         if self.session and not self.session.closed:
             await self.session.close()
             self.session = None
 
-    async def solve_with_fallback(self, page, captcha_type: str, sitekey: str, url: str,
-                                  proxy_context: dict = None) -> Optional[str]:
-        """Try primary provider, fallback to secondary if needed, with retry on timeout.
+    # ----- Provider fallback logic -----
 
-        Logic:
-        - Try self.provider (2captcha or capsolver) up to 2 times
-        - If NO_SLOT or ZERO_BALANCE, try fallback
-        - If both fail, raise exception
-        - Track which provider succeeded for cost attribution
+    async def solve_with_fallback(
+        self,
+        page: Any,
+        captcha_type: str,
+        sitekey: str,
+        url: str,
+        proxy_context: Optional[
+            Dict[str, Any]
+        ] = None,
+    ) -> Optional[str]:
+        """Try primary then fallback provider with retry.
 
         Args:
-            page: Playwright page instance
-            captcha_type: Type of captcha (turnstile, hcaptcha, userrecaptcha)
-            sitekey: Site key for the captcha
-            url: Page URL
-            proxy_context: Optional proxy configuration
+            page: Playwright page instance.
+            captcha_type: CAPTCHA type string.
+            sitekey: Site key for the CAPTCHA.
+            url: Page URL.
+            proxy_context: Optional proxy config dict.
 
         Returns:
-            Captcha solution token or None if failed
+            Solution token or None.
         """
-        providers_tried = []
-
-        provider_order = self._choose_provider_order(captcha_type)
+        providers_tried: List[str] = []
+        provider_order = self._choose_provider_order(
+            captcha_type
+        )
 
         for provider in provider_order:
-            # Retry each provider up to 2 times if it times out (returns None)
             max_retries = 2
             for attempt in range(max_retries):
                 try:
                     if attempt == 0:
-                        logger.info(f"🔑 Trying provider: {provider}")
+                        logger.info(
+                            "Trying provider: %s",
+                            provider,
+                        )
                     else:
-                        logger.info(f"🔁 Retry {attempt}/{max_retries - 1} for provider: {provider}")
-                    # Structured logging: captcha_solve_start
+                        logger.info(
+                            "Retry %d/%d for: %s",
+                            attempt,
+                            max_retries - 1,
+                            provider,
+                        )
                     logger.info(
- f"[LIFECYCLE] captcha_solve_start | type={captcha_type} | provider={provider} | attempt={attempt + 1} | timestamp={time.time():.0f}")
+                        "[LIFECYCLE] captcha_solve_start"
+                        " | type=%s | provider=%s"
+                        " | attempt=%d"
+                        " | timestamp=%.0f",
+                        captcha_type,
+                        provider,
+                        attempt + 1,
+                        time.time(),
+                    )
                     start_time = time.time()
                     if attempt == 0:
                         providers_tried.append(provider)
@@ -376,108 +586,215 @@ class CaptchaSolver:
                         api_key = self.fallback_api_key
 
                     if provider == "capsolver":
-                        code = await self._solve_capsolver(sitekey, url, captcha_type, proxy_context, api_key=api_key)
+                        code = (
+                            await self._solve_capsolver(
+                                sitekey,
+                                url,
+                                captcha_type,
+                                proxy_context,
+                                api_key=api_key,
+                            )
+                        )
                     else:
-                        code = await self._solve_2captcha(sitekey, url, captcha_type, proxy_context, api_key=api_key)
+                        code = (
+                            await self._solve_2captcha(
+                                sitekey,
+                                url,
+                                captcha_type,
+                                proxy_context,
+                                api_key=api_key,
+                            )
+                        )
 
-                    duration = time.time() - start_time
+                    dur = time.time() - start_time
                     if code:
-                        logger.info(f"✅ {provider.title()} succeeded")
-                        # Structured logging: captcha_solve_success
                         logger.info(
- f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=true | timestamp={time.time():.0f}")
-                        self._record_provider_result(provider, captcha_type, success=True)
+                            "%s succeeded",
+                            provider.title(),
+                        )
+                        logger.info(
+                            "[LIFECYCLE] captcha_solve"
+                            " | type=%s"
+                            " | provider=%s"
+                            " | duration=%.1fs"
+                            " | success=true"
+                            " | timestamp=%.0f",
+                            captcha_type,
+                            provider,
+                            dur,
+                            time.time(),
+                        )
+                        self._record_provider_result(
+                            provider,
+                            captcha_type,
+                            success=True,
+                        )
                         return code
 
-                    # If returned None (timeout), retry once more before giving up
                     if attempt < max_retries - 1:
-                        logger.warning(f"⏱️ {provider.title()} timed out, retrying in 2s...")
+                        logger.warning(
+                            "%s timed out, retrying...",
+                            provider.title(),
+                        )
                         await asyncio.sleep(2)
                         continue
 
-                    logger.warning(f"❌ {provider.title()} failed to return a solution after {max_retries} attempts")
-                    # Structured logging: captcha_solve_failed
                     logger.warning(
- f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=false | timestamp={time.time():.0f}")
-                    self._record_provider_result(provider, captcha_type, success=False)
-                    break  # Exit retry loop, try next provider
+                        "%s failed after %d attempts",
+                        provider.title(),
+                        max_retries,
+                    )
+                    logger.warning(
+                        "[LIFECYCLE] captcha_solve"
+                        " | type=%s"
+                        " | provider=%s"
+                        " | duration=%.1fs"
+                        " | success=false"
+                        " | timestamp=%.0f",
+                        captcha_type,
+                        provider,
+                        dur,
+                        time.time(),
+                    )
+                    self._record_provider_result(
+                        provider,
+                        captcha_type,
+                        success=False,
+                    )
+                    break
 
                 except Exception as e:
-                    duration = time.time() - start_time if 'start_time' in locals() else 0
+                    dur = (
+                        time.time() - start_time
+                        if "start_time" in locals()
+                        else 0
+                    )
                     error_msg = str(e)
-                    logger.error(f"❌ {provider.title()} error: {e}")
-                    # Structured logging: captcha_solve_error
                     logger.error(
- f"[LIFECYCLE] captcha_solve | type={captcha_type} | provider={provider} | duration={duration:.1f}s | success=false | error={str(e)[ :50]} | timestamp={time.time():.0f}")
-                    self._record_provider_result(provider, captcha_type, success=False)
-
-                    # If not fallback-worthy, propagate
-                    # Note: Both 'ERROR_METHOD_CALL' and 'METHOD_CALL' are checked to handle
-                    # different error message formats from various providers
-                    if not any(err in error_msg.upper()
-                               for err in ["NO_SLOT", "ZERO_BALANCE", "ERROR_METHOD_CALL", "METHOD_CALL"]):
+                        "%s error: %s",
+                        provider.title(),
+                        e,
+                    )
+                    logger.error(
+                        "[LIFECYCLE] captcha_solve"
+                        " | type=%s"
+                        " | provider=%s"
+                        " | duration=%.1fs"
+                        " | success=false"
+                        " | error=%s"
+                        " | timestamp=%.0f",
+                        captcha_type,
+                        provider,
+                        dur,
+                        error_msg[:50],
+                        time.time(),
+                    )
+                    self._record_provider_result(
+                        provider,
+                        captcha_type,
+                        success=False,
+                    )
+                    fallback_errs = [
+                        "NO_SLOT",
+                        "ZERO_BALANCE",
+                        "ERROR_METHOD_CALL",
+                        "METHOD_CALL",
+                    ]
+                    if not any(
+                        err in error_msg.upper()
+                        for err in fallback_errs
+                    ):
                         raise
-                    break  # Exit retry loop, try next provider
+                    break
 
-        # Both providers failed
-        logger.error(f"❌ All captcha providers failed. Tried: {', '.join(providers_tried)}")
+        logger.error(
+            "All captcha providers failed. Tried: %s",
+            ", ".join(providers_tried),
+        )
         return None
 
-    async def solve_captcha(self, page, timeout: int = 300, proxy_context: dict = None) -> bool:
-        """Detects and solves CAPTCHA.
+    # ----- Main entry point -----
 
-        If an API key exists, it attempts to auto-solve using the configured
-        provider (2Captcha or CapSolver). If no API key is provided or auto-solve
-        fails, it pauses for manual user input.
+    async def solve_captcha(
+        self,
+        page: Any,
+        timeout: int = 300,
+        proxy_context: Optional[
+            Dict[str, Any]
+        ] = None,
+    ) -> bool:
+        """Detect and solve the CAPTCHA on a page.
 
         Args:
-            page (Page): The Playwright Page instance.
-            timeout (int, optional): Maximum time to wait for manual solve in seconds.
-            proxy_context (dict, optional): Proxy details to pass to solver service.
-                Should include: proxy_string, proxy_type, user_agent, cookies (optional)
+            page: The Playwright Page instance.
+            timeout: Max seconds for manual solve.
+            proxy_context: Optional proxy details.
 
         Returns:
-            bool: True if the captcha was solved successfully.
+            True if the CAPTCHA was solved.
         """
         if not self.api_key and self.headless:
-            logger.error("CAPTCHA detected but no API key in headless mode. Cannot solve automatically.")
+            logger.error(
+                "CAPTCHA detected but no API key "
+                "in headless mode."
+            )
             return False
-        # 1. Detection & Extraction
-        sitekey = None
-        method = None
+
+        sitekey: Optional[str] = None
+        method: Optional[str] = None
         turnstile_input_only = False
 
-        # Small wait for captcha widgets to render (non-blocking if absent)
         try:
             await page.wait_for_selector(
-                "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, [data-sitekey], "
-                "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], "
-                "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']",
-                timeout=6000
+                "iframe[src*='turnstile'], "
+                "iframe[src*='challenges."
+                "cloudflare.com'], "
+                ".cf-turnstile, [data-sitekey], "
+                "iframe[src*='hcaptcha'], "
+                "iframe[src*='recaptcha'], "
+                "input[name="
+                "'cf-turnstile-response'], "
+                "textarea[name="
+                "'cf-turnstile-response']",
+                timeout=6000,
             )
         except Exception:
             pass
 
-        # Turnstile
-        # 1) Check iframes by URL first (more reliable for Cloudflare Turnstile)
+        # Turnstile iframe detection
         for frame in page.frames:
             frame_url = frame.url or ""
-            if "turnstile" in frame_url or "challenges.cloudflare.com" in frame_url:
+            if (
+                "turnstile" in frame_url
+                or "challenges.cloudflare.com"
+                in frame_url
+            ):
                 if "sitekey=" in frame_url:
                     method = "turnstile"
-                    sitekey = frame_url.split("sitekey=")[1].split("&")[0]
+                    sitekey = (
+                        frame_url
+                        .split("sitekey=")[1]
+                        .split("&")[0]
+                    )
                     break
                 if "k=" in frame_url:
                     method = "turnstile"
-                    sitekey = frame_url.split("k=")[1].split("&")[0]
+                    sitekey = (
+                        frame_url
+                        .split("k=")[1]
+                        .split("&")[0]
+                    )
                     break
 
-        # 1b) Check for Turnstile response input (some pages render without iframe)
+        # Turnstile input-only detection
         if not method:
-            turnstile_input = await page.query_selector(
-                "input[name='cf-turnstile-response'], textarea[name='cf-turnstile-response']"
+            ti = await page.query_selector(
+                "input[name="
+                "'cf-turnstile-response'], "
+                "textarea[name="
+                "'cf-turnstile-response']"
             )
-            if turnstile_input:
+            if ti:
                 method = "turnstile"
                 turnstile_input_only = True
                 try:
@@ -514,361 +831,597 @@ class CaptchaSolver:
                 except Exception:
                     sitekey = None
 
-        # 2) Fallback to DOM selectors
+        # Turnstile DOM fallback
         if not method:
-            turnstile_elem = await page.query_selector(
-                ".cf-turnstile, .cf-turnstile[data-sitekey], [data-sitekey][class*='turnstile'], "
-                "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], [id*='cf-turnstile']"
+            te = await page.query_selector(
+                ".cf-turnstile, "
+                ".cf-turnstile[data-sitekey], "
+                "[data-sitekey]"
+                "[class*='turnstile'], "
+                "iframe[src*='turnstile'], "
+                "iframe[src*='challenges."
+                "cloudflare.com'], "
+                "[id*='cf-turnstile']"
             )
-            if turnstile_elem:
+            if te:
                 method = "turnstile"
                 turnstile_input_only = False
-                sitekey = await turnstile_elem.get_attribute("data-sitekey")
+                sitekey = await te.get_attribute(
+                    "data-sitekey"
+                )
                 if not sitekey:
-                    # Try to extract from iframe src
-                    src = await turnstile_elem.get_attribute("src")
+                    src = await te.get_attribute("src")
                     if src and "sitekey=" in src:
-                        sitekey = src.split("sitekey=")[1].split("&")[0]
-
-                # If still no sitekey, try searching in scripts
+                        sitekey = (
+                            src.split("sitekey=")[1]
+                            .split("&")[0]
+                        )
                 if not sitekey:
                     sitekey = await page.evaluate(
-                        "() => typeof turnstile !== 'undefined' ? (turnstile._render_parameters || {}).sitekey : null"
+                        "() => typeof turnstile "
+                        "!== 'undefined' "
+                        "? (turnstile"
+                        "._render_parameters "
+                        "|| {}).sitekey : null"
                     )
 
         # hCaptcha
         if not method:
-            hcaptcha_elem = await page.query_selector("iframe[src*='hcaptcha']")
-            if hcaptcha_elem:
+            he = await page.query_selector(
+                "iframe[src*='hcaptcha']"
+            )
+            if he:
                 method = "hcaptcha"
-                # Often in the url params
-                src = await hcaptcha_elem.get_attribute("src")
+                src = await he.get_attribute("src")
                 if src and "sitekey=" in src:
-                    sitekey = src.split("sitekey=")[1].split("&")[0]
+                    sitekey = (
+                        src.split("sitekey=")[1]
+                        .split("&")[0]
+                    )
 
-        # reCaptcha
+        # reCAPTCHA
         if not method:
-            recaptcha_elem = await page.query_selector("iframe[src*='recaptcha']")
-            if recaptcha_elem:
+            rce = await page.query_selector(
+                "iframe[src*='recaptcha']"
+            )
+            if rce:
                 method = "userrecaptcha"
-                src = await recaptcha_elem.get_attribute("src")
-                if "k=" in src:
-                    sitekey = src.split("k=")[1].split("&")[0]
+                src = await rce.get_attribute("src")
+                if src and "k=" in src:
+                    sitekey = (
+                        src.split("k=")[1]
+                        .split("&")[0]
+                    )
 
-        # HTML fallback (data-sitekey / sitekey parameters)
+        # HTML fallback
         if not method:
             try:
                 html = await page.content()
-                for pattern in [
-                    r'data-sitekey="([0-9A-Za-z_-]{20,})"',
-                    r"data-sitekey='([0-9A-Za-z_-]{20,})'",
-                    r"sitekey=([0-9A-Za-z_-]{20,})",
+                for pat in [
+                    r'data-sitekey='
+                    r'"([0-9A-Za-z_-]{20,})"',
+                    r"data-sitekey="
+                    r"'([0-9A-Za-z_-]{20,})'",
+                    r"sitekey="
+                    r"([0-9A-Za-z_-]{20,})",
                 ]:
-                    match = re.search(pattern, html)
-                    if match:
+                    m = re.search(pat, html)
+                    if m:
                         method = "turnstile"
-                        sitekey = match.group(1)
+                        sitekey = m.group(1)
                         break
             except Exception:
                 pass
 
-        # ALTCHA Detection (Proof-of-Work captcha - e.g. Cointiply)
+        # ALTCHA
         if not method:
-            altcha_widget = await page.query_selector("altcha-widget, [data-altcha], .altcha")
-            if altcha_widget:
+            aw = await page.query_selector(
+                "altcha-widget, "
+                "[data-altcha], .altcha"
+            )
+            if aw:
                 method = "altcha"
-                logger.info("ALTCHA proof-of-work captcha detected.")
+                logger.info(
+                    "ALTCHA proof-of-work detected."
+                )
 
-        # Image Captcha Detection (Fragmented/Custom)
+        # Image captcha
         if not method:
-            # Check for image captchas that might need coordinates (e.g. Cointiply/Freebitco.in custom ones)
-            image_captcha = await page.query_selector("img[src*='captcha'], div.captcha-img, .adcopy-puzzle-image")
-            if image_captcha:
+            ic = await page.query_selector(
+                "img[src*='captcha'], "
+                "div.captcha-img, "
+                ".adcopy-puzzle-image"
+            )
+            if ic:
                 method = "image"
-                logger.info("Custom Image Captcha detected.")
+                logger.info(
+                    "Custom Image Captcha detected."
+                )
 
-        # Normalize/validate sitekey
-        if sitekey is not None and not isinstance(sitekey, str):
-            try:
-                # Handle object returns like { sitekey: "..." }
-                if isinstance(sitekey, dict) and sitekey.get("sitekey"):
-                    sitekey = sitekey.get("sitekey")
-                else:
-                    sitekey = str(sitekey)
-            except Exception:
-                sitekey = None
-        if sitekey:
-            sitekey = sitekey.strip()
-            # If we got a blob or JSON-like string, extract the first plausible token
-            if any(ch in sitekey for ch in ["{", "}", ",", ":"]):
-                match = re.search(r"[0-9A-Za-z_-]{20,}", sitekey)
-                if match:
-                    sitekey = match.group(0)
-        if sitekey and not re.fullmatch(r"[0-9A-Za-z_-]{20,}", sitekey):
-            logger.debug("Invalid sitekey format detected: %s", sitekey[:20])
-            sitekey = None
-        if not sitekey or len(sitekey) < 10:
-            sitekey = None
+        # Normalize sitekey
+        sitekey = self._normalize_sitekey(sitekey)
 
         if not method or not sitekey:
-            # 2. Search in Scripts & Global Variables if still missing sitekey
-            sitekey = await self._extract_sitekey_from_scripts(page, method or "any")
-
-            if sitekey is not None and not isinstance(sitekey, str):
+            sitekey = (
+                await self._extract_sitekey_from_scripts(
+                    page, method or "any"
+                )
+            )
+            if (
+                sitekey is not None
+                and not isinstance(sitekey, str)
+            ):
                 try:
                     sitekey = str(sitekey)
                 except Exception:
                     sitekey = None
-            if sitekey:
-                sitekey = sitekey.strip()
-            if sitekey and not re.fullmatch(r"[0-9A-Za-z_-]{20,}", sitekey):
-                logger.debug("Invalid sitekey format detected: %s", sitekey[:20])
-                sitekey = None
-            if not sitekey or len(sitekey) < 10:
-                sitekey = None
+            sitekey = self._normalize_sitekey(sitekey)
 
             if not sitekey:
-                if method == "turnstile" and turnstile_input_only:
-                    logger.info("Turnstile response input detected without widget/sitekey; skipping auto-solve.")
+                if (
+                    method == "turnstile"
+                    and turnstile_input_only
+                ):
+                    logger.info(
+                        "Turnstile input without "
+                        "sitekey; skipping."
+                    )
                     return True
-                # Check if any captcha frames exist at all as a last resort
                 has_frames = await page.query_selector(
-                    "iframe[src*='hcaptcha'], iframe[src*='recaptcha'], .cf-turnstile, [id*='cf-turnstile'], [data-sitekey]"
+                    "iframe[src*='hcaptcha'], "
+                    "iframe[src*='recaptcha'], "
+                    ".cf-turnstile, "
+                    "[id*='cf-turnstile'], "
+                    "[data-sitekey]"
                 )
                 if not has_frames:
                     return True
                 if self.headless:
-                    logger.error("Captcha detected but Sitekey not found in headless mode.")
+                    logger.error(
+                        "Captcha detected but "
+                        "sitekey not found "
+                        "in headless mode."
+                    )
                     return False
-                logger.warning("Captcha detected but Sitekey not found. Falling back to manual.")
+                logger.warning(
+                    "Captcha detected but sitekey "
+                    "not found. Manual fallback."
+                )
             else:
                 if not method:
-                    # Infer method from sitekey characteristics
-                    if len(sitekey) == 40 and "-" in sitekey:
+                    if (
+                        len(sitekey) == 40
+                        and "-" in sitekey
+                    ):
                         method = "hcaptcha"
                     elif len(sitekey) == 40:
                         method = "userrecaptcha"
                     else:
                         method = "turnstile"
-                logger.info(f"CAPTCHA Detected via Script: {method} (SiteKey: {sitekey[:10]}...)")
+                logger.info(
+                    "CAPTCHA via Script: %s "
+                    "(SiteKey: %s...)",
+                    method,
+                    sitekey[:10],
+                )
         elif method != "image":
-            logger.info(f"CAPTCHA Detected: {method} (SiteKey: {sitekey[:10] if sitekey else 'N/A'}...)")
+            sk = sitekey[:10] if sitekey else "N/A"
+            logger.info(
+                "CAPTCHA Detected: %s "
+                "(SiteKey: %s...)",
+                method,
+                sk,
+            )
         else:
-            logger.info("CAPTCHA Detected: Image (Coordinates based)")
+            logger.info(
+                "CAPTCHA Detected: Image "
+                "(Coordinates based)"
+            )
 
-        # 2a. ALTCHA (Proof-of-Work) - solve locally, no API key needed
         if method == "altcha":
             return await self._solve_altcha(page)
 
-        # 2. Auto-Solve Path with Budget Check
-        auto_solve_allowed = False
+        auto_ok = False
         if self.api_key and method:
-            auto_solve_allowed = self.can_afford_captcha(method)
-            if not auto_solve_allowed:
-                logger.warning("💰 Captcha budget exceeded or insufficient. Attempting manual solve...")
+            auto_ok = self.can_afford_captcha(method)
+            if not auto_ok:
+                logger.warning(
+                    "Budget exceeded. "
+                    "Attempting manual..."
+                )
 
-        if self.api_key and auto_solve_allowed:
+        if self.api_key and auto_ok:
             try:
                 if method == "image":
-                    return await self._solve_image_captcha(page)
+                    return (
+                        await self._solve_image_captcha(
+                            page
+                        )
+                    )
 
                 if sitekey:
-                    # Build proxy context with browser fingerprinting data
                     if not proxy_context:
                         proxy_context = {}
-
-                    # Auto-populate proxy from set_proxy() if available and not explicitly provided
-                    if "proxy_string" not in proxy_context and self.proxy_string:
-                        proxy_context["proxy_string"] = self.proxy_string
-                        proxy_context["proxy_type"] = "http"  # Default to http
-                        logger.debug(f"Auto-populated proxy context from set_proxy: {self.proxy_string[:30]}...")
-
-                    # Get user-agent from page if not already provided
-                    if "user_agent" not in proxy_context:
+                    if (
+                        "proxy_string"
+                        not in proxy_context
+                        and self.proxy_string
+                    ):
+                        proxy_context[
+                            "proxy_string"
+                        ] = self.proxy_string
+                        proxy_context[
+                            "proxy_type"
+                        ] = "http"
+                        logger.debug(
+                            "Auto proxy: %s...",
+                            self.proxy_string[:30],
+                        )
+                    if (
+                        "user_agent"
+                        not in proxy_context
+                    ):
                         try:
-                            user_agent = await page.evaluate("() => navigator.userAgent")
-                            proxy_context["user_agent"] = user_agent
-                            logger.debug(f"Extracted User-Agent: {user_agent[:50]}...")
+                            ua = await page.evaluate(
+                                "() => "
+                                "navigator.userAgent"
+                            )
+                            proxy_context[
+                                "user_agent"
+                            ] = ua
+                            logger.debug(
+                                "User-Agent: %s...",
+                                ua[:50],
+                            )
                         except Exception as e:
-                            logger.warning(f"Failed to extract User-Agent: {e}")
+                            logger.warning(
+                                "UA extract "
+                                "failed: %s",
+                                e,
+                            )
 
-                    # Use the new solve_with_fallback method for provider fallback
-                    code = await self.solve_with_fallback(page, method, sitekey, page.url, proxy_context)
+                    code = (
+                        await self.solve_with_fallback(
+                            page,
+                            method,
+                            sitekey,
+                            page.url,
+                            proxy_context,
+                        )
+                    )
 
                     if code:
-                        logger.info(f"✅ Captcha Solved! Injecting token...")
-                        await self._inject_token(page, method, code)
-                        self._record_solve(method, True)
+                        logger.info(
+                            "Captcha Solved! "
+                            "Injecting token..."
+                        )
+                        await self._inject_token(
+                            page, method, code
+                        )
+                        self._record_solve(
+                            method, True
+                        )
                         return True
                     else:
-                        logger.error(f"❌ All captcha providers failed")
+                        logger.error(
+                            "All captcha providers "
+                            "failed"
+                        )
             except Exception as e:
-                logger.error(f"Captcha solving error: {e}")
+                logger.error(
+                    "Captcha solving error: %s", e
+                )
 
-        # 3. Manual Fallback Path
-        # Check if this is a high-value claim (based on faucet_name)
         high_value = False
         if self.faucet_name:
-            # High-value faucets that are worth manual effort
-            high_value_faucets = ["firefaucet", "freebitcoin", "cointiply"]
-            high_value = any(hv in self.faucet_name.lower() for hv in high_value_faucets)
-
-        return await self._wait_for_human(page, timeout, high_value_claim=high_value)
-
-    async def _solve_image_captcha(self, page) -> bool:
-        """
-        Handle image-based captchas using 2Captcha Coordinates API.
-
-        This method captures a screenshot of the captcha image, sends it to 2Captcha,
-        receives click coordinates, and simulates clicks at those positions.
-
-        Args:
-            page: The Playwright Page instance
-
-        Returns:
-            True if solved automatically or manually, False otherwise
-        """
-        if not self.api_key:
-            logger.warning("⚠️ No API key for image captcha. Falling back to manual.")
-            return await self._wait_for_human(page, 120)
-
-        try:
-            # Find the captcha image element
-            captcha_element = await page.query_selector(
-                "img[src*='captcha'], div.captcha-img img, .adcopy-puzzle-image, "
-                "#captcha-image, .captcha-image, [class*='captcha'] img"
+            hv_faucets = [
+                "firefaucet",
+                "freebitcoin",
+                "cointiply",
+            ]
+            high_value = any(
+                hv in self.faucet_name.lower()
+                for hv in hv_faucets
             )
 
-            if not captcha_element:
-                logger.warning("Could not find captcha image element")
-                return await self._wait_for_human(page, 120)
+        return await self._wait_for_human(
+            page,
+            timeout,
+            high_value_claim=high_value,
+        )
 
-            # Get bounding box for coordinate translation
-            box = await captcha_element.bounding_box()
+    # ----- Helpers -----
+
+    @staticmethod
+    def _normalize_sitekey(
+        sitekey: Optional[Any],
+    ) -> Optional[str]:
+        """Validate and normalise a raw sitekey value.
+
+        Args:
+            sitekey: Raw sitekey value.
+
+        Returns:
+            Cleaned sitekey string or None.
+        """
+        if sitekey is None:
+            return None
+        if not isinstance(sitekey, str):
+            try:
+                if (
+                    isinstance(sitekey, dict)
+                    and sitekey.get("sitekey")
+                ):
+                    sitekey = sitekey.get("sitekey")
+                else:
+                    sitekey = str(sitekey)
+            except Exception:
+                return None
+        sitekey = sitekey.strip()
+        if any(
+            c in sitekey
+            for c in ["{", "}", ",", ":"]
+        ):
+            m = re.search(
+                r"[0-9A-Za-z_-]{20,}", sitekey
+            )
+            if m:
+                sitekey = m.group(0)
+        if not re.fullmatch(
+            r"[0-9A-Za-z_-]{20,}", sitekey
+        ):
+            logger.debug(
+                "Invalid sitekey format: %s",
+                sitekey[:20],
+            )
+            return None
+        if len(sitekey) < 10:
+            return None
+        return sitekey
+
+    # ----- Solver backends -----
+
+    async def _solve_image_captcha(
+        self, page: Any
+    ) -> bool:
+        """Solve image CAPTCHA via 2Captcha coordinates.
+
+        Args:
+            page: The Playwright Page instance.
+
+        Returns:
+            True if solved, False otherwise.
+        """
+        if not self.api_key:
+            logger.warning(
+                "No API key for image captcha."
+            )
+            return await self._wait_for_human(
+                page, 120
+            )
+
+        try:
+            ce = await page.query_selector(
+                "img[src*='captcha'], "
+                "div.captcha-img img, "
+                ".adcopy-puzzle-image, "
+                "#captcha-image, "
+                ".captcha-image, "
+                "[class*='captcha'] img"
+            )
+            if not ce:
+                logger.warning(
+                    "Could not find captcha image"
+                )
+                return await self._wait_for_human(
+                    page, 120
+                )
+
+            box = await ce.bounding_box()
             if not box:
-                logger.warning("Could not get captcha bounding box")
-                return await self._wait_for_human(page, 120)
+                logger.warning(
+                    "Could not get bounding box"
+                )
+                return await self._wait_for_human(
+                    page, 120
+                )
 
-            # Capture screenshot of the captcha element
-            screenshot_bytes = await captcha_element.screenshot()
-            screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+            ss_bytes = await ce.screenshot()
+            ss_b64 = base64.b64encode(
+                ss_bytes
+            ).decode("utf-8")
 
-            logger.info(f"📸 Captured captcha image ({len(screenshot_bytes)} bytes), sending to 2Captcha...")
+            logger.info(
+                "Captured captcha (%d bytes), "
+                "sending to 2Captcha...",
+                len(ss_bytes),
+            )
 
-            # Send to 2Captcha Coordinates API
             session = await self._get_session()
-            submit_url = "http://2captcha.com/in.php"
-            params = {
+            params: Dict[str, Any] = {
                 "key": self.api_key,
                 "method": "base64",
                 "coordinatescaptcha": 1,
-                "body": screenshot_b64,
-                "json": 1
+                "body": ss_b64,
+                "json": 1,
             }
 
-            async with session.post(submit_url, data=params) as resp:
+            async with session.post(
+                "http://2captcha.com/in.php",
+                data=params,
+            ) as resp:
                 data = await resp.json()
-                if data.get('status') != 1:
-                    logger.error(f"2Captcha Image Submit Error: {data}")
-                    return await self._wait_for_human(page, 120)
-                request_id = data['request']
+                if data.get("status") != 1:
+                    logger.error(
+                        "2Captcha Image Error: %s",
+                        data,
+                    )
+                    return (
+                        await self._wait_for_human(
+                            page, 120
+                        )
+                    )
+                req_id = data["request"]
 
-            # Poll for result
-            logger.info(f"⏳ Waiting for coordinates (ID: {request_id})...")
+            logger.info(
+                "Waiting for coords (ID: %s)...",
+                req_id,
+            )
             waited = 0
             coordinates = None
             while waited < 120:
                 await asyncio.sleep(5)
                 waited += 5
-
-                poll_url = f"http://2captcha.com/res.php?key={self.api_key}&action=get&id={request_id}&json=1"
-                async with session.get(poll_url) as resp:
+                poll = (
+                    "http://2captcha.com/res.php"
+                    f"?key={self.api_key}"
+                    f"&action=get"
+                    f"&id={req_id}&json=1"
+                )
+                async with session.get(
+                    poll
+                ) as resp:
                     try:
                         data = await resp.json()
                     except Exception:
                         continue
-
-                    if data.get('status') == 1:
-                        coordinates = data['request']
+                    if data.get("status") == 1:
+                        coordinates = (
+                            data["request"]
+                        )
                         break
-                    if data.get('request') != "CAPCHA_NOT_READY":
-                        logger.error(f"2Captcha Poll Error: {data}")
-                        return await self._wait_for_human(page, 120)
+                    if (
+                        data.get("request")
+                        != "CAPCHA_NOT_READY"
+                    ):
+                        logger.error(
+                            "2Captcha Poll Error: "
+                            "%s", data
+                        )
+                        return (
+                            await
+                            self._wait_for_human(
+                                page, 120
+                            )
+                        )
 
             if not coordinates:
-                logger.error("Timeout waiting for coordinates")
-                return await self._wait_for_human(page, 120)
+                logger.error(
+                    "Timeout waiting for coords"
+                )
+                return await self._wait_for_human(
+                    page, 120
+                )
 
-            # Parse coordinates (format: "x=123,y=456;x=234,y=567" or "123,456")
-            logger.info(f"✅ Got coordinates: {coordinates}")
-
-            click_points = []
-            if 'x=' in coordinates:
-                # Format: x=123,y=456;x=234,y=567
-                for point in coordinates.split(';'):
-                    parts = dict(p.split('=') for p in point.split(','))
-                    click_points.append((int(parts['x']), int(parts['y'])))
-            else:
-                # Simple format: 123,456
-                parts = coordinates.split(',')
-                if len(parts) >= 2:
-                    click_points.append((int(parts[0]), int(parts[1])))
-
-            # Click at each coordinate (relative to captcha element)
-            for x, y in click_points:
-                # Translate to page coordinates
-                page_x = box['x'] + x + random.uniform(-2, 2)
-                page_y = box['y'] + y + random.uniform(-2, 2)
-
-                logger.info(f"🖱️ Clicking at ({page_x:.0f}, {page_y:.0f})")
-                await page.mouse.click(page_x, page_y)
-                await asyncio.sleep(random.uniform(0.3, 0.8))
-
-            # Wait a moment for any submit button
-            await asyncio.sleep(1)
-
-            # Try to find and click submit button if present
-            submit_btn = await page.query_selector(
-                "button[type='submit'], input[type='submit'], "
-                ".captcha-submit, #captcha-submit, [class*='submit']"
+            logger.info(
+                "Got coordinates: %s", coordinates
             )
-            if submit_btn:
-                await submit_btn.click()
-                logger.info("📤 Clicked submit button")
+            click_points = self._parse_coordinates(
+                coordinates
+            )
+
+            for x, y in click_points:
+                px = (
+                    box["x"]
+                    + x
+                    + random.uniform(-2, 2)
+                )
+                py = (
+                    box["y"]
+                    + y
+                    + random.uniform(-2, 2)
+                )
+                logger.info(
+                    "Clicking (%.0f, %.0f)",
+                    px, py,
+                )
+                await page.mouse.click(px, py)
+                await asyncio.sleep(
+                    random.uniform(0.3, 0.8)
+                )
+
+            await asyncio.sleep(1)
+            sb = await page.query_selector(
+                "button[type='submit'], "
+                "input[type='submit'], "
+                ".captcha-submit, "
+                "#captcha-submit, "
+                "[class*='submit']"
+            )
+            if sb:
+                await sb.click()
+                logger.info("Clicked submit")
 
             await asyncio.sleep(2)
             self._record_solve("image", True)
             return True
 
         except Exception as e:
-            logger.error(f"Error solving image captcha: {e}")
-            return await self._wait_for_human(page, 120)
+            logger.error(
+                "Error solving image captcha: %s", e
+            )
+            return await self._wait_for_human(
+                page, 120
+            )
 
-    async def _solve_altcha(self, page) -> bool:
-        """Solve ALTCHA proof-of-work captcha locally (no API key needed).
+    @staticmethod
+    def _parse_coordinates(
+        coordinates: str,
+    ) -> List[tuple]:
+        """Parse 2Captcha coordinate response.
 
-        ALTCHA works by:
-        1. Fetching a challenge (salt, algorithm, challenge hash, maxnumber)
-        2. Brute-forcing: find ``number`` where SHA-256(salt + number) == challenge
-        3. Submitting the solution back to the widget
+        Args:
+            coordinates: Raw coordinate string.
 
-        This runs entirely in the browser via JavaScript ``crypto.subtle``.
+        Returns:
+            List of (x, y) integer tuples.
+        """
+        pts: List[tuple] = []
+        if "x=" in coordinates:
+            for point in coordinates.split(";"):
+                parts = dict(
+                    p.split("=")
+                    for p in point.split(",")
+                )
+                pts.append(
+                    (
+                        int(parts["x"]),
+                        int(parts["y"]),
+                    )
+                )
+        else:
+            parts = coordinates.split(",")
+            if len(parts) >= 2:
+                pts.append(
+                    (int(parts[0]), int(parts[1]))
+                )
+        return pts
+
+    async def _solve_altcha(
+        self, page: Any
+    ) -> bool:
+        """Solve ALTCHA proof-of-work locally (free).
+
+        Args:
+            page: The Playwright Page instance.
+
+        Returns:
+            True if the PoW was solved successfully.
         """
         try:
-            logger.info("Solving ALTCHA proof-of-work captcha...")
+            logger.info(
+                "Solving ALTCHA proof-of-work..."
+            )
 
             solved = await page.evaluate(r"""
                 async () => {
-                    // Find the altcha widget element
                     const widget = document.querySelector('altcha-widget, [data-altcha], .altcha');
                     if (!widget) return {ok: false, error: 'widget not found'};
 
-                    // Extract challengeurl from the widget attributes
                     let challengeUrl = widget.getAttribute('challengeurl') ||
                                          widget.getAttribute('data-challengeurl') ||
                                          widget.getAttribute('challengeURL');
                     if (!challengeUrl) {
-                        // Try to find it in script tags
                         const scripts = document.querySelectorAll('script');
                         for (const s of scripts) {
                             const m = s.textContent.match(/challengeurl["\s:=]+["']([^"']+)["']/i);
@@ -877,7 +1430,6 @@ class CaptchaSolver:
                     }
                     if (!challengeUrl) return {ok: false, error: 'challengeurl not found'};
 
-                    // Fetch the challenge
                     let challenge;
                     try {
                         const resp = await fetch(challengeUrl);
@@ -890,7 +1442,6 @@ class CaptchaSolver:
                     const targetHash = challenge.challenge;
                     const max = maxnumber || 1000000;
 
-                    // Brute-force the number using crypto.subtle
                     const encoder = new TextEncoder();
                     for (let n = 0; n <= max; n++) {
                         const data = encoder.encode(salt + n.toString());
@@ -898,7 +1449,6 @@ class CaptchaSolver:
                         const hashHex = Array.from(new Uint8Array(hashBuf))
                             .map(b => b.toString(16).padStart(2, '0')).join('');
                         if (hashHex === targetHash) {
-                            // Build the solution payload
                             const payload = btoa(JSON.stringify({
                                 algorithm: algorithm || 'SHA-256',
                                 challenge: targetHash,
@@ -907,7 +1457,6 @@ class CaptchaSolver:
                                 signature: challenge.signature || ''
                             }));
 
-                            // Inject the solution into the hidden input
                             const input = widget.querySelector('input[name="altcha"]') ||
                                           document.querySelector('input[name="altcha"]');
                             if (input) {
@@ -916,14 +1465,12 @@ class CaptchaSolver:
                                 input.dispatchEvent(new Event('input', {bubbles: true}));
                             }
 
-                            // Also try triggering the widget's verified state
                             try {
                                 widget.dispatchEvent(new CustomEvent('statechange', {
                                     detail: {state: 'verified', payload: payload}
                                 }));
                             } catch(e) {}
 
-                            // Try calling the widget's verify method if it exists
                             if (typeof widget.value !== 'undefined') {
                                 widget.value = payload;
                             }
@@ -936,64 +1483,109 @@ class CaptchaSolver:
             """)
 
             if solved and solved.get("ok"):
-                logger.info(f"ALTCHA solved in {solved.get('iterations', '?')} iterations (free, no API cost)")
+                logger.info(
+                    "ALTCHA solved in %s iterations "
+                    "(free)",
+                    solved.get("iterations", "?"),
+                )
                 self._record_solve("altcha", True)
                 return True
             else:
-                error = solved.get("error", "unknown") if solved else "evaluation failed"
-                logger.error(f"ALTCHA solve failed: {error}")
+                error = (
+                    solved.get("error", "unknown")
+                    if solved
+                    else "evaluation failed"
+                )
+                logger.error(
+                    "ALTCHA solve failed: %s", error
+                )
                 return False
 
         except Exception as e:
-            logger.error(f"Error solving ALTCHA captcha: {e}")
+            logger.error(
+                "Error solving ALTCHA: %s", e
+            )
             return False
 
-    async def solve_text_captcha(self, page, image_selector: str, timeout: int = 120) -> Optional[str]:
-        """Solve a text-based captcha from an image element using 2Captcha.
+    async def solve_text_captcha(
+        self,
+        page: Any,
+        image_selector: str,
+        timeout: int = 120,
+    ) -> Optional[str]:
+        """Solve text-based CAPTCHA via 2Captcha OCR.
 
-        Returns the captcha text if solved, otherwise None.
+        Args:
+            page: The Playwright Page instance.
+            image_selector: CSS selector for CAPTCHA image.
+            timeout: Max seconds to wait.
+
+        Returns:
+            Recognised text or None.
         """
         if not self.api_key:
-            logger.warning("⚠️ No API key for text captcha. Falling back to manual.")
+            logger.warning(
+                "No API key for text captcha."
+            )
             await self._wait_for_human(page, timeout)
             return None
 
         try:
-            captcha_element = await page.query_selector(image_selector)
-            if not captcha_element:
-                logger.warning("Could not find captcha image element for text solve")
+            ce = await page.query_selector(
+                image_selector
+            )
+            if not ce:
+                logger.warning(
+                    "Could not find text captcha image"
+                )
                 return None
 
-            box = await captcha_element.bounding_box()
+            box = await ce.bounding_box()
             if not box:
-                logger.warning("Could not get captcha bounding box")
+                logger.warning(
+                    "Could not get bounding box"
+                )
                 return None
 
-            screenshot_bytes = await captcha_element.screenshot()
-            screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            ss = await ce.screenshot()
+            b64 = base64.b64encode(ss).decode(
+                "utf-8"
+            )
 
             session = await self._get_session()
-            submit_url = "http://2captcha.com/in.php"
-            params = {
+            params: Dict[str, Any] = {
                 "key": self.api_key,
                 "method": "base64",
-                "body": screenshot_b64,
-                "json": 1
+                "body": b64,
+                "json": 1,
             }
 
-            async with session.post(submit_url, data=params) as resp:
+            async with session.post(
+                "http://2captcha.com/in.php",
+                data=params,
+            ) as resp:
                 data = await resp.json()
                 if data.get("status") != 1:
-                    logger.error(f"2Captcha Text Submit Error: {data}")
+                    logger.error(
+                        "2Captcha Text Error: %s",
+                        data,
+                    )
                     return None
-                request_id = data["request"]
+                req_id = data["request"]
 
             waited = 0
             while waited < timeout:
                 await asyncio.sleep(5)
                 waited += 5
-                poll_url = f"http://2captcha.com/res.php?key={self.api_key}&action=get&id={request_id}&json=1"
-                async with session.get(poll_url) as resp:
+                poll = (
+                    "http://2captcha.com/res.php"
+                    f"?key={self.api_key}"
+                    f"&action=get"
+                    f"&id={req_id}&json=1"
+                )
+                async with session.get(
+                    poll
+                ) as resp:
                     try:
                         data = await resp.json()
                     except Exception:
@@ -1001,204 +1593,367 @@ class CaptchaSolver:
                 if data.get("status") == 1:
                     text = data.get("request")
                     if text:
-                        logger.info("✅ Text captcha solved")
+                        logger.info(
+                            "Text captcha solved"
+                        )
                         return text.strip()
-                if data.get("request") != "CAPCHA_NOT_READY":
-                    logger.error(f"2Captcha Text Poll Error: {data}")
+                if (
+                    data.get("request")
+                    != "CAPCHA_NOT_READY"
+                ):
+                    logger.error(
+                        "2Captcha Text Poll "
+                        "Error: %s", data
+                    )
                     return None
 
         except Exception as e:
-            logger.error(f"Error solving text captcha: {e}")
+            logger.error(
+                "Error solving text captcha: %s", e
+            )
             return None
 
         return None
 
-    async def _solve_2captcha(self, sitekey, url, method, proxy_context=None, api_key: Optional[str] = None):
+    async def _solve_2captcha(
+        self,
+        sitekey: str,
+        url: str,
+        method: str,
+        proxy_context: Optional[
+            Dict[str, Any]
+        ] = None,
+        api_key: Optional[str] = None,
+    ) -> Optional[str]:
+        """Submit CAPTCHA to 2Captcha and poll for solution.
+
+        Args:
+            sitekey: CAPTCHA site key.
+            url: Page URL.
+            method: CAPTCHA method string.
+            proxy_context: Optional proxy config.
+            api_key: Override API key.
+
+        Returns:
+            Solution token or None.
+
+        Raises:
+            Exception: For fallback-worthy errors.
+        """
         session = await self._get_session()
         api_key = api_key or self.api_key
 
-        # 1. Submit
         req_url = "http://2captcha.com/in.php"
-        params = {
+        params: Dict[str, Any] = {
             "key": api_key,
             "method": method,
             "pageurl": url,
-            "json": 1
+            "json": 1,
         }
 
-        # 2Captcha uses different parameter names for different captcha types
-        # reCAPTCHA uses 'googlekey', hCaptcha uses 'sitekey', Turnstile uses 'sitekey'
         if method == "userrecaptcha":
             params["googlekey"] = sitekey
         else:
             params["sitekey"] = sitekey
 
-        # Handle proxy from proxy_context (preferred) or self.proxy_string (fallback)
-        proxy_string_to_use = None
-        if proxy_context and proxy_context.get("proxy_string"):
-            # Parse proxy URL to extract user:pass@host:port format (2Captcha doesn't want http:// prefix)
-            raw_proxy = proxy_context.get("proxy_string")
-            proxy_info = self._parse_proxy(raw_proxy)
-            proxy_string_to_use = proxy_info["proxy"]
-            proxy_type = proxy_info["proxytype"]
-            params["proxytype"] = proxy_type
-            logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_type}): {proxy_string_to_use[:40]}...")
+        proxy_str = None
+        if (
+            proxy_context
+            and proxy_context.get("proxy_string")
+        ):
+            raw = proxy_context["proxy_string"]
+            pi = self._parse_proxy(raw)
+            proxy_str = pi["proxy"]
+            params["proxytype"] = pi["proxytype"]
+            logger.info(
+                "Using Proxy for 2Captcha (%s): "
+                "%s...",
+                pi["proxytype"],
+                proxy_str[:40],
+            )
         elif self.proxy_string:
-            proxy_info = self._parse_proxy(self.proxy_string)
-            proxy_string_to_use = proxy_info["proxy"]
-            params["proxytype"] = proxy_info["proxytype"]
-            logger.info(f"🔒 Using Proxy for 2Captcha ({proxy_info['proxytype']}): {proxy_string_to_use[:30]}...")
+            pi = self._parse_proxy(self.proxy_string)
+            proxy_str = pi["proxy"]
+            params["proxytype"] = pi["proxytype"]
+            logger.info(
+                "Using Proxy for 2Captcha (%s): "
+                "%s...",
+                pi["proxytype"],
+                proxy_str[:30],
+            )
 
-        # Only add proxy parameter if we have a valid proxy
-        if proxy_string_to_use:
-            params["proxy"] = proxy_string_to_use
+        if proxy_str:
+            params["proxy"] = proxy_str
 
-        # Add User-Agent for better success rate (CRITICAL for reCAPTCHA/Turnstile)
-        # Can be sent with or without proxy
-        if proxy_context and "user_agent" in proxy_context:
-            params["userAgent"] = proxy_context["user_agent"]
-            logger.debug(f"📱 Sending User-Agent to 2Captcha: {params['userAgent'][:50]}...")
+        if (
+            proxy_context
+            and "user_agent" in proxy_context
+        ):
+            params["userAgent"] = (
+                proxy_context["user_agent"]
+            )
+            logger.debug(
+                "Sending UA to 2Captcha: %s...",
+                params["userAgent"][:50],
+            )
 
-        logger.info(f"Submitting {method} to 2Captcha (sitekey: {sitekey[:20]}...)...")
-        async with session.post(req_url, data=params) as resp:
+        logger.info(
+            "Submitting %s to 2Captcha "
+            "(sitekey: %s...)...",
+            method,
+            sitekey[:20],
+        )
+        async with session.post(
+            req_url, data=params
+        ) as resp:
             try:
                 data = await resp.json()
             except Exception as e:
-                logger.error(f"2Captcha Invalid JSON response: {resp.status} ({e})")
+                logger.error(
+                    "2Captcha Invalid JSON: %s (%s)",
+                    resp.status,
+                    e,
+                )
                 return None
 
-            if data.get('status') != 1:
-                error_code = data.get('request', 'UNKNOWN_ERROR')
-                logger.error(f"2Captcha Submit Error: {error_code}")
-                if error_code == "ERROR_IP_NOT_ALLOWED":
-                    logger.error("❌ 2Captcha: IP not whitelisted. Triggering whitelist update.")
-                # Raise exception for errors that should trigger fallback to CapSolver
-                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
-                    raise Exception(f"2Captcha Error: {error_code}")
+            if data.get("status") != 1:
+                ec = data.get(
+                    "request", "UNKNOWN_ERROR"
+                )
+                logger.error(
+                    "2Captcha Submit Error: %s", ec
+                )
+                if ec == "ERROR_IP_NOT_ALLOWED":
+                    logger.error(
+                        "2Captcha: IP not "
+                        "whitelisted."
+                    )
+                fb_codes = [
+                    "ERROR_METHOD_CALL",
+                    "ERROR_ZERO_BALANCE",
+                    "ERROR_NO_SLOT_AVAILABLE",
+                ]
+                if ec in fb_codes:
+                    raise Exception(
+                        f"2Captcha Error: {ec}"
+                    )
                 return None
 
-            request_id = data['request']
+            request_id = data["request"]
 
-        # 2. Poll
-        logger.info(f"Waiting for solution (ID: {request_id})...")
+        logger.info(
+            "Waiting for solution (ID: %s)...",
+            request_id,
+        )
         waited = 0
         while waited < 120:
             await asyncio.sleep(5)
             waited += 5
 
-            poll_url = f"http://2captcha.com/res.php?key={api_key}&action=get&id={request_id}&json=1"
-            async with session.get(poll_url) as resp:
+            poll = (
+                "http://2captcha.com/res.php"
+                f"?key={api_key}&action=get"
+                f"&id={request_id}&json=1"
+            )
+            async with session.get(poll) as resp:
                 try:
                     data = await resp.json()
                 except Exception:
-                    continue  # Retry on temporary network blips
-
-                if waited % 10 == 0:
-                    logger.info(f"⏳ Still waiting for 2Captcha solution (ID: {request_id}, Waited: {waited}s)...")
-
-                if data.get('status') == 1:
-                    return data['request']
-
-                error_code = data.get('request')
-                if error_code == "CAPCHA_NOT_READY":
                     continue
 
-                logger.error(f"❌ 2Captcha Error: {error_code}")
-                if error_code == "ERROR_IP_NOT_ALLOWED":
-                    logger.error("🚫 Your IP is NOT whitelisted in 2Captcha. Please add it to the portal.")
-                elif error_code == "ERROR_ZERO_BALANCE":
-                    logger.error("💸 2Captcha balance is ZERO!")
+                if waited % 10 == 0:
+                    logger.info(
+                        "Still waiting "
+                        "(ID: %s, %ds)...",
+                        request_id,
+                        waited,
+                    )
 
-                # Raise exception for errors that should trigger fallback to CapSolver
-                if error_code in ["ERROR_METHOD_CALL", "ERROR_ZERO_BALANCE", "ERROR_NO_SLOT_AVAILABLE"]:
-                    raise Exception(f"2Captcha Error: {error_code}")
+                if data.get("status") == 1:
+                    return data["request"]
+
+                ec = data.get("request")
+                if ec == "CAPCHA_NOT_READY":
+                    continue
+
+                logger.error(
+                    "2Captcha Error: %s", ec
+                )
+                if ec == "ERROR_IP_NOT_ALLOWED":
+                    logger.error(
+                        "IP NOT whitelisted in "
+                        "2Captcha."
+                    )
+                elif ec == "ERROR_ZERO_BALANCE":
+                    logger.error(
+                        "2Captcha balance is ZERO!"
+                    )
+
+                fb_codes = [
+                    "ERROR_METHOD_CALL",
+                    "ERROR_ZERO_BALANCE",
+                    "ERROR_NO_SLOT_AVAILABLE",
+                ]
+                if ec in fb_codes:
+                    raise Exception(
+                        f"2Captcha Error: {ec}"
+                    )
 
                 return None
         return None
 
-    async def _solve_capsolver(self, sitekey, url, method, proxy_context=None, api_key: Optional[str] = None):
+    async def _solve_capsolver(
+        self,
+        sitekey: str,
+        url: str,
+        method: str,
+        proxy_context: Optional[
+            Dict[str, Any]
+        ] = None,
+        api_key: Optional[str] = None,
+    ) -> Optional[str]:
+        """Submit CAPTCHA to CapSolver and poll.
+
+        Args:
+            sitekey: CAPTCHA site key.
+            url: Page URL.
+            method: CAPTCHA method string.
+            proxy_context: Optional proxy config.
+            api_key: Override API key.
+
+        Returns:
+            Solution token or None.
+        """
         session = await self._get_session()
         api_key = api_key or self.api_key
 
-        # Determine Task Type (ProxyLess or Proxy)
-        # CapSolver uses different task names for proxy vs proxyless
-        # e.g., TurnstileTask vs TurnstileTaskProxyLess
+        use_proxy = bool(
+            proxy_context
+            and proxy_context.get("proxy_string")
+        )
 
-        use_proxy = False
-        if proxy_context:
-            proxy_str = proxy_context.get("proxy_string")
-            # CapSolver format: http://user:pass@host:port (socks5 also supported)
-            if proxy_str:
-                use_proxy = True
+        type_map = {
+            "turnstile": (
+                "TurnstileTask"
+                if use_proxy
+                else "TurnstileTaskProxyLess"
+            ),
+            "hcaptcha": (
+                "HCaptchaTask"
+                if use_proxy
+                else "HCaptchaTaskProxyLess"
+            ),
+        }
+        task_type = type_map.get(
+            method,
+            (
+                "ReCaptchaV2Task"
+                if use_proxy
+                else "ReCaptchaV2TaskProxyLess"
+            ),
+        )
 
-        if method == "turnstile":
-            task_type = "TurnstileTask" if use_proxy else "TurnstileTaskProxyLess"
-        elif method == "hcaptcha":
-            task_type = "HCaptchaTask" if use_proxy else "HCaptchaTaskProxyLess"
-        else:
-            # ReCaptchaV2Task / ReCaptchaV2TaskProxyLess
-            task_type = "ReCaptchaV2Task" if use_proxy else "ReCaptchaV2TaskProxyLess"
-
-        task_payload = {
+        task: Dict[str, Any] = {
             "type": task_type,
             "websiteURL": url,
-            "websiteKey": sitekey
+            "websiteKey": sitekey,
         }
 
-        if use_proxy:
-            task_payload["proxy"] = proxy_context.get("proxy_string")
-            # CapSolver might auto-detect type, but for safety:
-            # task_payload["proxyType"] = proxy_context.get("proxy_type", "http").lower()
+        if use_proxy and proxy_context:
+            task["proxy"] = (
+                proxy_context["proxy_string"]
+            )
 
-        payload = {
+        payload: Dict[str, Any] = {
             "clientKey": api_key,
-            "task": task_payload
+            "task": task,
         }
 
-        # 1. Create Task
         try:
-            async with session.post("https://api.capsolver.com/createTask", json=payload) as resp:
+            async with session.post(
+                "https://api.capsolver.com"
+                "/createTask",
+                json=payload,
+            ) as resp:
                 data = await resp.json()
                 if data.get("errorId") != 0:
-                    logger.error(f"CapSolver Create Error: {data}")
+                    logger.error(
+                        "CapSolver Create Error: %s",
+                        data,
+                    )
                     return None
                 task_id = data["taskId"]
         except Exception as e:
-            logger.error(f"CapSolver Connection Error: {e}")
+            logger.error(
+                "CapSolver Connection Error: %s", e
+            )
             return None
 
-        # 2. Get Result
-        logger.info(f"CapSolver Task Created ({task_id}) [Proxy: {use_proxy}]. Polling...")
+        logger.info(
+            "CapSolver Task (%s) "
+            "[Proxy: %s]. Polling...",
+            task_id,
+            use_proxy,
+        )
         waited = 0
+        result_payload: Dict[str, Any] = {
+            "clientKey": api_key,
+            "taskId": task_id,
+        }
         while waited < 120:
             await asyncio.sleep(2)
             waited += 2
 
-            async with session.post("https://api.capsolver.com/getTaskResult", json={"clientKey": api_key, "taskId": task_id}) as resp:
+            async with session.post(
+                "https://api.capsolver.com"
+                "/getTaskResult",
+                json=result_payload,
+            ) as resp:
                 try:
                     data = await resp.json()
                 except Exception:
                     continue
 
                 if data.get("status") == "ready":
-                    solution = data.get("solution", {})
-                    token = solution.get("token") or solution.get("gRecaptchaResponse")
+                    sol = data.get("solution", {})
+                    token = (
+                        sol.get("token")
+                        or sol.get(
+                            "gRecaptchaResponse"
+                        )
+                    )
                     if not token:
                         logger.error(
- f"CapSolver returned ready but no token found in solution: {list( solution.keys())}")
+                            "CapSolver ready but "
+                            "no token: %s",
+                            list(sol.keys()),
+                        )
                         return None
                     return token
 
                 if data.get("status") == "failed":
-                    logger.error(f"CapSolver Failed: {data.get('errorDescription')}")
+                    logger.error(
+                        "CapSolver Failed: %s",
+                        data.get(
+                            "errorDescription"
+                        ),
+                    )
                     return None
 
         return None
 
-    async def _inject_token(self, page, method, token):
-        """
-        Injects the solver token into the page's hidden response fields.
-        Uses defensive checks to avoid null-pointer errors.
+    async def _inject_token(
+        self,
+        page: Any,
+        method: str,
+        token: str,
+    ) -> None:
+        """Inject solver token into page fields.
+
+        Args:
+            page: The Playwright Page instance.
+            method: CAPTCHA method string.
+            token: The solution token.
         """
         await page.evaluate(f"""(token) => {{
             const setVal = (sel, val, ensure = false) => {{
@@ -1225,7 +1980,6 @@ class CaptchaSolver:
                 setVal('[name="cf-turnstile-response"]', token, true);
             }}
 
-            // Trigger generic callbacks that many sites use to proceed after token injection
             const callbacks = ['onCaptchaSuccess', 'onhCaptchaSuccess', 'onTurnstileSuccess', 'recaptchaCallback', 'grecaptchaCallback', 'captchaCallback'];
             callbacks.forEach(cb => {{
                 if (typeof window[cb] === 'function') {{
@@ -1233,7 +1987,6 @@ class CaptchaSolver:
                 }}
             }});
 
-            // Dispatch events to notify the site of the change
             ['h-captcha-response', 'g-recaptcha-response', 'cf-turnstile-response'].forEach(name => {{
                 const el = document.querySelector(`[name="${{name}}"]`);
                 if (el) {{
@@ -1243,38 +1996,58 @@ class CaptchaSolver:
             }});
         }}""", token)
 
-    async def _wait_for_human(self, page, timeout, high_value_claim: bool = False):
-        """
-        Pause execution and wait for manual captcha resolution.
+    async def _wait_for_human(
+        self,
+        page: Any,
+        timeout: int,
+        high_value_claim: bool = False,
+    ) -> bool:
+        """Wait for manual CAPTCHA solving.
 
         Args:
             page: The Playwright Page instance.
-            timeout: Maximum time to wait in seconds.
-            high_value_claim: If True, this is a high-value claim worth manual effort.
+            timeout: Max seconds to wait.
+            high_value_claim: If True, log urgency.
 
         Returns:
-            True if the captcha was solved (token detected), False if timed out.
+            True if token detected, False if timed out.
         """
-        # HEADLESS CHECK: If running headless, we cannot solve manually.
-        is_headless = os.environ.get("HEADLESS", "false").lower() == "true"
+        is_headless = (
+            os.environ.get("HEADLESS", "false")
+            .lower() == "true"
+        )
 
         if is_headless:
-            logger.error("❌ Headless mode detected. Skipping manual captcha solve.")
+            logger.error(
+                "Headless mode. "
+                "Skipping manual solve."
+            )
             return False
 
         if high_value_claim:
-            logger.warning("⚠️ BUDGET EXHAUSTED - HIGH VALUE CLAIM DETECTED ⚠️")
-            logger.warning(f"Please solve CAPTCHA manually for profitable claim (timeout: {timeout}s)")
+            logger.warning(
+                "BUDGET EXHAUSTED - HIGH VALUE CLAIM"
+            )
+            logger.warning(
+                "Please solve CAPTCHA manually "
+                "(timeout: %ds)",
+                timeout,
+            )
         else:
-            logger.info("⚠️ PAUSED FOR MANUAL CAPTCHA SOLVE ⚠️")
-            logger.info(f"Please solve the captcha in the browser within {timeout} seconds.")
+            logger.info(
+                "PAUSED FOR MANUAL CAPTCHA SOLVE"
+            )
+            logger.info(
+                "Solve captcha in browser "
+                "within %d seconds.",
+                timeout,
+            )
 
         start_time = time.monotonic()
 
         while (time.monotonic() - start_time) < timeout:
             await asyncio.sleep(2)
 
-            # Check for tokens to see if user solved it
             token = await page.evaluate("""() => {
                 const h = document.querySelector('[name="h-captcha-response"]');
                 const g = document.querySelector('[name="g-recaptcha-response"]');
@@ -1283,15 +2056,28 @@ class CaptchaSolver:
             }""")
 
             if token:
-                logger.info("✅ Manual solve detected! Resuming...")
+                logger.info(
+                    "Manual solve detected! "
+                    "Resuming..."
+                )
                 return True
 
-        logger.error("❌ Manual solve timed out.")
+        logger.error("Manual solve timed out.")
         return False
 
-    async def _extract_sitekey_from_scripts(self, page, method):
-        """
-        Scan page scripts and global variables for sitekeys.
+    async def _extract_sitekey_from_scripts(
+        self,
+        page: Any,
+        method: str,
+    ) -> Optional[str]:
+        """Scan page scripts and globals for sitekeys.
+
+        Args:
+            page: The Playwright Page instance.
+            method: The detected CAPTCHA method.
+
+        Returns:
+            A sitekey string if found, or None.
         """
         return await page.evaluate("""() => {
             const patterns = [
@@ -1302,14 +2088,12 @@ class CaptchaSolver:
                 /render\\(.+?["']([^"']{20,})["']/i
             ];
 
-            // 0. Check DOM for data-sitekey attributes
             const dataSiteKeyElem = document.querySelector('[data-sitekey]');
             if (dataSiteKeyElem) {
                 const dk = dataSiteKeyElem.getAttribute('data-sitekey');
                 if (dk && dk.length > 20) return dk;
             }
 
-            // 1. Check common global variables
             const globals = [
                  '___hcaptcha_sitekey_id', 'RECAPTCHA_SITE_KEY', 'H_SITE_KEY',
                  'hcaptcha_sitekey', 'captcha_sitekey', 'cf_sitekey'
@@ -1318,7 +2102,6 @@ class CaptchaSolver:
                 if (window[g] && typeof window[g] === 'string' && window[g].length > 20) return window[g];
             }
 
-            // 2. Scan script tags
             const scripts = Array.from(document.getElementsByTagName('script'));
             for (const script of scripts) {
                 const content = script.textContent || script.innerHTML;
@@ -1330,7 +2113,6 @@ class CaptchaSolver:
                 }
             }
 
-            // 3. Check for turnstile specifically in render calls
             if (typeof turnstile !== 'undefined' && turnstile._render_parameters) {
                  return turnstile._render_parameters.sitekey;
             }
