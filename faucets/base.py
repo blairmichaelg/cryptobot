@@ -853,13 +853,18 @@ class FaucetBot:
                 drift_y = target_y + random.uniform(-5, 15)
                 await self.page.mouse.move(drift_x, drift_y, steps=random.randint(2, 5))
 
-    async def _bezier_mouse_move(self, start_x: float, start_y: float, end_x: float, end_y: float):
-        """
-        Move the mouse cursor along a cubic Bézier curve with natural
-        acceleration (fast start, slow end - Fitts's law approximation).
+    async def _bezier_mouse_move(
+        self,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+    ) -> None:
+        """Move the mouse along a cubic Bezier curve.
 
-        Uses two random control points offset from the straight line
-        to create a natural arc.
+        Simulates natural acceleration (fast start, slow end) using
+        Fitts's law approximation. Two random control points offset
+        from the straight line create a natural arc.
         """
         # Distance determines number of steps and control point spread
         dx = end_x - start_x
@@ -867,20 +872,24 @@ class FaucetBot:
         distance = math.sqrt(dx * dx + dy * dy)
 
         # More steps for longer distances (with natural variation)
-        num_steps = max(8, min(40, int(distance / 15) + random.randint(-3, 5)))
+        num_steps = max(
+            8, min(40, int(distance / 15) + random.randint(-3, 5))
+        )
 
-        # Generate control points with perpendicular offset (for curve arc)
         # Control point 1 (about 1/3 of the way, with arc offset)
         spread = min(distance * 0.4, 150)
-        cp1_x = start_x + dx * random.uniform(0.2, 0.4) + random.uniform(-spread, spread)
-        cp1_y = start_y + dy * random.uniform(0.2, 0.4) + random.uniform(-spread * 0.5, spread * 0.5)
+        cp1_x = (start_x + dx * random.uniform(0.2, 0.4)
+                 + random.uniform(-spread, spread))
+        cp1_y = (start_y + dy * random.uniform(0.2, 0.4)
+                 + random.uniform(-spread * 0.5, spread * 0.5))
 
-        # Control point 2 (about 2/3 of the way, smaller offset for convergence)
-        cp2_x = start_x + dx * random.uniform(0.6, 0.8) + random.uniform(-spread * 0.3, spread * 0.3)
-        cp2_y = start_y + dy * random.uniform(0.6, 0.8) + random.uniform(-spread * 0.3, spread * 0.3)
+        # Control point 2 (about 2/3 of the way, smaller offset)
+        cp2_x = (start_x + dx * random.uniform(0.6, 0.8)
+                 + random.uniform(-spread * 0.3, spread * 0.3))
+        cp2_y = (start_y + dy * random.uniform(0.6, 0.8)
+                 + random.uniform(-spread * 0.3, spread * 0.3))
 
-        # Generate points along the Bézier curve with easing (ease-out)
-        last_x, last_y = start_x, start_y  # noqa: F841
+        # Generate points along the Bezier curve with easing
         for i in range(1, num_steps + 1):
             # Ease-out timing function: fast start, slow approach
             t_linear = i / num_steps

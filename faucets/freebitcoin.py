@@ -13,12 +13,14 @@ Known issues:
       or credential refresh (see ``copilot-instructions.md``).
 """
 
-from .base import FaucetBot, ClaimResult
-from core.extractor import DataExtractor
-import logging
 import asyncio
+import logging
 import random
 import time
+from typing import Any
+
+from core.extractor import DataExtractor
+from .base import ClaimResult, FaucetBot
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +33,31 @@ class FreeBitcoinBot(FaucetBot):
     changes on the site.
     """
 
-    def __init__(self, settings, page, **kwargs):
+    def __init__(
+        self, settings: Any, page: Any, **kwargs: Any
+    ) -> None:
+        """Initialize the FreeBitcoin faucet bot.
+
+        Args:
+            settings: Application settings / configuration object.
+            page: Playwright browser page instance.
+            **kwargs: Additional keyword arguments forwarded to
+                the parent ``FaucetBot``.
+        """
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FreeBitcoin"
         self.base_url = "https://freebitco.in"
 
     async def is_logged_in(self) -> bool:
+        """Check whether the user is currently logged in.
+
+        Iterates over balance and logout selectors to determine
+        whether an active session exists on the page.
+
+        Returns:
+            True if a logged-in indicator is visible, False
+            otherwise.
+        """
         balance_selectors = [
             "#balance_small",
             "#balance_small span",
@@ -58,14 +79,26 @@ class FreeBitcoinBot(FaucetBot):
         ]
         for selector in balance_selectors:
             try:
-                if await self.page.locator(selector).is_visible(timeout=3000):
+                if await self.page.locator(selector).is_visible(
+                    timeout=3000
+                ):
                     return True
             except Exception:
                 continue
         return False
 
-    async def _wait_for_captcha_token(self, timeout: int = 15000) -> bool:
-        """Wait for a captcha token to be injected into the page."""
+    async def _wait_for_captcha_token(
+        self, timeout: int = 15000
+    ) -> bool:
+        """Wait for a captcha token to be injected into the page.
+
+        Args:
+            timeout: Maximum wait time in milliseconds.
+
+        Returns:
+            True if a valid captcha token was found, False on
+            timeout.
+        """
         try:
             await self.page.wait_for_function(
                 """
@@ -92,15 +125,34 @@ class FreeBitcoinBot(FaucetBot):
             return False
 
     async def _has_session_cookie(self) -> bool:
+        """Check for FreeBitcoin session cookies.
+
+        Returns:
+            True if ``fbtc_session`` or ``fbtc_userid`` cookies
+            are present.
+        """
         try:
-            cookies = await self.page.context.cookies(self.base_url)
+            cookies = await self.page.context.cookies(
+                self.base_url
+            )
         except Exception:
             return False
         names = {cookie.get("name") for cookie in cookies}
         return "fbtc_session" in names or "fbtc_userid" in names
 
-    async def _log_login_diagnostics(self, context: str) -> None:
-        """Log login page diagnostics to identify captcha/input elements."""
+    async def _log_login_diagnostics(
+        self, context: str
+    ) -> None:
+        """Log login page diagnostics for debugging.
+
+        Captures and logs details about inputs, textareas, iframes,
+        captcha elements, forms, script sources, and JavaScript
+        state to aid debugging of login failures.
+
+        Args:
+            context: Label describing the diagnostic context
+                (e.g. ``"login_failed_attempt_1"``).
+        """
         try:
             inputs = await self.page.evaluate(
                 """
@@ -293,29 +345,49 @@ class FreeBitcoinBot(FaucetBot):
         except Exception:
             js_state = None
 
-        logger.info("[FreeBitcoin] Login diagnostics (%s): inputs=%s", context, inputs)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): textareas=%s", context, textareas)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): iframes=%s", context, iframes)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_nodes=%s", context, captcha_nodes)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): forms=%s", context, form_summaries)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): int_page_captchas_html=%s", context, int_captcha_html)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): login_form_html=%s", context, login_form_html)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): captcha_state=%s", context, captcha_state)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): login_nodes=%s", context, login_nodes)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): login_input_forms=%s", context, login_input_forms)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): script_sources=%s", context, script_sources)
-        logger.info("[FreeBitcoin] Login diagnostics (%s): js_state=%s", context, js_state)
+        prefix = f"[FreeBitcoin] Login diagnostics ({context})"
+        logger.info("%s: inputs=%s", prefix, inputs)
+        logger.info("%s: textareas=%s", prefix, textareas)
+        logger.info("%s: iframes=%s", prefix, iframes)
+        logger.info(
+            "%s: captcha_nodes=%s", prefix, captcha_nodes
+        )
+        logger.info("%s: forms=%s", prefix, form_summaries)
+        logger.info(
+            "%s: int_page_captchas_html=%s",
+            prefix,
+            int_captcha_html,
+        )
+        logger.info(
+            "%s: login_form_html=%s", prefix, login_form_html
+        )
+        logger.info(
+            "%s: captcha_state=%s", prefix, captcha_state
+        )
+        logger.info(
+            "%s: login_nodes=%s", prefix, login_nodes
+        )
+        logger.info(
+            "%s: login_input_forms=%s",
+            prefix,
+            login_input_forms,
+        )
+        logger.info(
+            "%s: script_sources=%s", prefix, script_sources
+        )
+        logger.info("%s: js_state=%s", prefix, js_state)
 
     async def login(self) -> bool:
-        """
-        Simplified login flow for FreeBitcoin with retry logic and enhanced error logging.
+        """Log in to FreeBitcoin with retry and error logging.
 
-        Changes from original:
-        - Removed complex fallback methods (_submit_login_via_request/ajax/fetch/form)
-        - Reduced selectors from 16+ to 4 most reliable
-        - Added retry logic with exponential backoff
-        - Enhanced error logging with screenshots and diagnostics
-        - Single, clean browser-based login flow
+        Simplified login flow with exponential backoff.  Uses a
+        single, clean browser-based approach with the confirmed
+        ``#login_form_btc_address`` / ``#login_form_password``
+        selectors (Feb 2026).
+
+        Returns:
+            True on successful login, False after all retries are
+            exhausted.
         """
         # Check for override (Multi-Account Loop)
         if self.settings_account_override:
@@ -324,44 +396,54 @@ class FreeBitcoinBot(FaucetBot):
             creds = self.settings.get_account("freebitcoin")
 
         if not creds:
-            logger.error("[FreeBitcoin] Credentials missing - set FREEBITCOIN_USERNAME and FREEBITCOIN_PASSWORD")
+            logger.error(
+                "[FreeBitcoin] Credentials missing"
+                " - set FREEBITCOIN_USERNAME and"
+                " FREEBITCOIN_PASSWORD"
+            )
             return False
 
         # Extract credentials
         login_id = creds.get("username") or creds.get("email")
         if not login_id:
-            logger.error("[FreeBitcoin] Credentials missing username/email")
+            logger.error(
+                "[FreeBitcoin] Credentials missing username/email"
+            )
             return False
         login_id = self.strip_email_alias(login_id)
         if not login_id:
-            logger.error("[FreeBitcoin] Invalid username/email after processing")
+            logger.error(
+                "[FreeBitcoin] Invalid username/email"
+                " after processing"
+            )
             return False
         password = creds.get("password")
         if not password:
-            logger.error("[FreeBitcoin] Credentials missing password")
+            logger.error(
+                "[FreeBitcoin] Credentials missing password"
+            )
             return False
 
-        # Updated selectors based on diagnostic script findings (Feb 2026)
-        # The login form uses specific IDs that are now confirmed
+        # Updated selectors based on diagnostic findings (Feb 2026)
         email_selectors = [
-            "#login_form_btc_address",  # Confirmed working (hidden until trigger clicked)
-            "input[name='btc_address']",  # FreeBitcoin specific field name
+            "#login_form_btc_address",
+            "input[name='btc_address']",
             "input[type='text'][name='btc_address']",
-            "#email"
+            "#email",
         ]
 
         password_selectors = [
-            "#login_form_password",  # Confirmed working (hidden until trigger clicked)
+            "#login_form_password",
             "input[name='password']",
             "input[type='password']",
-            "#password"
+            "#password",
         ]
 
         submit_selectors = [
             "#login_button",
             "button[type='submit']",
             "input[type='submit']",
-            "button:has-text('Login')"
+            "button:has-text('Login')",
         ]
 
         # Retry logic with exponential backoff
@@ -369,28 +451,50 @@ class FreeBitcoinBot(FaucetBot):
         for attempt in range(max_attempts):
             try:
                 if attempt > 0:
-                    backoff_seconds = 5 * attempt  # 5s, 10s, 15s
+                    backoff_seconds = 5 * attempt
                     logger.info(
- f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
-                    await self.human_wait(backoff_seconds, with_interactions=True)
+                        "[FreeBitcoin] Login attempt"
+                        " %d/%d after %ds backoff",
+                        attempt + 1,
+                        max_attempts,
+                        backoff_seconds,
+                    )
+                    await self.human_wait(
+                        backoff_seconds, with_interactions=True
+                    )
                 else:
-                    logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
+                    logger.info(
+                        "[FreeBitcoin] Login attempt %d/%d",
+                        attempt + 1,
+                        max_attempts,
+                    )
 
-                # Navigate to base URL (not login URL - site redirects to signup)
-                logger.info(f"[FreeBitcoin] Navigating to: {self.base_url}")
+                # Navigate to base URL
+                logger.info(
+                    "[FreeBitcoin] Navigating to: %s",
+                    self.base_url,
+                )
 
-                # Use safe_navigate from base class for proxy error handling
                 if not await self.safe_navigate(self.base_url):
-                    logger.warning(f"[FreeBitcoin] Navigation failed on attempt {attempt + 1}")
+                    logger.warning(
+                        "[FreeBitcoin] Navigation failed"
+                        " on attempt %d",
+                        attempt + 1,
+                    )
                     continue
 
                 await self.random_delay(1, 2)
 
                 # Handle Cloudflare and popups
                 try:
-                    await self.handle_cloudflare(max_wait_seconds=60)
+                    await self.handle_cloudflare(
+                        max_wait_seconds=60
+                    )
                 except Exception as cf_err:
-                    logger.debug(f"[FreeBitcoin] Cloudflare handling: {cf_err}")
+                    logger.debug(
+                        "[FreeBitcoin] Cloudflare handling: %s",
+                        cf_err,
+                    )
 
                 await self.close_popups()
                 await self.human_wait(1)
@@ -401,15 +505,21 @@ class FreeBitcoinBot(FaucetBot):
                 # Log current state
                 current_url = self.page.url
                 page_title = await self.page.title()
-                logger.info(f"[FreeBitcoin] Current page - URL: {current_url}, Title: {page_title}")
+                logger.info(
+                    "[FreeBitcoin] Current page"
+                    " - URL: %s, Title: %s",
+                    current_url,
+                    page_title,
+                )
 
                 # Check if already logged in
                 if await self.is_logged_in():
-                    logger.info("✅ [FreeBitcoin] Session already active")
+                    logger.info(
+                        "[FreeBitcoin] Session already active"
+                    )
                     return True
 
-                # CRITICAL: Click login trigger to show hidden login form
-                # The login form is hidden by default - need to click "LOGIN" link/button first
+                # Click login trigger to show hidden login form
                 login_trigger_selectors = [
                     "a:has-text('LOGIN')",
                     "a:has-text('Log In')",
@@ -417,38 +527,69 @@ class FreeBitcoinBot(FaucetBot):
                     "a[href*='login']",
                     "a[href*='op=login']",
                     ".login-link",
-                    "#login_link"
+                    "#login_link",
                 ]
 
                 login_trigger_clicked = False
                 for selector in login_trigger_selectors:
                     try:
-                        locator = self.page.locator(selector).first
-                        if await locator.is_visible(timeout=3000):
-                            logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
+                        locator = self.page.locator(
+                            selector
+                        ).first
+                        if await locator.is_visible(
+                            timeout=3000
+                        ):
+                            logger.info(
+                                "[FreeBitcoin] Clicking login"
+                                " trigger: %s",
+                                selector,
+                            )
                             await self.human_like_click(locator)
-                            await self.human_wait(5, with_interactions=True)  # Wait for form animation with activity
+                            await self.human_wait(
+                                5, with_interactions=True
+                            )
                             login_trigger_clicked = True
                             break
                     except Exception:
                         continue
 
                 if not login_trigger_clicked:
-                    logger.warning(f"[FreeBitcoin] No login trigger found - form may already be visible or URL changed")
+                    logger.warning(
+                        "[FreeBitcoin] No login trigger found"
+                        " - form may already be visible"
+                    )
 
-                # Wait for login form to be fully visible and interactive
-                # After clicking LOGIN, the form should appear with these IDs
-                logger.debug("[FreeBitcoin] Waiting for login form to appear...")
+                # Wait for login form to be fully visible
+                logger.debug(
+                    "[FreeBitcoin] Waiting for login form"
+                    " to appear..."
+                )
                 try:
-                    await self.page.wait_for_selector('#login_form_btc_address', state='visible', timeout=10000)
-                    await self.page.wait_for_selector('#login_form_password', state='visible', timeout=5000)
-                    logger.info("[FreeBitcoin] Login form is now visible")
+                    await self.page.wait_for_selector(
+                        '#login_form_btc_address',
+                        state='visible',
+                        timeout=10000,
+                    )
+                    await self.page.wait_for_selector(
+                        '#login_form_password',
+                        state='visible',
+                        timeout=5000,
+                    )
+                    logger.info(
+                        "[FreeBitcoin] Login form is now visible"
+                    )
                 except Exception as wait_err:
-                    logger.warning(f"[FreeBitcoin] Login form wait timeout: {wait_err}")
-                    # Continue anyway - fields might still be findable
+                    logger.warning(
+                        "[FreeBitcoin] Login form wait"
+                        " timeout: %s",
+                        wait_err,
+                    )
 
                 # Solve landing page CAPTCHA if present
-                logger.debug("[FreeBitcoin] Checking for landing page CAPTCHA...")
+                logger.debug(
+                    "[FreeBitcoin] Checking for landing"
+                    " page CAPTCHA..."
+                )
                 try:
                     captcha_present = await self.page.evaluate(
                         """
@@ -467,43 +608,74 @@ class FreeBitcoinBot(FaucetBot):
                         """
                     )
                     if captcha_present:
-                        logger.info("[FreeBitcoin] Landing page CAPTCHA detected - solving...")
-                        solved = await self.solver.solve_captcha(self.page)
+                        logger.info(
+                            "[FreeBitcoin] Landing page CAPTCHA"
+                            " detected - solving..."
+                        )
+                        solved = await self.solver.solve_captcha(
+                            self.page
+                        )
                         if solved is False:
-                            logger.error("[FreeBitcoin] Landing page CAPTCHA solve failed")
+                            logger.error(
+                                "[FreeBitcoin] Landing page"
+                                " CAPTCHA solve failed"
+                            )
                             continue
-                        logger.info("✅ [FreeBitcoin] Landing page CAPTCHA solved")
+                        logger.info(
+                            "[FreeBitcoin] Landing page"
+                            " CAPTCHA solved"
+                        )
                         await self.human_wait(2)
                 except Exception as captcha_err:
-                    logger.debug(f"[FreeBitcoin] Landing CAPTCHA check: {captcha_err}")
+                    logger.debug(
+                        "[FreeBitcoin] Landing CAPTCHA"
+                        " check: %s",
+                        captcha_err,
+                    )
 
                 # Find email field
                 email_field = None
                 for selector in email_selectors:
                     try:
-                        locator = self.page.locator(selector).first
-                        if await locator.is_visible(timeout=5000):
-                            logger.info(f"[FreeBitcoin] Using email selector: {selector}")
+                        locator = self.page.locator(
+                            selector
+                        ).first
+                        if await locator.is_visible(
+                            timeout=5000
+                        ):
+                            logger.info(
+                                "[FreeBitcoin] Using email"
+                                " selector: %s",
+                                selector,
+                            )
                             email_field = locator
                             break
                     except Exception:
                         continue
 
                 if not email_field:
-                    logger.warning(f"[FreeBitcoin] Email field not found on {current_url}")
-                    # Log visible form fields
+                    logger.warning(
+                        "[FreeBitcoin] Email field not found"
+                        " on %s",
+                        current_url,
+                    )
                     try:
-                        visible_inputs = await self.page.evaluate(
-                            """
-                            () => Array.from(document.querySelectorAll('input:visible')).map(el => ({
-                                type: el.type,
-                                name: el.name,
-                                id: el.id,
-                                placeholder: el.placeholder
-                            })).slice(0, 10)
-                            """
+                        visible_inputs = (
+                            await self.page.evaluate(
+                                """
+                                () => Array.from(document.querySelectorAll('input:visible')).map(el => ({
+                                    type: el.type,
+                                    name: el.name,
+                                    id: el.id,
+                                    placeholder: el.placeholder
+                                })).slice(0, 10)
+                                """
+                            )
                         )
-                        logger.info(f"[FreeBitcoin] Visible inputs: {visible_inputs}")
+                        logger.info(
+                            "[FreeBitcoin] Visible inputs: %s",
+                            visible_inputs,
+                        )
                     except Exception:
                         pass
                     continue
@@ -512,35 +684,65 @@ class FreeBitcoinBot(FaucetBot):
                 password_field = None
                 for selector in password_selectors:
                     try:
-                        locator = self.page.locator(selector).first
-                        if await locator.is_visible(timeout=5000):
-                            logger.info(f"[FreeBitcoin] Using password selector: {selector}")
+                        locator = self.page.locator(
+                            selector
+                        ).first
+                        if await locator.is_visible(
+                            timeout=5000
+                        ):
+                            logger.info(
+                                "[FreeBitcoin] Using password"
+                                " selector: %s",
+                                selector,
+                            )
                             password_field = locator
                             break
                     except Exception:
                         continue
 
                 if not password_field:
-                    logger.warning(f"[FreeBitcoin] Password field not found on {current_url}")
+                    logger.warning(
+                        "[FreeBitcoin] Password field not"
+                        " found on %s",
+                        current_url,
+                    )
                     continue
 
                 # Fill credentials
-                username_display = login_id[:10] + "***" if len(login_id) > 10 else login_id[:3] + "***"
-                logger.info(f"[FreeBitcoin] Filling credentials for user: {username_display}")
+                if len(login_id) > 10:
+                    username_display = login_id[:10] + "***"
+                else:
+                    username_display = login_id[:3] + "***"
+                logger.info(
+                    "[FreeBitcoin] Filling credentials"
+                    " for user: %s",
+                    username_display,
+                )
 
                 try:
-                    await self.human_type(email_field, login_id)
+                    await self.human_type(
+                        email_field, login_id
+                    )
                     await self.random_delay(0.5, 1.0)
-                    await self.human_type(password_field, password)
+                    await self.human_type(
+                        password_field, password
+                    )
                     await self.idle_mouse(0.5)
                 except Exception as type_err:
-                    logger.warning(f"[FreeBitcoin] Human typing failed: {type_err}, using direct fill")
+                    logger.warning(
+                        "[FreeBitcoin] Human typing failed:"
+                        " %s, using direct fill",
+                        type_err,
+                    )
                     await email_field.fill(login_id)
                     await self.random_delay(0.3, 0.5)
                     await password_field.fill(password)
 
                 # Check for CAPTCHA on login form
-                logger.debug("[FreeBitcoin] Checking for login form CAPTCHA...")
+                logger.debug(
+                    "[FreeBitcoin] Checking for login"
+                    " form CAPTCHA..."
+                )
                 try:
                     captcha_present = await self.page.evaluate(
                         """
@@ -559,167 +761,288 @@ class FreeBitcoinBot(FaucetBot):
                         """
                     )
                     if captcha_present:
-                        logger.info("[FreeBitcoin] Login form CAPTCHA detected - solving...")
-                        solved = await self.solver.solve_captcha(self.page)
+                        logger.info(
+                            "[FreeBitcoin] Login form CAPTCHA"
+                            " detected - solving..."
+                        )
+                        solved = await self.solver.solve_captcha(
+                            self.page
+                        )
                         if solved is False:
-                            logger.error("[FreeBitcoin] Login form CAPTCHA solve failed")
+                            logger.error(
+                                "[FreeBitcoin] Login form"
+                                " CAPTCHA solve failed"
+                            )
                             continue
-                        logger.info("✅ [FreeBitcoin] Login form CAPTCHA solved")
+                        logger.info(
+                            "[FreeBitcoin] Login form"
+                            " CAPTCHA solved"
+                        )
                         await self.human_wait(2)
                 except Exception as captcha_err:
-                    logger.debug(f"[FreeBitcoin] Login form CAPTCHA check: {captcha_err}")
+                    logger.debug(
+                        "[FreeBitcoin] Login form CAPTCHA"
+                        " check: %s",
+                        captcha_err,
+                    )
 
                 # Find and click submit button
                 submit_btn = None
                 for selector in submit_selectors:
                     try:
-                        locator = self.page.locator(selector).first
-                        if await locator.is_visible(timeout=5000):
-                            logger.info(f"[FreeBitcoin] Using submit selector: {selector}")
+                        locator = self.page.locator(
+                            selector
+                        ).first
+                        if await locator.is_visible(
+                            timeout=5000
+                        ):
+                            logger.info(
+                                "[FreeBitcoin] Using submit"
+                                " selector: %s",
+                                selector,
+                            )
                             submit_btn = locator
                             break
                     except Exception:
                         continue
 
                 if submit_btn:
-                    logger.debug("[FreeBitcoin] Clicking submit button...")
-                    await self.thinking_pause()  # Brief hesitation before submitting
+                    logger.debug(
+                        "[FreeBitcoin] Clicking submit button..."
+                    )
+                    await self.thinking_pause()
                     await self.human_like_click(submit_btn)
                 else:
-                    logger.warning("[FreeBitcoin] Submit button not found, trying Enter key...")
+                    logger.warning(
+                        "[FreeBitcoin] Submit button not found,"
+                        " trying Enter key..."
+                    )
                     try:
                         await password_field.press("Enter")
                     except Exception:
-                        logger.error("[FreeBitcoin] Enter key failed")
+                        logger.error(
+                            "[FreeBitcoin] Enter key failed"
+                        )
                         timestamp = int(time.time())
-                        screenshot_path = f"logs/freebitcoin_login_failed_no_submit_{timestamp}.png"
+                        screenshot_path = (
+                            "logs/freebitcoin_login_failed"
+                            f"_no_submit_{timestamp}.png"
+                        )
                         try:
-                            await self.page.screenshot(path=screenshot_path, full_page=True)
-                            logger.info(f"[FreeBitcoin] Screenshot saved: {screenshot_path}")
+                            await self.page.screenshot(
+                                path=screenshot_path,
+                                full_page=True,
+                            )
+                            logger.info(
+                                "[FreeBitcoin] Screenshot"
+                                " saved: %s",
+                                screenshot_path,
+                            )
                         except Exception:
                             pass
                         continue
 
                 # Wait for navigation
-                logger.debug("[FreeBitcoin] Waiting for login to complete...")
+                logger.debug(
+                    "[FreeBitcoin] Waiting for login"
+                    " to complete..."
+                )
                 try:
-                    await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-                    # Give strict SPAs a moment to update DOM/cookies
+                    await self.page.wait_for_load_state(
+                        "domcontentloaded", timeout=15000
+                    )
                     try:
-                        await self.page.wait_for_load_state("networkidle", timeout=5000)
+                        await self.page.wait_for_load_state(
+                            "networkidle", timeout=5000
+                        )
                     except Exception:
                         pass
                 except asyncio.TimeoutError:
-                    logger.warning("[FreeBitcoin] Login redirect timeout")
+                    logger.warning(
+                        "[FreeBitcoin] Login redirect timeout"
+                    )
 
                 await self.random_delay(2, 3)
 
                 # Check if logged in
                 if await self.is_logged_in():
-                    logger.info("✅ [FreeBitcoin] Login successful!")
+                    logger.info(
+                        "[FreeBitcoin] Login successful!"
+                    )
                     return True
 
                 # Check for error messages
                 error_text = ""
                 try:
-                    # Expanded error selectors
                     error_selectors = [
-                         ".alert-danger", 
-                         ".error", 
-                         ".login-error", 
-                         "#login_error",
-                         "div[style*='color: red']",
-                         "div[style*='color:red']"
+                        ".alert-danger",
+                        ".error",
+                        ".login-error",
+                        "#login_error",
+                        "div[style*='color: red']",
+                        "div[style*='color:red']",
                     ]
-                    
+
                     for err_sel in error_selectors:
-                         error_elem = self.page.locator(err_sel).first
-                         if await error_elem.is_visible(timeout=1000):
-                             error_text = await error_elem.text_content()
-                             error_text = error_text.strip()
-                             logger.error(f"[FreeBitcoin] Login error message: {error_text}")
-                             
-                             if "account locked" in error_text.lower():
-                                 logger.critical("[FreeBitcoin] ACCOUNT LOCKED detected!")
-                             if "too many" in error_text.lower():
-                                 logger.critical("[FreeBitcoin] RATE LIMIT (Too many attempts) detected!")
-                             break
+                        error_elem = self.page.locator(
+                            err_sel
+                        ).first
+                        if await error_elem.is_visible(
+                            timeout=1000
+                        ):
+                            error_text = (
+                                await error_elem.text_content()
+                            )
+                            error_text = error_text.strip()
+                            logger.error(
+                                "[FreeBitcoin] Login error"
+                                " message: %s",
+                                error_text,
+                            )
+
+                            if "account locked" in (
+                                error_text.lower()
+                            ):
+                                logger.critical(
+                                    "[FreeBitcoin] ACCOUNT"
+                                    " LOCKED detected!"
+                                )
+                            if "too many" in (
+                                error_text.lower()
+                            ):
+                                logger.critical(
+                                    "[FreeBitcoin] RATE LIMIT"
+                                    " (Too many attempts)"
+                                    " detected!"
+                                )
+                            break
                 except Exception:
                     pass
 
                 # Take screenshot on failure
                 timestamp = int(time.time())
-                screenshot_path = f"logs/freebitcoin_login_failed_{timestamp}.png"
+                screenshot_path = (
+                    "logs/freebitcoin_login_failed"
+                    f"_{timestamp}.png"
+                )
                 try:
-                    await self.page.screenshot(path=screenshot_path, full_page=True)
-                    logger.info(f"[FreeBitcoin] Screenshot saved: {screenshot_path}")
+                    await self.page.screenshot(
+                        path=screenshot_path, full_page=True
+                    )
+                    logger.info(
+                        "[FreeBitcoin] Screenshot saved: %s",
+                        screenshot_path,
+                    )
                 except Exception:
                     pass
 
                 # Log diagnostics
-                await self._log_login_diagnostics(f"login_failed_attempt_{attempt + 1}")
+                await self._log_login_diagnostics(
+                    f"login_failed_attempt_{attempt + 1}"
+                )
 
             except Exception as e:
-                logger.error(f"[FreeBitcoin] Login attempt {attempt + 1} exception: {e}", exc_info=True)
+                logger.error(
+                    "[FreeBitcoin] Login attempt %d"
+                    " exception: %s",
+                    attempt + 1,
+                    e,
+                    exc_info=True,
+                )
                 timestamp = int(time.time())
-                screenshot_path = f"logs/freebitcoin_login_exception_{timestamp}.png"
+                screenshot_path = (
+                    "logs/freebitcoin_login_exception"
+                    f"_{timestamp}.png"
+                )
                 try:
-                    await self.page.screenshot(path=screenshot_path)
-                    logger.info(f"[FreeBitcoin] Exception screenshot saved: {screenshot_path}")
+                    await self.page.screenshot(
+                        path=screenshot_path
+                    )
+                    logger.info(
+                        "[FreeBitcoin] Exception screenshot"
+                        " saved: %s",
+                        screenshot_path,
+                    )
                 except Exception:
                     pass
 
         # All attempts failed
-        logger.error(f"[FreeBitcoin] Login failed after {max_attempts} attempts")
+        logger.error(
+            "[FreeBitcoin] Login failed after %d attempts",
+            max_attempts,
+        )
         return False
 
     async def claim(self) -> ClaimResult:
-        """
-        Execute the claim process for FreeBitcoin.
+        """Execute the hourly roll claim for FreeBitcoin.
 
-        Implements:
-        - Retry logic for network failures
-        - Human-like behavior patterns
-        - Comprehensive error logging
+        Navigates to the main page, checks balance and timer,
+        solves any CAPTCHA, and clicks the roll button.  Includes
+        retry logic with exponential backoff for transient network
+        failures.
 
         Returns:
-            ClaimResult with success status and next claim time
+            ClaimResult with success status, amount won, and
+            suggested next-claim delay.
         """
         logger.info("[DEBUG] FreeBitcoin claim() method started")
 
         max_retries = 3
-        nav_timeout = getattr(self.settings, "timeout", 180000)
+        nav_timeout = getattr(
+            self.settings, "timeout", 180000
+        )
         for attempt in range(max_retries):
             try:
-                logger.info(f"[DEBUG] Attempt {attempt + 1}/{max_retries}: Navigating to {self.base_url}/")
-                response = await self.page.goto(f"{self.base_url}/", timeout=nav_timeout)
+                logger.info(
+                    "[DEBUG] Attempt %d/%d: Navigating to %s/",
+                    attempt + 1,
+                    max_retries,
+                    self.base_url,
+                )
+                response = await self.page.goto(
+                    f"{self.base_url}/", timeout=nav_timeout
+                )
                 if response is not None:
                     try:
                         status = response.status
                         if status in (401, 403, 429):
-                            from core.orchestrator import ErrorType
-                            logger.error(f"[FreeBitcoin] Claim page returned HTTP {status}. URL: {response.url}")
+                            from core.orchestrator import (
+                                ErrorType,
+                            )
+
+                            logger.error(
+                                "[FreeBitcoin] Claim page"
+                                " returned HTTP %d. URL: %s",
+                                status,
+                                response.url,
+                            )
+                            error_type = (
+                                ErrorType.PROXY_ISSUE
+                                if status == 403
+                                else ErrorType.RATE_LIMIT
+                            )
                             return ClaimResult(
                                 success=False,
                                 status=f"HTTP {status}",
                                 next_claim_minutes=30,
-                                error_type=ErrorType.PROXY_ISSUE if status == 403 else ErrorType.RATE_LIMIT
+                                error_type=error_type,
                             )
                     except Exception:
                         pass
-                await self.handle_cloudflare(max_wait_seconds=60)
+                await self.handle_cloudflare(
+                    max_wait_seconds=60
+                )
                 await self.close_popups()
                 await self.random_delay(2, 4)
 
                 # Simulate natural browsing after page load
-                await self.simulate_reading(duration=random.uniform(2.0, 4.0))
+                await self.simulate_reading(
+                    duration=random.uniform(2.0, 4.0)
+                )
                 if random.random() < 0.4:
                     await self.natural_scroll()
 
-                # Extract Balance with fallback selectors
-                # FreeBitcoin uses #balance_small (visible in nav bar) as the reliable
-                # balance element. #balance exists but is often hidden/not visible.
-                # .balanceli is the parent container. PR #96 confirmed #balance_small.
+                # Extract balance with fallback selectors
                 logger.info("[DEBUG] Getting balance...")
                 balance = await self.get_balance(
                     "#balance_small",
@@ -730,14 +1053,14 @@ class FreeBitcoinBot(FaucetBot):
                         "span.balance",
                         ".user-balance",
                         "[data-balance]",
-                        ".account-balance"
-                    ]
+                        ".account-balance",
+                    ],
                 )
-                logger.info(f"[DEBUG] Balance: {balance}")
+                logger.info(
+                    "[DEBUG] Balance: %s", balance
+                )
 
-                # Check if timer is running (already claimed) with fallback selectors
-                # FreeBitcoin uses .countdown_time_remaining for the countdown display.
-                # #time_remaining exists but may not always be visible.
+                # Check if timer is running (already claimed)
                 logger.info("[DEBUG] Checking timer...")
                 wait_min = await self.get_timer(
                     ".countdown_time_remaining",
@@ -747,54 +1070,86 @@ class FreeBitcoinBot(FaucetBot):
                         "span#timer",
                         ".countdown",
                         "[data-next-claim]",
-                        ".time-remaining"
-                    ]
+                        ".time-remaining",
+                    ],
                 )
-                logger.info(f"[DEBUG] Timer: {wait_min} minutes")
+                logger.info(
+                    "[DEBUG] Timer: %s minutes", wait_min
+                )
                 if wait_min > 0:
-                    # Simulate reading page content while timer is active
                     await self.simulate_reading(2.0)
-                    return ClaimResult(success=True, status="Timer Active",
-                                       next_claim_minutes=wait_min, balance=balance)
+                    return ClaimResult(
+                        success=True,
+                        status="Timer Active",
+                        next_claim_minutes=wait_min,
+                        balance=balance,
+                    )
 
-                # Check for Roll Button Presence BEFORE Solving (Save $$)
-                # Use multiple selector options for robustness
+                # Check for roll button before solving CAPTCHA
                 roll_btn = self.page.locator(
-                    "#free_play_form_button, input#free_play_form_button, input[name='free_play_form_button'], "
-                    "button#free_play_form_button, button[id*='play'], .homepage_play_now_button, "
-                    ".claim-btn, button:has-text('Roll'), button:has-text('ROLL'), "
-                    "button:has-text('Play'), input[value*='ROLL'], input[value*='Roll']"
+                    "#free_play_form_button,"
+                    " input#free_play_form_button,"
+                    " input[name='free_play_form_button'],"
+                    " button#free_play_form_button,"
+                    " button[id*='play'],"
+                    " .homepage_play_now_button,"
+                    " .claim-btn,"
+                    " button:has-text('Roll'),"
+                    " button:has-text('ROLL'),"
+                    " button:has-text('Play'),"
+                    " input[value*='ROLL'],"
+                    " input[value*='Roll']"
                 ).first
 
                 try:
-                    await roll_btn.wait_for(state="visible", timeout=8000)
+                    await roll_btn.wait_for(
+                        state="visible", timeout=8000
+                    )
                     roll_visible = True
                 except Exception:
                     roll_visible = False
 
                 if roll_visible:
                     if not await roll_btn.is_enabled():
-                        logger.warning("[DEBUG] Roll button is visible but disabled")
+                        logger.warning(
+                            "[DEBUG] Roll button is visible"
+                            " but disabled"
+                        )
                         return ClaimResult(
                             success=False,
                             status="Roll Disabled",
                             next_claim_minutes=15,
-                            balance=balance
+                            balance=balance,
                         )
-                    logger.info("[DEBUG] Roll button found. Initiating Captcha Solve...")
+                    logger.info(
+                        "[DEBUG] Roll button found."
+                        " Initiating Captcha Solve..."
+                    )
 
                     # Handle Cloudflare & Captcha
-                    logger.debug("[DEBUG] Checking for CloudFlare protection...")
+                    logger.debug(
+                        "[DEBUG] Checking for CloudFlare"
+                        " protection..."
+                    )
                     cf_result = await self.handle_cloudflare()
-                    logger.debug(f"[DEBUG] CloudFlare check result: {cf_result}")
+                    logger.debug(
+                        "[DEBUG] CloudFlare check result: %s",
+                        cf_result,
+                    )
 
                     # Solve CAPTCHA with error handling
-                    logger.debug("[DEBUG] Solving CAPTCHA for claim...")
+                    logger.debug(
+                        "[DEBUG] Solving CAPTCHA for claim..."
+                    )
                     try:
-                        await self.solver.solve_captcha(self.page)
-                        logger.debug("[DEBUG] CAPTCHA solved successfully")
+                        await self.solver.solve_captcha(
+                            self.page
+                        )
+                        logger.debug(
+                            "[DEBUG] CAPTCHA solved successfully"
+                        )
 
-                        # Manually enable roll button (CAPTCHA callback may not enable it)
+                        # Manually enable roll button
                         try:
                             await self.page.evaluate("""
                                 const btns = document.querySelectorAll('#free_play_form_button, button[id*="play"], button.claim-btn, button[type="submit"]');
@@ -805,48 +1160,77 @@ class FreeBitcoinBot(FaucetBot):
                                     }
                                 });
                             """)
-                            logger.debug("[FreeBitcoin] Manually enabled roll button")
+                            logger.debug(
+                                "[FreeBitcoin] Manually enabled"
+                                " roll button"
+                            )
                         except Exception:
                             pass
 
                         await self.human_wait(1)
-                        await self.thinking_pause()  # Brief hesitation before clicking roll
+                        await self.thinking_pause()
 
                     except Exception as captcha_err:
-                        logger.error(f"[DEBUG] CAPTCHA solve failed: {captcha_err}")
+                        logger.error(
+                            "[DEBUG] CAPTCHA solve failed: %s",
+                            captcha_err,
+                        )
                         return ClaimResult(
                             success=False,
                             status="CAPTCHA Failed",
                             next_claim_minutes=15,
-                            balance=balance
+                            balance=balance,
                         )
 
-                    # Double check visibility after potential captcha delay
+                    # Double check visibility after captcha
                     if await roll_btn.is_visible():
-                        logger.debug("[FreeBitcoin] About to click roll button")
-                        await self.simulate_reading(duration=random.uniform(1.0, 2.0))
+                        logger.debug(
+                            "[FreeBitcoin] About to click"
+                            " roll button"
+                        )
+                        await self.simulate_reading(
+                            duration=random.uniform(1.0, 2.0)
+                        )
                         await self.human_like_click(roll_btn)
-                        logger.debug("[FreeBitcoin] Roll button clicked")
-                        await self.idle_mouse(1.0)  # Read result naturally
+                        logger.debug(
+                            "[FreeBitcoin] Roll button clicked"
+                        )
+                        await self.idle_mouse(1.0)
 
                         # Wait for any navigation/reload
-                        logger.debug("[FreeBitcoin] Waiting for page stabilization...")
+                        logger.debug(
+                            "[FreeBitcoin] Waiting for page"
+                            " stabilization..."
+                        )
                         try:
-                            await self.page.wait_for_navigation(timeout=8000)
-                            logger.debug("[FreeBitcoin] Page navigated")
+                            await self.page.wait_for_navigation(
+                                timeout=8000
+                            )
+                            logger.debug(
+                                "[FreeBitcoin] Page navigated"
+                            )
                         except Exception:
-                            logger.debug("[FreeBitcoin] No navigation detected")
+                            logger.debug(
+                                "[FreeBitcoin] No navigation"
+                                " detected"
+                            )
 
-                        # Wait longer for result - FreeBitcoin can take 10-15 seconds
-                        logger.debug("[FreeBitcoin] Waiting for claim result...")
+                        # Wait for result
+                        logger.debug(
+                            "[FreeBitcoin] Waiting for claim"
+                            " result..."
+                        )
                         await self.human_wait(3)
                         await self.close_popups()
 
-                        # Log current page URL to verify we're still on the right page
                         current_url = self.page.url
-                        logger.debug(f"[FreeBitcoin] Current page URL after click: {current_url}")
+                        logger.debug(
+                            "[FreeBitcoin] Current page URL"
+                            " after click: %s",
+                            current_url,
+                        )
 
-                        # Try multiple result selectors with logging
+                        # Try multiple result selectors
                         result_selectors = [
                             "#winnings",
                             ".winning-amount",
@@ -855,7 +1239,7 @@ class FreeBitcoinBot(FaucetBot):
                             "span:has-text('BTC')",
                             ".win_amount",
                             ".claim-result",
-                            "[data-result]"
+                            "[data-result]",
                         ]
 
                         is_visible = False
@@ -863,55 +1247,114 @@ class FreeBitcoinBot(FaucetBot):
 
                         for selector in result_selectors:
                             try:
-                                loc = self.page.locator(selector)
+                                loc = self.page.locator(
+                                    selector
+                                )
                                 count = await loc.count()
                                 if count > 0:
-                                    is_element_visible = await loc.first.is_visible()
+                                    el_visible = (
+                                        await loc.first
+                                        .is_visible()
+                                    )
                                     logger.debug(
-                                        f"[FreeBitcoin] Selector '{selector}': found {count}, visible={is_element_visible}")
-                                    if is_element_visible:
-                                        won_text = await loc.first.text_content()
+                                        "[FreeBitcoin]"
+                                        " Selector '%s':"
+                                        " found %d,"
+                                        " visible=%s",
+                                        selector,
+                                        count,
+                                        el_visible,
+                                    )
+                                    if el_visible:
+                                        won_text = (
+                                            await loc.first
+                                            .text_content()
+                                        )
                                         is_visible = True
                                         logger.debug(
-                                            f"[FreeBitcoin] Result found with selector '{selector}': {won_text}")
+                                            "[FreeBitcoin]"
+                                            " Result found"
+                                            " with '%s': %s",
+                                            selector,
+                                            won_text,
+                                        )
                                         break
                             except Exception as e:
-                                logger.debug(f"[FreeBitcoin] Error checking selector '{selector}': {e}")
+                                logger.debug(
+                                    "[FreeBitcoin] Error"
+                                    " checking selector"
+                                    " '%s': %s",
+                                    selector,
+                                    e,
+                                )
 
                         if is_visible and won_text:
-                            # Use DataExtractor for consistent parsing
-                            clean_amount = DataExtractor.extract_balance(won_text)
+                            clean_amount = (
+                                DataExtractor.extract_balance(
+                                    won_text
+                                )
+                            )
 
-                            # If we found a non-zero result text on the page, that IS the confirmation
-                            # (The page display may not update immediately on freebitco.in)
-                            if clean_amount and clean_amount != "0":
-                                logger.info(f"FreeBitcoin Claimed! Won: {won_text} ({clean_amount})")
+                            if (
+                                clean_amount
+                                and clean_amount != "0"
+                            ):
+                                logger.info(
+                                    "FreeBitcoin Claimed!"
+                                    " Won: %s (%s)",
+                                    won_text,
+                                    clean_amount,
+                                )
                                 return ClaimResult(
                                     success=True,
                                     status="Claimed",
                                     next_claim_minutes=60,
                                     amount=clean_amount,
-                                    balance="Unknown"  # Balance display not updated yet on page
+                                    balance="Unknown",
                                 )
 
-                            logger.warning("[FreeBitcoin] Result text found but amount is 0 or invalid.")
+                            logger.warning(
+                                "[FreeBitcoin] Result text"
+                                " found but amount is 0"
+                                " or invalid."
+                            )
                             return ClaimResult(
                                 success=False,
                                 status="Zero Amount",
                                 next_claim_minutes=10,
                                 amount=clean_amount or "0",
-                                balance=balance
+                                balance=balance,
                             )
                         else:
-                            # Result not found - log what we see on the page
-                            logger.warning("[FreeBitcoin] Claim result not found on page")
-                            logger.debug(f"[FreeBitcoin] Page content length: {len(await self.page.content())}")
+                            logger.warning(
+                                "[FreeBitcoin] Claim result"
+                                " not found on page"
+                            )
+                            page_content = (
+                                await self.page.content()
+                            )
+                            logger.debug(
+                                "[FreeBitcoin] Page content"
+                                " length: %d",
+                                len(page_content),
+                            )
 
-                            # Try to find ANY text on the page that might indicate success
                             try:
-                                page_text = await self.page.inner_text("body")
+                                page_text = (
+                                    await self.page.inner_text(
+                                        "body"
+                                    )
+                                )
+                                preview = (
+                                    page_text[:500]
+                                    if page_text
+                                    else "empty"
+                                )
                                 logger.debug(
-                                    f"[FreeBitcoin] Page text preview: {page_text[:500] if page_text else 'empty'}")
+                                    "[FreeBitcoin] Page text"
+                                    " preview: %s",
+                                    preview,
+                                )
                             except Exception:
                                 pass
 
@@ -919,59 +1362,107 @@ class FreeBitcoinBot(FaucetBot):
                                 success=False,
                                 status="Result Not Found",
                                 next_claim_minutes=15,
-                                balance=balance
+                                balance=balance,
                             )
                     else:
+                        roll_count = (
+                            await self.page.locator(
+                                '#free_play_form_button'
+                            ).count()
+                        )
                         logger.warning(
-                            f"[DEBUG] Roll button disappeared after captcha solve. "
-                            f"Page URL: {self.page.url}, Roll button count: {await self.page.locator('#free_play_form_button').count()}"
+                            "[DEBUG] Roll button disappeared"
+                            " after captcha solve."
+                            " Page URL: %s,"
+                            " Roll button count: %d",
+                            self.page.url,
+                            roll_count,
                         )
                         return ClaimResult(
                             success=False,
                             status="Roll Button Vanished",
                             next_claim_minutes=15,
-                            balance=balance
+                            balance=balance,
                         )
                 else:
-                    logger.warning("Roll button not found (possibly hidden or blocked)")
+                    logger.warning(
+                        "Roll button not found"
+                        " (possibly hidden or blocked)"
+                    )
                     return ClaimResult(
                         success=False,
                         status="Roll Button Not Found",
                         next_claim_minutes=15,
-                        balance=balance
+                        balance=balance,
                     )
 
             except asyncio.TimeoutError as e:
-                logger.warning(f"FreeBitcoin claim timeout attempt {attempt + 1}/{max_retries}: {e}")
+                logger.warning(
+                    "FreeBitcoin claim timeout attempt"
+                    " %d/%d: %s",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                )
                 if attempt < max_retries - 1:
-                    backoff_time = (2 ** attempt) * 5  # Exponential backoff: 5s, 10s, 20s
-                    logger.info(f"Retrying in {backoff_time}s...")
-                    await self.human_wait(backoff_time, with_interactions=True)
+                    backoff_time = (2 ** attempt) * 5
+                    logger.info(
+                        "Retrying in %ds...", backoff_time
+                    )
+                    await self.human_wait(
+                        backoff_time, with_interactions=True
+                    )
                     continue
                 return ClaimResult(
                     success=False,
-                    status=f"Timeout after {max_retries} attempts",
-                    next_claim_minutes=30
+                    status=(
+                        f"Timeout after {max_retries}"
+                        " attempts"
+                    ),
+                    next_claim_minutes=30,
                 )
 
             except Exception as e:
-                logger.error(f"FreeBitcoin claim failed attempt {attempt + 1}/{max_retries}: {e}")
+                logger.error(
+                    "FreeBitcoin claim failed attempt"
+                    " %d/%d: %s",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                )
                 if attempt < max_retries - 1:
                     backoff_time = (2 ** attempt) * 5
-                    logger.info(f"Retrying in {backoff_time}s...")
-                    await self.human_wait(backoff_time, with_interactions=True)
+                    logger.info(
+                        "Retrying in %ds...", backoff_time
+                    )
+                    await self.human_wait(
+                        backoff_time, with_interactions=True
+                    )
                     continue
                 return ClaimResult(
                     success=False,
                     status=f"Error: {e}",
-                    next_claim_minutes=30
+                    next_claim_minutes=30,
                 )
 
-        logger.warning(f"FreeBitcoin claim reached unknown failure path. URL: {self.page.url}")
-        return ClaimResult(success=False, status="Unknown Failure", next_claim_minutes=15)
+        logger.warning(
+            "FreeBitcoin claim reached unknown failure path."
+            " URL: %s",
+            self.page.url,
+        )
+        return ClaimResult(
+            success=False,
+            status="Unknown Failure",
+            next_claim_minutes=15,
+        )
 
-    def get_jobs(self):
-        """Returns FreeBitcoin-specific jobs for the scheduler."""
+    def get_jobs(self) -> list[Any]:
+        """Return FreeBitcoin-specific jobs for the scheduler.
+
+        Returns:
+            A list containing a claim job (hourly) and a
+            withdrawal job (daily).
+        """
         from core.orchestrator import Job
 
         return [
@@ -981,113 +1472,236 @@ class FreeBitcoinBot(FaucetBot):
                 name=f"{self.faucet_name} Claim",
                 profile=None,
                 faucet_type=self.faucet_name.lower(),
-                job_type="claim_wrapper"
+                job_type="claim_wrapper",
             ),
             Job(
                 priority=5,
-                next_run=time.time() + 86400,  # Check withdrawal daily
+                next_run=time.time() + 86400,
                 name=f"{self.faucet_name} Withdraw",
                 profile=None,
                 faucet_type=self.faucet_name.lower(),
-                job_type="withdraw_wrapper"
-            )
+                job_type="withdraw_wrapper",
+            ),
         ]
 
     async def withdraw(self) -> ClaimResult:
         """Automated withdrawal for FreeBitcoin.
 
         Supports three modes:
-        - Auto Withdraw: Enabled via settings, happens automatically
-        - Slow Withdraw: Lower fee (~400 sat), 6-24 hour processing
-        - Instant Withdraw: Higher fee, 15 min processing
+            - Auto Withdraw: enabled via settings.
+            - Slow Withdraw: lower fee (~400 sat), 6-24 h.
+            - Instant Withdraw: higher fee, 15 min.
 
-        Minimum: 30,000 satoshis (0.0003 BTC)
+        Minimum: 30 000 satoshis (0.0003 BTC).
+
+        Returns:
+            ClaimResult indicating whether the withdrawal was
+            submitted successfully.
         """
         try:
-            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
-            await self.page.goto(f"{self.base_url}/?op=withdraw")
+            logger.info(
+                "[%s] Navigating to withdrawal page...",
+                self.faucet_name,
+            )
+            await self.page.goto(
+                f"{self.base_url}/?op=withdraw"
+            )
             await self.handle_cloudflare()
             await self.close_popups()
 
-            # Get current balance - use #balance_small as primary (confirmed working)
+            # Get current balance
             balance = await self.get_balance(
                 "#balance_small",
-                fallback_selectors=["#balance", ".balanceli", "li.balanceli span"]
+                fallback_selectors=[
+                    "#balance",
+                    ".balanceli",
+                    "li.balanceli span",
+                ],
             )
-            balance_sat = int(float(balance) * 100000000) if balance else 0
+            balance_sat = (
+                int(float(balance) * 100000000)
+                if balance
+                else 0
+            )
 
             # Check minimum (30,000 satoshis)
             min_withdraw = 30000
             if balance_sat < min_withdraw:
-                logger.info(f"[{self.faucet_name}] Balance {balance_sat} sat below minimum {min_withdraw}")
-                return ClaimResult(success=True, status="Low Balance", next_claim_minutes=1440)
+                logger.info(
+                    "[%s] Balance %d sat below minimum %d",
+                    self.faucet_name,
+                    balance_sat,
+                    min_withdraw,
+                )
+                return ClaimResult(
+                    success=True,
+                    status="Low Balance",
+                    next_claim_minutes=1440,
+                )
 
             # Get withdrawal address
             address = self.get_withdrawal_address("BTC")
             if not address:
-                logger.error(f"[{self.faucet_name}] No BTC withdrawal address configured")
-                return ClaimResult(success=False, status="No Address", next_claim_minutes=1440)
+                logger.error(
+                    "[%s] No BTC withdrawal address configured",
+                    self.faucet_name,
+                )
+                return ClaimResult(
+                    success=False,
+                    status="No Address",
+                    next_claim_minutes=1440,
+                )
 
-            # Fill withdrawal form with human-like typing
-            address_field = self.page.locator("input#withdraw_address, input[name='address']")
-            amount_field = self.page.locator("input#withdraw_amount, input[name='amount']")
+            # Fill withdrawal form
+            address_field = self.page.locator(
+                "input#withdraw_address,"
+                " input[name='address']"
+            )
+            amount_field = self.page.locator(
+                "input#withdraw_amount,"
+                " input[name='amount']"
+            )
 
-            # Use "Slow Withdraw" for lower fees
-            slow_radio = self.page.locator("input[value='slow'], #slow_withdraw")
+            # Use slow withdraw for lower fees
+            slow_radio = self.page.locator(
+                "input[value='slow'], #slow_withdraw"
+            )
             if await slow_radio.is_visible():
                 await self.human_like_click(slow_radio)
-                logger.debug(f"[{self.faucet_name}] Selected slow withdrawal for lower fees")
+                logger.debug(
+                    "[%s] Selected slow withdrawal"
+                    " for lower fees",
+                    self.faucet_name,
+                )
 
             # Click Max/All button if available
-            max_btn = self.page.locator("button:has-text('Max'), #max_withdraw")
+            max_btn = self.page.locator(
+                "button:has-text('Max'), #max_withdraw"
+            )
             if await max_btn.is_visible():
                 await self.human_like_click(max_btn)
-                logger.debug(f"[{self.faucet_name}] Clicked max withdrawal button")
+                logger.debug(
+                    "[%s] Clicked max withdrawal button",
+                    self.faucet_name,
+                )
             elif await amount_field.is_visible():
-                await self.human_type(amount_field, str(float(balance)))
-                logger.debug(f"[{self.faucet_name}] Filled withdrawal amount: {balance}")
+                await self.human_type(
+                    amount_field, str(float(balance))
+                )
+                logger.debug(
+                    "[%s] Filled withdrawal amount: %s",
+                    self.faucet_name,
+                    balance,
+                )
 
-            logger.debug(f"[{self.faucet_name}] Filling withdrawal address with human-like typing")
+            logger.debug(
+                "[%s] Filling withdrawal address"
+                " with human-like typing",
+                self.faucet_name,
+            )
             await self.human_type(address_field, address)
-            await self.idle_mouse(1.0)  # Think time before submission
+            await self.idle_mouse(1.0)
 
             # Handle 2FA if present
-            twofa_field = self.page.locator("input#twofa_code, input[name='2fa']")
+            twofa_field = self.page.locator(
+                "input#twofa_code, input[name='2fa']"
+            )
             if await twofa_field.is_visible():
-                logger.warning(f"[{self.faucet_name}] 2FA field detected - manual intervention required")
-                return ClaimResult(success=False, status="2FA Required", next_claim_minutes=60)
+                logger.warning(
+                    "[%s] 2FA field detected"
+                    " - manual intervention required",
+                    self.faucet_name,
+                )
+                return ClaimResult(
+                    success=False,
+                    status="2FA Required",
+                    next_claim_minutes=60,
+                )
 
             # Solve captcha
-            logger.debug(f"[{self.faucet_name}] Solving CAPTCHA for withdrawal...")
+            logger.debug(
+                "[%s] Solving CAPTCHA for withdrawal...",
+                self.faucet_name,
+            )
             try:
                 await self.solver.solve_captcha(self.page)
-                logger.debug(f"[{self.faucet_name}] CAPTCHA solved successfully")
+                logger.debug(
+                    "[%s] CAPTCHA solved successfully",
+                    self.faucet_name,
+                )
             except Exception as captcha_err:
-                logger.error(f"[{self.faucet_name}] Withdrawal CAPTCHA solve failed: {captcha_err}")
-                return ClaimResult(success=False, status="CAPTCHA Failed", next_claim_minutes=60)
+                logger.error(
+                    "[%s] Withdrawal CAPTCHA solve"
+                    " failed: %s",
+                    self.faucet_name,
+                    captcha_err,
+                )
+                return ClaimResult(
+                    success=False,
+                    status="CAPTCHA Failed",
+                    next_claim_minutes=60,
+                )
 
             # Submit
-            await self.thinking_pause()  # Brief pause before submitting withdrawal
-            submit_btn = self.page.locator("button#withdraw_button, button:has-text('Withdraw')")
+            await self.thinking_pause()
+            submit_btn = self.page.locator(
+                "button#withdraw_button,"
+                " button:has-text('Withdraw')"
+            )
             await self.human_like_click(submit_btn)
 
             await self.random_delay(3, 5)
 
             # Check result
-            success_msg = self.page.locator(".alert-success, #withdraw_success, :has-text('successful')")
+            success_msg = self.page.locator(
+                ".alert-success, #withdraw_success,"
+                " :has-text('successful')"
+            )
             if await success_msg.count() > 0:
-                logger.info(f"🚀 [{self.faucet_name}] Withdrawal submitted: {balance} BTC")
-                return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+                logger.info(
+                    "[%s] Withdrawal submitted: %s BTC",
+                    self.faucet_name,
+                    balance,
+                )
+                return ClaimResult(
+                    success=True,
+                    status="Withdrawn",
+                    next_claim_minutes=1440,
+                )
 
             # Check for error messages
-            error_msg = self.page.locator(".alert-danger, .error, #withdraw_error")
+            error_msg = self.page.locator(
+                ".alert-danger, .error, #withdraw_error"
+            )
             if await error_msg.count() > 0:
-                error_text = await error_msg.first.text_content()
-                logger.warning(f"[{self.faucet_name}] Withdrawal error: {error_text}")
-                return ClaimResult(success=False, status=f"Error: {error_text}", next_claim_minutes=360)
+                error_text = (
+                    await error_msg.first.text_content()
+                )
+                logger.warning(
+                    "[%s] Withdrawal error: %s",
+                    self.faucet_name,
+                    error_text,
+                )
+                return ClaimResult(
+                    success=False,
+                    status=f"Error: {error_text}",
+                    next_claim_minutes=360,
+                )
 
-            return ClaimResult(success=False, status="Unknown Result", next_claim_minutes=360)
+            return ClaimResult(
+                success=False,
+                status="Unknown Result",
+                next_claim_minutes=360,
+            )
 
         except Exception as e:
-            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
-            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)
+            logger.error(
+                "[%s] Withdrawal error: %s",
+                self.faucet_name,
+                e,
+            )
+            return ClaimResult(
+                success=False,
+                status=f"Error: {e}",
+                next_claim_minutes=60,
+            )
