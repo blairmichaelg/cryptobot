@@ -253,13 +253,21 @@ class FaucetBot:
         seed_basis = profile_name or profile_key or self.DEFAULT_BEHAVIOR_PROFILE
         self._behavior_rng = random.Random(hash(seed_basis))
 
-    def _resolve_delay_range(self, min_s: Optional[float], max_s: Optional[float]) -> Tuple[float, float]:
+    def _resolve_delay_range(
+        self,
+        min_s: Optional[float],
+        max_s: Optional[float],
+    ) -> Tuple[float, float]:
         """Return an explicit or profile-default delay range in seconds."""
         if min_s is None or max_s is None:
             min_s, max_s = self.behavior_profile.get("delay_range", (2.0, 5.0))
         return float(min_s), float(max_s)
 
-    def _resolve_typing_range(self, delay_min: Optional[int], delay_max: Optional[int]) -> Tuple[int, int]:
+    def _resolve_typing_range(
+        self,
+        delay_min: Optional[int],
+        delay_max: Optional[int],
+    ) -> Tuple[int, int]:
         """Return an explicit or profile-default per-key typing delay range (ms)."""
         if delay_min is None or delay_max is None:
             delay_min, delay_max = self.behavior_profile.get("typing_ms", (60, 160))
@@ -599,7 +607,12 @@ class FaucetBot:
         logger.warning(f"[{self.faucet_name}] No withdrawal address configured for {coin}")
         return None
 
-    def _resolve_wallet_dict_entry(self, wallet_dict: Dict, coin: str, source: str) -> Optional[str]:
+    def _resolve_wallet_dict_entry(
+        self,
+        wallet_dict: Dict[str, Any],
+        coin: str,
+        source: str,
+    ) -> Optional[str]:
         """Extract an address from a wallet_addresses dict entry.
 
         Supports both plain string entries and nested dicts with
@@ -629,7 +642,11 @@ class FaucetBot:
         logger.debug(f"[{self.faucet_name}] Using {source} wallet_addresses dict for {coin}")
         return str(dict_entry)
 
-    async def random_delay(self, min_s: Optional[float] = None, max_s: Optional[float] = None) -> None:
+    async def random_delay(
+        self,
+        min_s: Optional[float] = None,
+        max_s: Optional[float] = None,
+    ) -> None:
         """Wait a random duration to mimic human inter-action pauses.
 
         When a :class:`HumanProfile` is active and no explicit bounds are
@@ -668,7 +685,10 @@ class FaucetBot:
         """
         if self.human_profile:
             delay = HumanProfile.get_thinking_pause(self.human_profile)
-            logger.debug(f"[{self.faucet_name}] Thinking pause ({self.human_profile}): {delay:.2f}s")
+            logger.debug(
+                f"[{self.faucet_name}] Thinking pause"
+                f" ({self.human_profile}): {delay:.2f}s"
+            )
         else:
             # Fallback to reasonable default
             delay = random.uniform(1.0, 3.0)
@@ -926,13 +946,20 @@ class FaucetBot:
         ``zIndex > 100`` and near-zero opacity.
         """
         await self.page.evaluate("""() => {
-            const overlays = Array.from(document.querySelectorAll('div, ins, iframe')).filter(el => {
-                const style = window.getComputedStyle(el);
-                return (style.position === 'absolute' || style.position === 'fixed') &&
-                       (parseInt(style.zIndex, 10) > 100 || style.width === '100vw' || style.height === '100vh') &&
-                       (parseFloat(style.opacity) < 0.1 || style.backgroundColor === 'transparent');
-            });
-            overlays.forEach(el => el.remove());
+            const overlays = document.querySelectorAll(
+                'div, ins, iframe'
+            );
+            Array.from(overlays).filter(el => {
+                const s = window.getComputedStyle(el);
+                const pos = s.position === 'absolute'
+                    || s.position === 'fixed';
+                const z = parseInt(s.zIndex, 10) > 100
+                    || s.width === '100vw'
+                    || s.height === '100vh';
+                const vis = parseFloat(s.opacity) < 0.1
+                    || s.backgroundColor === 'transparent';
+                return pos && z && vis;
+            }).forEach(el => el.remove());
         }""")
 
     async def human_type(
@@ -1063,7 +1090,10 @@ class FaucetBot:
             await asyncio.wait_for(self.page.evaluate("1 + 1"), timeout=3.0)
             return True
         except asyncio.TimeoutError:
-            logger.warning(f"[{self.faucet_name}] Page health check timed out - page likely frozen")
+            logger.warning(
+                f"[{self.faucet_name}] Page health check"
+                " timed out - page likely frozen"
+            )
             return False
         except Exception as e:
             # Don't log closed page errors as warnings
@@ -1095,7 +1125,10 @@ class FaucetBot:
         try:
             # Check page health before operation
             if not await self.check_page_health():
-                logger.warning(f"[{self.faucet_name}] Cannot execute {operation_name}: page is not alive")
+                logger.warning(
+                    f"[{self.faucet_name}] Cannot execute"
+                    f" {operation_name}: page is not alive"
+                )
                 return None
 
             # Execute the operation
@@ -1108,7 +1141,7 @@ class FaucetBot:
                 logger.warning(f"[{self.faucet_name}] {operation_name} failed: {e}")
             return None
 
-    async def safe_click(self, selector: Union[str, Locator], **kwargs) -> bool:
+    async def safe_click(self, selector: Union[str, Locator], **kwargs: Any) -> bool:
         """Click an element with page-health pre-checks.
 
         Wraps :meth:`safe_page_operation` around ``locator.click()``.
@@ -1289,7 +1322,9 @@ class FaucetBot:
 
             elif action_roll < 0.75:
                 # 10%: Scroll back up (re-reading something)
-                scroll_back = self._behavior_rng.randint(50, min(200, max(50, total_scrolled // 3)))
+                scroll_back = self._behavior_rng.randint(
+                    50, min(200, max(50, total_scrolled // 3))
+                )
                 await self.natural_scroll(distance=scroll_back, direction=-1)
                 total_scrolled = max(0, total_scrolled - scroll_back)
                 await asyncio.sleep(self._behavior_rng.uniform(0.5, 1.5))
@@ -1298,7 +1333,10 @@ class FaucetBot:
                 # 13%: Mouse tracks text (cursor follows reading position)
                 w = vp['width']
                 # Simulate reading left-to-right
-                line_y = self._behavior_rng.randint(int(vp['height'] * 0.3), int(vp['height'] * 0.6))
+                line_y = self._behavior_rng.randint(
+                    int(vp['height'] * 0.3),
+                    int(vp['height'] * 0.6),
+                )
                 x_start = self._behavior_rng.randint(int(w * 0.1), int(w * 0.3))
                 x_end = self._behavior_rng.randint(int(w * 0.5), int(w * 0.8))
 
@@ -1521,7 +1559,12 @@ class FaucetBot:
         """
         # How long user "looks at another tab"
         if self.human_profile:
-            away_time = HumanProfile.get_action_delay(self.human_profile, "read") * random.uniform(0.3, 0.8)
+            away_time = (
+                HumanProfile.get_action_delay(
+                    self.human_profile, "read"
+                )
+                * random.uniform(0.3, 0.8)
+            )
         else:
             away_time = random.uniform(0.8, 4.0)
 
@@ -1656,7 +1699,8 @@ class FaucetBot:
                             }
                             // Check for Turnstile error messages in page
                             const pageText = document.body?.innerText || '';
-                            if (pageText.includes('TurnstileError') || pageText.includes('Invalid sitekey')) {
+                            if (pageText.includes('TurnstileError')
+                                || pageText.includes('Invalid sitekey')) {
                                 return true;
                             }
                             return false;
@@ -1700,7 +1744,11 @@ class FaucetBot:
                                         await self.idle_mouse(random.uniform(0.5, 1.5))
                                         # Use human_like_click on the locator
                                         await self.human_like_click(locator)
-                                        logger.info(f"[{self.faucet_name}] 🖱️ Clicked Turnstile checkbox")
+                                        logger.info(
+                                            f"[{self.faucet_name}]"
+                                            " Clicked Turnstile"
+                                            " checkbox"
+                                        )
                                 except Exception as click_err:
                                     logger.debug(f"Failed to click Turnstile: {click_err}")
 
@@ -1712,7 +1760,10 @@ class FaucetBot:
                 if not title_detected and not element_detected:
                     consecutive_no_cf += 1
                     if consecutive_no_cf >= 3:  # 3 checks * 2s sleep = 6s of no CF
-                        logger.debug(f"[{self.faucet_name}] No Cloudflare detected for 6s, proceeding")
+                        logger.debug(
+                            f"[{self.faucet_name}] No Cloudflare"
+                            " detected for 6s, proceeding"
+                        )
                         return True
                 else:
                     consecutive_no_cf = 0  # Reset counter if CF found
@@ -1741,7 +1792,11 @@ class FaucetBot:
                     # Challenge appears resolved
                     if checks > 1:
                         elapsed = time.time() - start_time
-                        logger.info(f"[{self.faucet_name}] ✅ Cloudflare challenge resolved in {elapsed:.1f}s")
+                        logger.info(
+                            f"[{self.faucet_name}] Cloudflare"
+                            f" challenge resolved in"
+                            f" {elapsed:.1f}s"
+                        )
                     return True
 
             except Exception as e:
@@ -1749,7 +1804,10 @@ class FaucetBot:
                 logger.warning(f"[{self.faucet_name}] Cloudflare check error (recoverable): {e}")
                 await asyncio.sleep(2)
 
-        logger.error(f"[{self.faucet_name}] ❌ Cloudflare challenge timed out after {max_wait_seconds}s")
+        logger.error(
+            f"[{self.faucet_name}] Cloudflare challenge"
+            f" timed out after {max_wait_seconds}s"
+        )
         return False
 
     async def detect_page_crash(self) -> bool:
@@ -1955,7 +2013,11 @@ class FaucetBot:
         """
         raise NotImplementedError
 
-    async def get_timer(self, selector: str, fallback_selectors: Optional[List[str]] = None) -> float:
+    async def get_timer(
+        self,
+        selector: str,
+        fallback_selectors: Optional[List[str]] = None,
+    ) -> float:
         """Extract the countdown timer from the page and convert to minutes.
 
         Tries the primary *selector* first; if invisible or absent, tries
@@ -2008,7 +2070,11 @@ class FaucetBot:
                     el = self.page.locator(fb_sel)
                     if await el.count() > 0 and await el.first.is_visible():
                         text = await el.first.text_content()
-                        logger.info(f"[{self.faucet_name}] Timer extracted from fallback {fb_sel}: {text}")
+                        logger.info(
+                            f"[{self.faucet_name}] Timer"
+                            f" extracted from fallback"
+                            f" {fb_sel}: {text}"
+                        )
                         return DataExtractor.parse_timer_to_minutes(text)
                 except Exception:
                     continue
@@ -2019,7 +2085,10 @@ class FaucetBot:
             if auto_sel:
                 el = self.page.locator(auto_sel)
                 text = await el.first.text_content()
-                logger.warning(f"[{self.faucet_name}] Timer auto-detected from DOM: {auto_sel} = {text}")
+                logger.warning(
+                    f"[{self.faucet_name}] Timer auto-detected"
+                    f" from DOM: {auto_sel} = {text}"
+                )
                 return DataExtractor.parse_timer_to_minutes(text)
         except Exception as e:
             logger.debug(f"[{self.faucet_name}] Auto-detection failed: {e}")
@@ -2256,7 +2325,10 @@ class FaucetBot:
 
         for pattern in maintenance_patterns:
             if pattern in content:
-                logger.info(f"[{self.faucet_name}] Maintenance/security pattern found: '{pattern}'")
+                logger.info(
+                    f"[{self.faucet_name}] Maintenance/security"
+                    f" pattern found: '{pattern}'"
+                )
                 return "Site Maintenance / Blocked"
 
         # Check for error pages in URL
@@ -2868,7 +2940,11 @@ class FaucetBot:
             # Determine currency
             currency = getattr(self, 'coin', None) or self._get_cryptocurrency_for_faucet()
             if not currency or currency == "UNKNOWN":
-                detected = self._detect_currency_from_text(f"{raw_amount} {result.status or ''} {result.balance or ''}")
+                detected = self._detect_currency_from_text(
+                    f"{raw_amount}"
+                    f" {result.status or ''}"
+                    f" {result.balance or ''}"
+                )
                 if detected:
                     currency = detected
 
@@ -2884,7 +2960,10 @@ class FaucetBot:
             try:
                 balance_after = float(balance_str) if balance_str else 0.0
             except (ValueError, TypeError) as e:
-                logger.warning(f"[{self.faucet_name}] Failed to parse balance '{balance_str}': {e}")
+                logger.warning(
+                    f"[{self.faucet_name}] Failed to parse"
+                    f" balance '{balance_str}': {e}"
+                )
                 balance_after = 0.0
 
             # Normalize balance to smallest unit
@@ -2906,7 +2985,11 @@ class FaucetBot:
                 balance_after=balance_after
             )
         except Exception as analytics_err:
-            logger.warning(f"[{self.faucet_name}] Analytics tracking failed: {analytics_err}", exc_info=True)
+            logger.warning(
+                f"[{self.faucet_name}] Analytics tracking"
+                f" failed: {analytics_err}",
+                exc_info=True,
+            )
 
     def _normalize_claim_amount(self, amount: float, raw_amount: str, currency: str) -> float:
         """Normalize claim amount into smallest units for analytics.
@@ -3012,7 +3095,10 @@ class FaucetBot:
                     elif res:
                         logger.info(f"[{self.faucet_name}] {name} Successful")
                     else:
-                        logger.warning(f"[{self.faucet_name}] {name} Completed with no result/fail")
+                        logger.warning(
+                            f"[{self.faucet_name}] {name}"
+                            " Completed with no result/fail"
+                        )
 
                     await self.random_delay()
 
@@ -3022,7 +3108,11 @@ class FaucetBot:
 
                     # If the primary claim fails with an exception, update final_result
                     if name == "Faucet Claim":
-                        final_result = ClaimResult(success=False, status=error_msg, next_claim_minutes=15)
+                        final_result = ClaimResult(
+                            success=False,
+                            status=error_msg,
+                            next_claim_minutes=15,
+                        )
 
                     # We continue to the next task even if this one failed!
 

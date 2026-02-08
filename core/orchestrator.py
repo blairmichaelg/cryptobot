@@ -198,72 +198,99 @@ class JobScheduler:
         self.security_challenge_retries: Dict[
             str, Dict[str, Any]
         ] = {}
-        self.max_security_retries = 5  # Allow up to 5 security challenge retries before permanent disable
-        self.security_retry_reset_hours = 24  # Reset retry counter after 24 hours of no challenges
+        # Allow up to 5 security challenge retries before disable
+        self.max_security_retries = 5
+        # Reset retry counter after 24 hours of no challenges
+        self.security_retry_reset_hours = 24
 
         # Auto-withdrawal management
-        self.auto_withdrawal = None  # Will be initialized if wallet daemon is available
+        # Will be initialized if wallet daemon is available
+        self.auto_withdrawal = None
         self.withdrawal_check_scheduled = False
 
         # Exponential backoff tracking per faucet
-        self.faucet_backoff: Dict[str, Dict[str, Any]] = {}  # faucet_type -> {consecutive_failures, next_allowed_time}
+        # faucet_type -> {consecutive_failures, next_allowed_time}
+        self.faucet_backoff: Dict[str, Dict[str, Any]] = {}
 
         # Health monitoring
         self.health_monitor = HealthMonitor(
             browser_manager=self.browser_manager,
             proxy_manager=self.proxy_manager,
-            alert_webhook_url=self.settings.alert_webhook_url
+            alert_webhook_url=self.settings.alert_webhook_url,
         )
-        self.last_health_check_time = 0.0
 
         # Startup Checks
         if self.proxy_manager:
             if len(self.proxy_manager.proxies) < 3:
                 logger.warning(
-                    f"⚠️ LOW PROXY COUNT: Only {len(self.proxy_manager.proxies)} proxies detected. Recommended: 3+ for stealth.")
+                    "LOW PROXY COUNT: Only "
+                    f"{len(self.proxy_manager.proxies)} "
+                    "proxies detected. Recommended: 3+ "
+                    "for stealth."
+                )
 
-        self.profile_concurrency: Dict[str, int] = {}  # Key: profile.username
+        # Key: profile.username
+        self.profile_concurrency: Dict[str, int] = {}
         self._stop_event = asyncio.Event()
 
         # ML-based timer prediction tracking
-        self.timer_predictions: Dict[str, List[Dict[str, float]]] = {}  # faucet_type -> list of {stated: X, actual: Y}
-        self.TIMER_HISTORY_SIZE = 10  # Keep last 10 claim timers per faucet
+        # faucet_type -> list of {stated: X, actual: Y}
+        self.timer_predictions: Dict[
+            str, List[Dict[str, float]]
+        ] = {}
+        # Keep last 10 claim timers per faucet
+        self.TIMER_HISTORY_SIZE = 10
 
         # Proxy rotation tracking
-        self.proxy_failures: Dict[str, Dict[str, Any]] = {}  # Key: proxy URL
-        self.proxy_index: Dict[str, int] = {}  # Key: profile.username
+        self.proxy_failures: Dict[str, Dict[str, Any]] = {}
+        self.proxy_index: Dict[str, int] = {}
 
         # Circuit Breaker Tracking with Error Type Awareness
-        self.faucet_failures: Dict[str, int] = {}  # Key: faucet_type
-        self.faucet_error_types: Dict[str, List[ErrorType]] = {}  # Track recent error types per faucet
-        self.faucet_cooldowns: Dict[str, float] = {}  # Key: faucet_type, Value: timestamp
+        self.faucet_failures: Dict[str, int] = {}
+        # Track recent error types per faucet
+        self.faucet_error_types: Dict[
+            str, List[ErrorType]
+        ] = {}
+        # Key: faucet_type, Value: timestamp
+        self.faucet_cooldowns: Dict[str, float] = {}
         self.CIRCUIT_BREAKER_THRESHOLD = 5
         self.CIRCUIT_BREAKER_COOLDOWN = 14400  # 4 hours
-        self.RETRYABLE_COOLDOWN = 600  # 10 minutes for temporary failures
+        self.RETRYABLE_COOLDOWN = 600  # 10 min for temp failures
 
         # Account usage tracking for multi-account support
-        self.account_usage: Dict[str, Dict[str, Any]] = {}  # Key: username, Value: {faucet, last_active, status}
+        # Key: username, Value: {faucet, last_active, status}
+        self.account_usage: Dict[str, Dict[str, Any]] = {}
 
-        # Failure classification (legacy - replaced by ErrorType enum)
-        self.PERMANENT_FAILURES = ["auth_failed", "account_banned", "account_disabled", "invalid_credentials"]
-        self.RETRYABLE_FAILURES = ["proxy_blocked", "proxy_detection",
-                                   "cloudflare", "rate_limit", "timeout", "connection_error"]
+        # Failure classification (legacy - replaced by ErrorType)
+        self.PERMANENT_FAILURES = [
+            "auth_failed", "account_banned",
+            "account_disabled", "invalid_credentials",
+        ]
+        self.RETRYABLE_FAILURES = [
+            "proxy_blocked", "proxy_detection",
+            "cloudflare", "rate_limit",
+            "timeout", "connection_error",
+        ]
         # Domain rate limiting - prevents hitting same faucet too fast
-        self.domain_last_access: Dict[str, float] = {}  # Key: domain, Value: last access time
+        # Key: domain, Value: last access time
+        self.domain_last_access: Dict[str, float] = {}
 
         # Session persistence - survive restarts
         self.session_file = str(CONFIG_DIR / "session_state.json")
         self.last_persist_time = 0
 
         # Health monitoring - heartbeat file
-        self.heartbeat_file = "/tmp/cryptobot_heartbeat" if os.name != "nt" else str(LOGS_DIR / "heartbeat.txt")
+        self.heartbeat_file = (
+            "/tmp/cryptobot_heartbeat"
+            if os.name != "nt"
+            else str(LOGS_DIR / "heartbeat.txt")
+        )
         self.last_heartbeat_time = 0
-        self.last_health_check_time = 0
+        self.last_health_check_time = 0.0
         self.consecutive_job_failures = 0
         self.performance_alert_score = 0
 
         # Operation mode tracking for graceful degradation
-        from core.config import OperationMode
         self.current_mode: OperationMode = OperationMode.NORMAL
         self.last_mode_check_time = 0
         self.MODE_CHECK_INTERVAL = 600  # Check every 10 minutes
@@ -271,7 +298,7 @@ class JobScheduler:
         # Try to restore session on init
         self._restore_session()
 
-    def _restore_session(self):
+    def _restore_session(self) -> None:
         """Restore job queue from disk if available."""
         try:
             if os.path.exists(self.session_file):
@@ -325,7 +352,12 @@ class JobScheduler:
 
         return removed
 
-    def _safe_json_write(self, filepath: str, data: dict, max_backups: int = 3):
+    def _safe_json_write(
+        self,
+        filepath: str,
+        data: Dict[str, Any],
+        max_backups: int = 3,
+    ) -> None:
         """Atomic JSON write with corruption protection and backups.
 
         Args:
@@ -372,7 +404,11 @@ class JobScheduler:
                 except Exception as restore_err:
                     logger.error(f"Backup restoration failed: {restore_err}")
 
-    def _safe_json_read(self, filepath: str, max_backups: int = 3) -> Optional[dict]:
+    def _safe_json_read(
+        self,
+        filepath: str,
+        max_backups: int = 3,
+    ) -> Optional[Dict[str, Any]]:
         """Read JSON with fallback to backups if corrupted."""
         candidates = [filepath] + [f"{filepath}.backup.{i}" for i in range(1, max_backups + 1)]
         for candidate in candidates:
@@ -385,7 +421,7 @@ class JobScheduler:
                 continue
         return None
 
-    def _persist_session(self):
+    def _persist_session(self) -> None:
         """Save session state to disk with corruption protection."""
         try:
             queue_data = [j.to_dict() for j in self.queue]
@@ -398,11 +434,15 @@ class JobScheduler:
         except Exception as e:
             logger.warning(f"Could not persist session: {e}")
 
-    def persist_session(self):
+    def persist_session(self) -> None:
         """Public wrapper for persisting session state."""
         self._persist_session()
 
-    def reset_security_retries(self, faucet_type: Optional[str] = None, username: Optional[str] = None):
+    def reset_security_retries(
+        self,
+        faucet_type: Optional[str] = None,
+        username: Optional[str] = None,
+    ) -> None:
         """
         Manually reset security challenge retry counters to re-enable accounts.
 
@@ -476,7 +516,7 @@ class JobScheduler:
 
         return status
 
-    def _write_heartbeat(self):
+    def _write_heartbeat(self) -> None:
         """Write heartbeat file for external monitoring."""
         try:
             active_accounts = [f"{acc['faucet']}:{username}" for username,
@@ -497,7 +537,7 @@ class JobScheduler:
             return MIN_DOMAIN_GAP_SECONDS - elapsed
         return 0
 
-    def record_domain_access(self, faucet_type: str):
+    def record_domain_access(self, faucet_type: str) -> None:
         """Record that we just accessed this faucet domain."""
         self.domain_last_access[faucet_type] = time.time()
 
@@ -823,7 +863,12 @@ class JobScheduler:
 
         return predicted_time
 
-    def record_timer_observation(self, faucet_type: str, stated_timer: float, actual_timer: float):
+    def record_timer_observation(
+        self,
+        faucet_type: str,
+        stated_timer: float,
+        actual_timer: float,
+    ) -> None:
         """Record timer observation for ML learning.
 
         Args:
@@ -850,9 +895,14 @@ class JobScheduler:
 
     @staticmethod
     def _normalize_faucet_key(name: str) -> str:
-        return str(name or "").lower().replace("_", "").replace(" ", "")
+        """Normalize a faucet name for case-insensitive matching."""
+        return (
+            str(name or "").lower().replace("_", "").replace(" ", "")
+        )
 
-    def _match_faucet_key(self, data: Dict[str, Any], faucet_type: str) -> Optional[str]:
+    def _match_faucet_key(
+        self, data: Dict[str, Any], faucet_type: str,
+    ) -> Optional[str]:
         """Find a stats key matching the faucet_type using normalized comparison."""
         if faucet_type in data:
             return faucet_type
@@ -1065,8 +1115,9 @@ class JobScheduler:
                 f"✅ Automated withdrawal check scheduled for {datetime.fromtimestamp(next_check_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
 
         except Exception as e:
-            logger.warning(f"Failed to schedule auto-withdrawal check: {e}")
-            import traceback
+            logger.warning(
+                f"Failed to schedule auto-withdrawal check: {e}"
+            )
             logger.debug(traceback.format_exc())
 
     async def execute_auto_withdrawal_check(self, _job: Job) -> 'ClaimResult':
@@ -1119,8 +1170,9 @@ class JobScheduler:
             )
 
         except Exception as e:
-            logger.error(f"Auto-withdrawal check failed: {e}")
-            import traceback
+            logger.error(
+                f"Auto-withdrawal check failed: {e}"
+            )
             logger.debug(traceback.format_exc())
 
             return ClaimResult(
@@ -1463,22 +1515,31 @@ class JobScheduler:
         self.queue.sort()  # Simple sort for now, could use heapq if queue grows large
         logger.debug(f"Added job: {job.name} for {username} (Prio: {job.priority}, Time: {job.next_run})")
 
-    def _should_bypass_proxy(self, faucet_type: Optional[str]) -> bool:
+    def _should_bypass_proxy(
+        self, faucet_type: Optional[str],
+    ) -> bool:
+        """Check whether proxy should be bypassed for a faucet type."""
         if not faucet_type:
             return False
 
         def _normalize(name: str) -> str:
-            return str(name).lower().replace("_", "").replace(" ", "")
+            return (
+                str(name).lower().replace("_", "").replace(" ", "")
+            )
 
         faucet_key = _normalize(faucet_type)
-        bypass_raw = getattr(self.settings, "proxy_bypass_faucets", None) or []
+        bypass_raw: Any = (
+            getattr(
+                self.settings, "proxy_bypass_faucets", None,
+            )
+            or []
+        )
         if isinstance(bypass_raw, str):
             raw = bypass_raw.strip()
             if not raw or raw.lower() in {"[]", "none", "null"}:
                 bypass_raw = []
             else:
                 try:
-                    import json
                     parsed = json.loads(raw)
                     if isinstance(parsed, list):
                         bypass_raw = parsed
@@ -1486,44 +1547,77 @@ class JobScheduler:
                         bypass_raw = [raw]
                 except Exception:
                     # Fallback: comma/semicolon/space-delimited list
-                    bypass_raw = [item for item in (token.strip()
-                                                    for token in raw.replace(";", ",").split(",")) if item]
+                    bypass_raw = [
+                        item
+                        for item in (
+                            token.strip()
+                            for token in raw.replace(
+                                ";", ","
+                            ).split(",")
+                        )
+                        if item
+                    ]
 
-        # Don't apply a default if bypass_raw is explicitly set to empty list
-        # This allows users to enable proxies for all faucets including FreeBitcoin
+        # Don't apply a default if bypass_raw is
+        # explicitly set to empty list.  This allows users
+        # to enable proxies for all faucets.
 
         bypass = {_normalize(name) for name in bypass_raw}
-        return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
+        return any(
+            faucet_key == b or faucet_key in b
+            or b in faucet_key
+            for b in bypass
+        )
 
-    def _should_disable_image_block(self, faucet_type: Optional[str]) -> bool:
+    def _should_disable_image_block(
+        self, faucet_type: Optional[str],
+    ) -> bool:
+        """Check whether image blocking should be disabled for a faucet."""
         if not faucet_type:
             return False
 
         def _normalize(name: str) -> str:
-            return str(name).lower().replace("_", "").replace(" ", "")
+            return (
+                str(name).lower().replace("_", "").replace(" ", "")
+            )
 
         faucet_key = _normalize(faucet_type)
-        bypass_raw = getattr(self.settings, "image_bypass_faucets", None) or []
+        bypass_raw: Any = (
+            getattr(self.settings, "image_bypass_faucets", None)
+            or []
+        )
         if isinstance(bypass_raw, str):
             raw = bypass_raw.strip()
             if not raw or raw.lower() in {"[]", "none", "null"}:
                 bypass_raw = []
             else:
                 try:
-                    import json
                     parsed = json.loads(raw)
                     if isinstance(parsed, list):
                         bypass_raw = parsed
                     else:
                         bypass_raw = [raw]
                 except Exception:
-                    bypass_raw = [item for item in (token.strip()
-                                                    for token in raw.replace(";", ",").split(",")) if item]
+                    bypass_raw = [
+                        item
+                        for item in (
+                            token.strip()
+                            for token in raw.replace(
+                                ";", ","
+                            ).split(",")
+                        )
+                        if item
+                    ]
 
-        # Don't apply a default - allow explicit empty list to disable all bypasses
+        # Don't apply a default - allow explicit empty
+        # list to disable all bypasses.
 
         bypass = {_normalize(name) for name in bypass_raw}
-        return any(faucet_key == b or faucet_key in b or b in faucet_key for b in bypass)
+        return any(
+            faucet_key == b or faucet_key in b
+            or b in faucet_key
+            for b in bypass
+        )
 
     def get_next_proxy(self, profile: AccountProfile, faucet_type: Optional[str] = None) -> Optional[str]:
         """Select the next proxy for a profile.
@@ -1581,7 +1675,12 @@ class JobScheduler:
 
         return proxy
 
-    def record_proxy_failure(self, proxy: str, detected: bool = False, status_code: int = 0) -> None:
+    def record_proxy_failure(
+        self,
+        proxy: str,
+        detected: bool = False,
+        status_code: int = 0,
+    ) -> None:
         """Record a proxy failure or detection event.
 
         When *detected* is ``True`` the proxy is burned (blacklisted
@@ -1608,7 +1707,9 @@ class JobScheduler:
         else:
             logger.warning(f"⚠️ Proxy connection failure: {proxy}. Failures: {self.proxy_failures[proxy]['failures']}")
 
-    def _track_error_type(self, faucet_type: str, error_type: ErrorType):
+    def _track_error_type(
+        self, faucet_type: str, error_type: ErrorType,
+    ) -> None:
         """Track error types for circuit breaker intelligence."""
         if faucet_type not in self.faucet_error_types:
             self.faucet_error_types[faucet_type] = []
@@ -1618,7 +1719,9 @@ class JobScheduler:
         if len(self.faucet_error_types[faucet_type]) > 10:
             self.faucet_error_types[faucet_type].pop(0)
 
-    def _should_trip_circuit_breaker(self, faucet_type: str, error_type: ErrorType) -> bool:
+    def _should_trip_circuit_breaker(
+        self, faucet_type: str, error_type: ErrorType,
+    ) -> bool:
         """Determine if circuit breaker should trip based on error type.
 
         Only count PERMANENT and repeated PROXY_ISSUE errors toward circuit breaker.
@@ -1638,7 +1741,12 @@ class JobScheduler:
 
         return True  # Default: count toward breaker
 
-    def _get_recovery_delay(self, error_type: ErrorType, retry_count: int, current_proxy: Optional[str]) -> tuple[float, str]:
+    def _get_recovery_delay(
+        self,
+        error_type: ErrorType,
+        retry_count: int,
+        current_proxy: Optional[str],
+    ) -> tuple[float, str]:
         """Calculate recovery delay based on error type and retry count.
 
         Returns:
@@ -1647,39 +1755,49 @@ class JobScheduler:
         if error_type == ErrorType.TRANSIENT:
             if retry_count == 0:
                 return 0, "Retry immediately"
-            else:
-                return 300, "Requeue +5min after transient error"
+            return 300, "Requeue +5min after transient error"
 
-        elif error_type == ErrorType.RATE_LIMIT:
+        if error_type == ErrorType.RATE_LIMIT:
             # Exponential backoff: 10min, 30min, 2hr
             delays = [600, 1800, 7200]
             delay = delays[min(retry_count, len(delays) - 1)]
-            return delay, f"Rate limit backoff: {delay/60:.0f}min"
+            return delay, f"Rate limit backoff: {delay / 60:.0f}min"
 
-        elif error_type == ErrorType.PROXY_ISSUE:
+        if error_type == ErrorType.PROXY_ISSUE:
             if current_proxy:
-                self.record_proxy_failure(current_proxy, detected=True, status_code=403)
+                self.record_proxy_failure(
+                    current_proxy, detected=True, status_code=403,
+                )
                 return 1800, "Rotate proxy, requeue +30min"
-            else:
-                return 1800, "No proxy available, requeue +30min"
+            return 1800, "No proxy available, requeue +30min"
 
-        elif error_type == ErrorType.PERMANENT:
-            # Don't requeue - will be handled by caller
-            return float('inf'), "Permanent failure - account disabled"
+        if error_type == ErrorType.PERMANENT:
+            return (
+                float('inf'),
+                "Permanent failure - account disabled",
+            )
 
-        elif error_type == ErrorType.CONFIG_ERROR:
-            return 1800, "Config error (hCaptcha/solver) - requeue +30min"
+        if error_type == ErrorType.CONFIG_ERROR:
+            return (
+                1800,
+                "Config error (hCaptcha/solver) - requeue +30min",
+            )
 
-        elif error_type == ErrorType.FAUCET_DOWN:
+        if error_type == ErrorType.FAUCET_DOWN:
             return 14400, "Faucet down - skip 4 hours"
 
-        elif error_type == ErrorType.CAPTCHA_FAILED:
+        if error_type == ErrorType.CAPTCHA_FAILED:
             return 900, "Captcha failed - requeue +15min"
 
-        else:  # UNKNOWN
-            return 600, "Unknown error - requeue +10min"
+        # UNKNOWN
+        return 600, "Unknown error - requeue +10min"
 
-    def get_recovery_delay(self, error_type: ErrorType, retry_count: int, current_proxy: Optional[str]) -> tuple[float, str]:
+    def get_recovery_delay(
+        self,
+        error_type: ErrorType,
+        retry_count: int,
+        current_proxy: Optional[str],
+    ) -> tuple[float, str]:
         """Calculate recovery delay after a job failure.
 
         Wraps the private :meth:`_get_recovery_delay` helper.
@@ -1704,16 +1822,18 @@ class JobScheduler:
         try:
             self.profile_concurrency[username] = self.profile_concurrency.get(username, 0) + 1
 
+            # Get proxy using rotation logic
+            current_proxy = self.get_next_proxy(
+                job.profile, faucet_type=job.faucet_type,
+            )
+
             # Track account usage for monitoring
             self.account_usage[username] = {
                 "faucet": job.faucet_type,
                 "last_active": time.time(),
                 "status": "active",
-                "proxy": current_proxy
+                "proxy": current_proxy,
             }
-
-            # Get proxy using rotation logic
-            current_proxy = self.get_next_proxy(job.profile, faucet_type=job.faucet_type)
 
             # Create isolated context for the job with retry on failure
             ua = random.choice(self.settings.user_agents) if self.settings.user_agents else None
@@ -2013,7 +2133,6 @@ class JobScheduler:
                         wait_time += random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
                     job.next_run = time.time() + wait_time
                     job.retry_count = 0
-                    job.retry_count = 0
                 self.add_job(job)
 
         except asyncio.TimeoutError:
@@ -2303,9 +2422,13 @@ class JobScheduler:
                                 f"Deferring claim."
                             )
                             # Defer to next budget reset (tomorrow)
-                            import time as time_module
-                            tomorrow = time_module.strftime("%Y-%m-%d", time_module.localtime(now + 86400))
-                            tomorrow_midnight = time_module.mktime(time_module.strptime(tomorrow, "%Y-%m-%d"))
+                            tomorrow = time.strftime(
+                                "%Y-%m-%d",
+                                time.localtime(now + 86400),
+                            )
+                            tomorrow_midnight = time.mktime(
+                                time.strptime(tomorrow, "%Y-%m-%d"),
+                            )
                             job.next_run = tomorrow_midnight + 300  # 5 min after midnight
                             continue
 

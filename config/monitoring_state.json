@@ -2,18 +2,19 @@
   "metrics": {
     "FreeBitcoin": {
       "faucet_name": "FreeBitcoin",
-      "total_claims": 28,
+      "total_claims": 29,
       "successful_claims": 0,
-      "failed_claims": 28,
+      "failed_claims": 29,
       "last_success_timestamp": null,
-      "last_failure_timestamp": 1769504591.0087483,
-      "last_attempt_timestamp": 1769504591.0087483,
+      "last_failure_timestamp": 1769992948.8451707,
+      "last_attempt_timestamp": 1769992948.8451707,
       "total_claim_time": 0,
       "failure_reasons": {
-        "Unknown": 28
+        "Unknown": 28,
+        "null": 1
       },
       "earnings_usd": 0.0,
-      "costs_usd": 0.009000000000000001
+      "costs_usd": 0.012
     },
     "test_faucet": {
       "faucet_name": "test_faucet",
@@ -43,99 +44,102 @@
     },
     "Faucet1": {
       "faucet_name": "Faucet1",
-      "total_claims": 17,
-      "successful_claims": 17,
+      "total_claims": 18,
+      "successful_claims": 18,
       "failed_claims": 0,
-      "last_success_timestamp": 1769410022.7524757,
+      "last_success_timestamp": 1770361391.945834,
       "last_failure_timestamp": null,
-      "last_attempt_timestamp": 1769410022.7524757,
+      "last_attempt_timestamp": 1770361391.945834,
       "total_claim_time": 0,
       "failure_reasons": {},
-      "earnings_usd": 0.085,
+      "earnings_usd": 0.09000000000000001,
       "costs_usd": 0
     },
     "Faucet2": {
       "faucet_name": "Faucet2",
-      "total_claims": 17,
-      "successful_claims": 17,
+      "total_claims": 18,
+      "successful_claims": 18,
       "failed_claims": 0,
-      "last_success_timestamp": 1769410022.7934217,
+      "last_success_timestamp": 1770361391.9524634,
       "last_failure_timestamp": null,
-      "last_attempt_timestamp": 1769410022.7934217,
+      "last_attempt_timestamp": 1770361391.9524634,
       "total_claim_time": 0,
       "failure_reasons": {},
-      "earnings_usd": 0.17,
+      "earnings_usd": 0.18000000000000002,
       "costs_usd": 0
     },
     "Faucet3": {
       "faucet_name": "Faucet3",
-      "total_claims": 17,
+      "total_claims": 18,
       "successful_claims": 0,
-      "failed_claims": 17,
+      "failed_claims": 18,
       "last_success_timestamp": null,
-      "last_failure_timestamp": 1769410022.8106694,
-      "last_attempt_timestamp": 1769410022.8106694,
+      "last_failure_timestamp": 1770361391.9576886,
+      "last_attempt_timestamp": 1770361391.9576886,
       "total_claim_time": 0,
       "failure_reasons": {
-        "Unknown": 17
+        "Unknown": 17,
+        "null": 1
       },
       "earnings_usd": 0.0,
       "costs_usd": 0
     },
     "firefaucet": {
       "faucet_name": "firefaucet",
-      "total_claims": 3,
-      "successful_claims": 3,
+      "total_claims": 9,
+      "successful_claims": 9,
       "failed_claims": 0,
-      "last_success_timestamp": 1769250717.6919122,
+      "last_success_timestamp": 1770367803.914442,
       "last_failure_timestamp": null,
-      "last_attempt_timestamp": 1769250717.6919122,
+      "last_attempt_timestamp": 1770367803.914442,
       "total_claim_time": 0,
       "failure_reasons": {},
-      "earnings_usd": 0.31500000000000006,
-      "costs_usd": 0.009000000000000001
+      "earnings_usd": 0.945,
+      "costs_usd": 0.027
     },
     "cointiply": {
       "faucet_name": "cointiply",
-      "total_claims": 3,
-      "successful_claims": 2,
-      "failed_claims": 1,
-      "last_success_timestamp": 1769250717.7416902,
-      "last_failure_timestamp": 1769250717.7375867,
-      "last_attempt_timestamp": 1769250717.7416902,
+      "total_claims": 9,
+      "successful_claims": 6,
+      "failed_claims": 3,
+      "last_success_timestamp": 1770367803.9406993,
+      "last_failure_timestamp": 1770367803.9354038,
+      "last_attempt_timestamp": 1770367803.9406993,
       "total_claim_time": 0,
       "failure_reasons": {
-        "Unknown": 1
+        "Unknown": 1,
+        "null": 2
       },
-      "earnings_usd": 0.098,
-      "costs_usd": 0.006
+      "earnings_usd": 0.294,
+      "costs_usd": 0.018000000000000002
     },
     "test_low": {
       "faucet_name": "test_low",
-      "total_claims": 4,
-      "successful_claims": 2,
-      "failed_claims": 2,
-      "last_success_timestamp": 1769250717.760469,
-      "last_failure_timestamp": 1769250717.757231,
-      "last_attempt_timestamp": 1769250717.760469,
+      "total_claims": 12,
+      "successful_claims": 6,
+      "failed_claims": 6,
+      "last_success_timestamp": 1770367803.9726863,
+      "last_failure_timestamp": 1770367803.9671805,
+      "last_attempt_timestamp": 1770367803.9726863,
       "total_claim_time": 0,
       "failure_reasons": {
-        "Unknown": 2
+        "Unknown": 2,
+        "null": 4
       },
-      "earnings_usd": 0.019000000000000003,
-      "costs_usd": 0.006
+      "earnings_usd": 0.05700000000000001,
+      "costs_usd": 0.018000000000000002
     },
     "DutchyCorp": {
       "faucet_name": "DutchyCorp",
-      "total_claims": 1,
-      "successful_claims": 1,
+      "total_claims": 8,
+      "successful_claims": 8,
       "failed_claims": 0,
-      "last_success_timestamp": 1769409931.7279088,
+      "last_success_timestamp": 1770368241.573049,
       "last_failure_timestamp": null,
-      "last_attempt_timestamp": 1769409931.7279088,
+      "last_attempt_timestamp": 1770368241.573049,
       "total_claim_time": 0,
       "failure_reasons": {},
-      "earnings_usd": 1e-08,
+      "earnings_usd": 7.999999999999999e-08,
       "costs_usd": 0
     },
     "freebitcoin": {
@@ -175,7 +179,22 @@
       "total_claim_time": 0,
       "failure_reasons": {},
       "earnings_usd": 0.0,
-      "costs_usd": 0.006
+      "costs_usd": 0.015
+    },
+    "Generic": {
+      "faucet_name": "Generic",
+      "total_claims": 9,
+      "successful_claims": 0,
+      "failed_claims": 9,
+      "last_success_timestamp": null,
+      "last_failure_timestamp": 1770555358.9169052,
+      "last_attempt_timestamp": 1770555358.9169052,
+      "total_claim_time": 0,
+      "failure_reasons": {
+        "null": 9
+      },
+      "earnings_usd": 0.0,
+      "costs_usd": 0
     }
   },
   "alerts": [
@@ -184,97 +203,105 @@
       "severity": "medium",
       "faucet": "FreeBitcoin",
       "message": "FreeBitcoin: Success rate only 0.0%",
-      "timestamp": 1769874666.3154995,
+      "timestamp": 1770555733.7758913,
       "success_rate": 0.0
     },
     {
       "type": "negative_roi",
       "severity": "low",
       "faucet": "FreeBitcoin",
-      "message": "FreeBitcoin: Negative ROI ($-0.0090)",
-      "timestamp": 1769874666.3154995,
+      "message": "FreeBitcoin: Negative ROI ($-0.0120)",
+      "timestamp": 1770555733.7758913,
       "roi_percent": -100.0
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "test_faucet",
-      "message": "test_faucet: No successful claim in 275.0 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 275.0073422875007
+      "message": "test_faucet: No successful claim in 464.2 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 464.1927479600906
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "TestFaucet",
-      "message": "TestFaucet: No successful claim in 259.5 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 259.51333181573284
+      "message": "TestFaucet: No successful claim in 448.7 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 448.6987374878592
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "Faucet1",
-      "message": "Faucet1: No successful claim in 129.1 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 129.06765640662775
+      "message": "Faucet1: No successful claim in 54.0 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 53.98384170108371
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "Faucet2",
-      "message": "Faucet2: No successful claim in 129.1 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 129.06764503379662
+      "message": "Faucet2: No successful claim in 54.0 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 53.98383986035983
     },
     {
       "type": "low_success_rate",
       "severity": "medium",
       "faucet": "Faucet3",
       "message": "Faucet3: Success rate only 0.0%",
-      "timestamp": 1769874666.3154995,
+      "timestamp": 1770555733.7758913,
       "success_rate": 0.0
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "firefaucet",
-      "message": "firefaucet: No successful claim in 173.3 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 173.3190621215105
+      "message": "firefaucet: No successful claim in 52.2 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 52.2027393119865
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "cointiply",
-      "message": "cointiply: No successful claim in 173.3 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 173.31904829521974
+      "message": "cointiply: No successful claim in 52.2 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 52.202732019093304
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "test_low",
-      "message": "test_low: No successful claim in 173.3 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 173.31904307981333
+      "message": "test_low: No successful claim in 52.2 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 52.20272313455741
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "DutchyCorp",
-      "message": "DutchyCorp: No successful claim in 129.1 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 129.09294101397197
+      "message": "DutchyCorp: No successful claim in 52.1 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 52.08116747895877
     },
     {
       "type": "no_success",
       "severity": "high",
       "faucet": "freebitcoin",
-      "message": "freebitcoin: No successful claim in 102.5 hours",
-      "timestamp": 1769874666.3154995,
-      "hours_since_success": 102.46861398186948
+      "message": "freebitcoin: No successful claim in 291.7 hours",
+      "timestamp": 1770555733.7758913,
+      "hours_since_success": 291.65401965240636
+    },
+    {
+      "type": "low_success_rate",
+      "severity": "medium",
+      "faucet": "Generic",
+      "message": "Generic: Success rate only 0.0%",
+      "timestamp": 1770555733.7758913,
+      "success_rate": 0.0
     }
   ],
-  "last_updated": 1769874815.1107607
+  "last_updated": 1770555733.7762158
 }
