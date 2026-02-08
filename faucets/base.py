@@ -619,7 +619,11 @@ class FaucetBot:
         if isinstance(dict_entry, dict):
             for key in ("address", "wallet", "addr"):
                 if dict_entry.get(key):
-                    logger.debug(f"[{self.faucet_name}] Using {source} wallet_addresses dict ({key}) for {coin}")
+                    logger.debug(
+                        f"[{self.faucet_name}] Using {source}"
+                        f" wallet_addresses dict ({key})"
+                        f" for {coin}"
+                    )
                     return str(dict_entry[key])
             return None
         logger.debug(f"[{self.faucet_name}] Using {source} wallet_addresses dict for {coin}")
@@ -705,9 +709,8 @@ class FaucetBot:
             # Non-critical - don't fail the faucet if warmup fails
             logger.debug(f"[{self.faucet_name}] Warm-up skipped: {e}")
 
-    async def simulate_tab_activity(self):
-        """
-        Simulate tab switching / background-foreground transitions.
+    async def simulate_tab_activity(self) -> None:
+        """Simulate tab switching / background-foreground transitions.
 
         Anti-bot systems track visibility state changes. Real users frequently
         switch tabs. This simulates that pattern by briefly blurring and
@@ -754,7 +757,11 @@ class FaucetBot:
         # Check if profile already has human_profile assigned
         if profile_name in fingerprints and "human_profile" in fingerprints[profile_name]:
             self.human_profile = fingerprints[profile_name]["human_profile"]
-            logger.info(f"[{self.faucet_name}] Loaded existing human profile '{self.human_profile}' for {profile_name}")
+            logger.info(
+                f"[{self.faucet_name}] Loaded existing human"
+                f" profile '{self.human_profile}'"
+                f" for {profile_name}"
+            )
         else:
             # Assign new profile
             self.human_profile = HumanProfile.get_random_profile()
@@ -2416,7 +2423,7 @@ class FaucetBot:
         return result
 
     # Mapping of name substrings to cryptocurrency codes (order matters: check specific before general)
-     _CRYPTO_NAME_MAP: Dict[str, str] = {"btc": "BTC", "bitcoin": "BTC", "ltc": "LTC", "lite": "LTC", "doge": "DOGE", "trx": "TRX", "tron": "TRX", "eth": "ETH", "bnb": "BNB", "sol": "SOL", "ton": "TON", "matic": "MATIC", "polygon": "MATIC", "dash": "DASH", "bch": "BCH", "usdt": "USDT", "usd": "USDT",}
+    _CRYPTO_NAME_MAP: Dict[str, str] = {"btc": "BTC", "bitcoin": "BTC", "ltc": "LTC", "lite": "LTC", "doge": "DOGE", "trx": "TRX", "tron": "TRX", "eth": "ETH", "bnb": "BNB", "sol": "SOL", "ton": "TON", "matic": "MATIC", "polygon": "MATIC", "dash": "DASH", "bch": "BCH", "usdt": "USDT", "usd": "USDT",}
 
     def _get_cryptocurrency_for_faucet(self) -> str:
         """
