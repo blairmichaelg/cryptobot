@@ -114,5 +114,9 @@
   "test_profile": {
     "created_at": 1769583728.3361065,
     "cookie_count": 10
+  },
+  "firefaucet": {
+    "created_at": 1767703109.8202534,
+    "cookie_count": 28
   }
 }

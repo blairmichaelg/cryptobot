@@ -172,7 +172,10 @@ class HealthMonitor:
         try:
             state = {
                 'restart_count': self.restart_count,
-                'last_restart_time': self.last_restart_time.isoformat() if self.last_restart_time else None,
+                'last_restart_time': (
+                    self.last_restart_time.isoformat()
+                    if self.last_restart_time else None
+                ),
                 'backoff_seconds': self.backoff_seconds
             }
             with open(self.restart_backoff_file, 'w', encoding='utf-8') as f:
@@ -210,7 +213,11 @@ class HealthMonitor:
 
                 # Reset failure count if browser is responsive
                 if self.browser_context_failures > 0:
-                    logger.info(f"Browser health recovered (previous failures: {self.browser_context_failures})")
+                    logger.info(
+                        "Browser health recovered "
+                        f"(previous failures: "
+                        f"{self.browser_context_failures})"
+                    )
                     self.browser_context_failures = 0
 
                 return {
@@ -223,7 +230,11 @@ class HealthMonitor:
             except Exception as e:
                 self.browser_context_failures += 1
                 logger.warning(
-                    f"Browser context check failed ({self.browser_context_failures}/{self.MAX_BROWSER_CONTEXT_FAILURES}): {e}")
+                    f"Browser context check failed "
+                    f"({self.browser_context_failures}/"
+                    f"{self.MAX_BROWSER_CONTEXT_FAILURES})"
+                    f": {e}"
+                )
 
                 return {
                     "healthy": self.browser_context_failures < self.MAX_BROWSER_CONTEXT_FAILURES,
@@ -273,7 +284,10 @@ class HealthMonitor:
                 "dead": dead_proxies,
                 "cooldown": cooldown_proxies,
                 "avg_latency_ms": round(avg_latency, 2),
-                "message": f"{healthy_proxies}/{total_proxies} proxies healthy, avg latency {avg_latency:.0f}ms"
+                "message": (
+                    f"{healthy_proxies}/{total_proxies} proxies "
+                    f"healthy, avg latency {avg_latency:.0f}ms"
+                )
             }
 
         except Exception as e:
@@ -322,7 +336,10 @@ class HealthMonitor:
                 "success_count": success_count,
                 "total_count": total_count,
                 "success_rate": round(success_rate, 2),
-                "message": f"{faucet_type}: {success_rate:.0%} success rate ({success_count}/{total_count})"
+                "message": (
+                    f"{faucet_type}: {success_rate:.0%} success "
+                    f"rate ({success_count}/{total_count})"
+                )
             }
 
         return results
@@ -374,7 +391,10 @@ class HealthMonitor:
             logger.error(f"System health check error: {e}")
             return {"healthy": False, "message": f"Health check error: {e}"}
 
-    async def send_health_alert(self, severity: str, message: str, component: str = "general") -> None:
+    async def send_health_alert(
+        self, severity: str, message: str,
+        component: str = "general"
+    ) -> None:
         """
         Send health alert with deduplication.
 
@@ -394,7 +414,9 @@ class HealthMonitor:
         self.alert_cooldowns[alert_key] = now
 
         # Log alert
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
         alert_msg = f"🚨 HEALTH ALERT [{severity}] {component}: {message} ({timestamp})"
 
         if severity == "CRITICAL":
@@ -445,16 +467,24 @@ class HealthMonitor:
             if self.browser_context_failures >= self.MAX_BROWSER_CONTEXT_FAILURES:
                 await self.send_health_alert(
                     "CRITICAL",
-                    f"Browser context failed {self.browser_context_failures} times - restart needed",
+                    f"Browser context failed "
+                    f"{self.browser_context_failures} "
+                    f"times - restart needed",
                     "browser"
                 )
             else:
-                await self.send_health_alert("WARNING", browser_health.get("message", ""), "browser")
+                await self.send_health_alert(
+                    "WARNING",
+                    browser_health.get("message", ""),
+                    "browser"
+                )
 
         if not proxy_health.get("healthy", True):
             await self.send_health_alert(
                 "CRITICAL",
-                f"Only {proxy_health.get('healthy_count', 0)} healthy proxies (minimum: {self.MIN_HEALTHY_PROXIES})",
+                f"Only {proxy_health.get('healthy_count', 0)} "
+                f"healthy proxies "
+                f"(minimum: {self.MIN_HEALTHY_PROXIES})",
                 "proxy"
             )
 
@@ -463,7 +493,11 @@ class HealthMonitor:
 
         for faucet_type, fh in faucet_health.items():
             if not fh.get("healthy", True):
-                await self.send_health_alert("WARNING", fh.get("message", ""), f"faucet_{faucet_type}")
+                await self.send_health_alert(
+                    "WARNING",
+                    fh.get("message", ""),
+                    f"faucet_{faucet_type}"
+                )
 
         # Compile results
         results = {
@@ -475,7 +509,10 @@ class HealthMonitor:
             "faucets": faucet_health
         }
 
-        logger.info(f"[HEALTH] Health check complete - Overall: {'HEALTHY' if all_healthy else 'DEGRADED'}")
+        status_label = "HEALTHY" if all_healthy else "DEGRADED"
+        logger.info(
+            f"[HEALTH] Health check complete - Overall: {status_label}"
+        )
         return results
 
     def should_restart_browser(self) -> bool:
@@ -541,7 +578,11 @@ class HealthMonitor:
             Disk usage percentage (0-100)
         """
         try:
-            exit_code, stdout, _ = self._run_command("df -h / | tail -1 | awk '{print $5}' | sed 's/%//'")
+            cmd = (
+                "df -h / | tail -1 | awk '{print $5}'"
+                " | sed 's/%//'"
+            )
+            exit_code, stdout, _ = self._run_command(cmd)
             if exit_code == 0 and stdout:
                 return int(stdout)
         except Exception as e:
@@ -738,7 +779,10 @@ class HealthMonitor:
         Args:
             result: Health check result
         """
-        webhook_url = os.getenv('ALERT_WEBHOOK_URL')
+        webhook_url = (
+            self.alert_webhook_url
+            or os.getenv('ALERT_WEBHOOK_URL')
+        )
         if not webhook_url or not REQUESTS_AVAILABLE:
             return
 
@@ -875,13 +919,16 @@ Alerts:
         if self.last_restart_time:
             time_since_restart = (now - self.last_restart_time).total_seconds()
             if time_since_restart < self.backoff_seconds:
-                logger.info(f"Skipping restart - backoff period ({self.backoff_seconds}s) not elapsed")
+                logger.info(
+                    f"Skipping restart - backoff period "
+                    f"({self.backoff_seconds}s) not elapsed"
+                )
                 return False
 
         logger.info(f"Attempting to restart service (attempt #{self.restart_count + 1})")
 
         # Restart the service
-        exit_code, stdout, stderr = self._run_command(f"sudo systemctl restart {self.service_name}")
+        exit_code, _, stderr = self._run_command(f"sudo systemctl restart {self.service_name}")
 
         if exit_code != 0:
             logger.error(f"Failed to restart service: {stderr}")
@@ -908,9 +955,9 @@ Alerts:
             self._save_restart_state()
 
             return True
-        else:
-            logger.error("Service restart failed - service not running")
-            return False
+
+        logger.error("Service restart failed - service not running")
+        return False
 
     def reset_backoff(self) -> None:
         """Reset the restart backoff counter"""
@@ -990,7 +1037,7 @@ Alerts:
             raise
 
 
-def main():
+def main() -> None:
     """Main entry point for health monitor CLI"""
     import argparse
 

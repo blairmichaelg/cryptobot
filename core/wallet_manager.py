@@ -1,3 +1,12 @@
+"""Wallet daemon interface for local crypto wallet RPC and public blockchain APIs.
+
+Provides an async context-managed client that keeps two separate HTTP sessions:
+one authenticated session for JSON-RPC calls to the local wallet daemon and one
+unauthenticated session for read-only public API calls (mempool fee lookups,
+on-chain balance queries, etc.).  This prevents RPC credentials from leaking to
+third-party services.
+"""
+
 import aiohttp
 import logging
 import json

@@ -22,15 +22,16 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-from playwright.async_api import Page, Locator
-from solvers.captcha import CaptchaSolver
-from core.config import BotSettings
-from browser.stealth_hub import HumanProfile, StealthHub
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from core.extractor import DataExtractor
+from playwright.async_api import Locator, Page
+
+from browser.stealth_hub import HumanProfile, StealthHub
 from core.analytics import get_tracker
+from core.config import BotSettings
+from core.extractor import DataExtractor
 from core.orchestrator import ErrorType
+from solvers.captcha import CaptchaSolver
 
 logger = logging.getLogger(__name__)
 

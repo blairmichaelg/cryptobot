@@ -543,7 +543,7 @@ class CaptchaSolver:
                 method = "hcaptcha"
                 # Often in the url params
                 src = await hcaptcha_elem.get_attribute("src")
-                if "sitekey=" in src:
+                if src and "sitekey=" in src:
                     sitekey = src.split("sitekey=")[1].split("&")[0]
 
         # reCaptcha

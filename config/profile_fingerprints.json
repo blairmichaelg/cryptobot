@@ -462,5 +462,20 @@
   },
   "existing_user": {
     "human_profile": "normal"
+  },
+  "firefaucet": {
+    "locale": "en-US",
+    "timezone_id": "America/Phoenix",
+    "canvas_seed": 734100,
+    "gpu_index": 9,
+    "audio_seed": 355491,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "platform": "Linux x86_64",
+    "viewport_width": 1920,
+    "viewport_height": 1080,
+    "device_scale_factor": 1.25
   }
 }
