@@ -11,6 +11,10 @@ fork) via Playwright.  Features include:
 * Fingerprint persistence (canvas seed, GPU, audio, hardware concurrency)
   stored in ``config/profile_fingerprints.json``.
 * Atomic JSON read/write with backup rotation for all state files.
+
+NOTE: When deploying to Azure VM, ensure this file is fully synchronized.
+The 'Dict' and 'List' imports from 'typing' are CRITICAL for the Python version
+handling the service on the VM. Missing these causes NameError crashes.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+
 class BrowserManager:
     """Manages the lifecycle of a stealth Camoufox browser instance.
 
@@ -48,7 +53,9 @@ class BrowserManager:
     all jobs.  Thread safety is provided by asyncio (all public methods are
     coroutines).
     """
-    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True, use_encrypted_cookies: bool = True, timeout: int = 60000, user_agents: Optional[List[str]] = None):
+
+    def __init__(self, headless: bool = True, proxy: Optional[str] = None, block_images: bool = True, block_media: bool = True,
+                 use_encrypted_cookies: bool = True, timeout: int = 60000, user_agents: Optional[List[str]] = None):
         """
         Initialize the BrowserManager.
 
@@ -71,10 +78,10 @@ class BrowserManager:
         self.context = None
         self.playwright = None
         self.camoufox: Optional[AsyncCamoufox] = None
-        
+
         # Track closed contexts to prevent double-close errors
         self._closed_contexts: set = set()
-        
+
         # Cookie storage - encrypted by default
         # NOTE: Requires that load_dotenv() has been called BEFORE this __init__
         # Otherwise os.environ.get('CRYPTOBOT_COOKIE_KEY') will be None
@@ -104,7 +111,7 @@ class BrowserManager:
                 backup_base = filepath + ".backup"
                 for i in range(max_backups - 1, 0, -1):
                     old = f"{backup_base}.{i}"
-                    new = f"{backup_base}.{i+1}"
+                    new = f"{backup_base}.{i + 1}"
                     if os.path.exists(old):
                         os.replace(old, new)
                 os.replace(filepath, f"{backup_base}.1")
@@ -201,7 +208,7 @@ class BrowserManager:
             Exception: If the browser fails to start.
         """
         logger.info("Launching Camoufox (Headless: %s)...", self.headless)
-        
+
         # Construct arguments
         # We launch the browser WITHOUT a global proxy to allow per-context proxies
         # For headless Linux servers, we need to specify realistic screen constraints
@@ -234,7 +241,7 @@ class BrowserManager:
             # Disable Service Worker & Push notifications (reduces fingerprint surface)
             "dom.push.enabled": False,
             "dom.serviceWorkers.enabled": True,  # Keep enabled - disabling is suspicious
-            # WebRTC hardening 
+            # WebRTC hardening
             "media.peerconnection.ice.default_address_only": True,  # Prevent local IP leak
             "media.peerconnection.ice.no_host": True,  # No host candidate in ICE
             "media.peerconnection.ice.proxy_only": True,  # Force ICE through proxy
@@ -251,7 +258,7 @@ class BrowserManager:
             "network.dns.disablePrefetch": True,
             "network.prefetch-next": False,
             "network.dns.disablePrefetchFromHTTPS": True,  # Also block HTTPS DNS prefetch
-            # Proper referrer policy  
+            # Proper referrer policy
             "network.http.referer.XOriginPolicy": 0,  # Send referrer (blocking is suspicious)
             # Canvas fingerprinting protection (Camoufox handles this, reinforce)
             "privacy.resistFingerprinting": False,  # DON'T enable - makes fingerprint too uniform
@@ -309,7 +316,8 @@ class BrowserManager:
                 return self
             raise
 
-    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None, timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True, block_images_override: Optional[bool] = None, block_media_override: Optional[bool] = None) -> BrowserContext:
+    async def create_context(self, proxy: Optional[str] = None, user_agent: Optional[str] = None, profile_name: Optional[str] = None, locale_override: Optional[str] = None,
+                             timezone_override: Optional[str] = None, allow_sticky_proxy: bool = True, block_images_override: Optional[bool] = None, block_media_override: Optional[bool] = None) -> BrowserContext:
         """Create an isolated browser context with per-profile stealth.
 
         Each context gets its own proxy, fingerprint (canvas/WebGL/audio
@@ -369,7 +377,7 @@ class BrowserManager:
                 device_scale_factor = fingerprint.get("device_scale_factor")
                 audio_seed = fingerprint.get("audio_seed")
                 logger.debug("🔒 Using persistent fingerprint for %s: %s, %s", profile_name, locale, timezone_id)
-        
+
         # Generate new fingerprint if not found
         canvas_seed = None
         gpu_index = None
@@ -433,7 +441,8 @@ class BrowserManager:
                 device_scale_factor=device_scale_factor
             )
 
-        if profile_name and any(v is None for v in [audio_seed, languages, platform_name, viewport_width, viewport_height, device_scale_factor]):
+        if profile_name and any(v is None for v in [audio_seed, languages,
+                                platform_name, viewport_width, viewport_height, device_scale_factor]):
             await self.save_profile_fingerprint(
                 profile_name,
                 locale,
@@ -458,7 +467,7 @@ class BrowserManager:
             "bypass_csp": True,  # Bypass Content Security Policy for better stealth
             "ignore_https_errors": True,  # Ignore SSL errors with proxies
         }
-        
+
         # Sticky Session Logic: Resolve and Persist Proxy
         if profile_name and allow_sticky_proxy:
             # Load existing binding
@@ -468,17 +477,21 @@ class BrowserManager:
                 logger.warning("⚠️ Requested proxy for %s is dead/cooldown. Ignoring: %s", profile_name, proxy)
                 proxy = None
                 await self.remove_proxy_binding(profile_name)
-            
+
             if saved_proxy:
                 if self._is_proxy_blacklisted(saved_proxy):
-                    logger.warning("⚠️ Sticky proxy for %s is dead/cooldown. Clearing binding: %s", profile_name, saved_proxy)
+                    logger.warning(
+                        "⚠️ Sticky proxy for %s is dead/cooldown. Clearing binding: %s",
+                        profile_name,
+                        saved_proxy)
                     await self.remove_proxy_binding(profile_name)
                     saved_proxy = None
-                
+
             if saved_proxy:
                 # Sticky session: Use saved proxy unless a new one is explicitly requested (Rotation)
                 if proxy and proxy != saved_proxy:
-                    logger.info(f"🔄 Rotation detected for {profile_name}. Updating sticky binding: {saved_proxy} -> {proxy}")
+                    logger.info(
+                        f"🔄 Rotation detected for {profile_name}. Updating sticky binding: {saved_proxy} -> {proxy}")
                     await self.save_proxy_binding(profile_name, proxy)
                 else:
                     # No specific proxy requested, or same one requested -> Stick to saved
@@ -526,11 +539,11 @@ class BrowserManager:
             "es-ES": "es-ES,es;q=0.9,en;q=0.8",
         }
         ua = context_args.get("user_agent", "")
-        
+
         # Ensure platform_name is consistent with the chosen User-Agent
         if ua and not platform_name:
             platform_name = StealthHub.get_consistent_platform_for_ua(ua)
-        
+
         extra_headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": accept_language_map.get(locale or "en-US", "en-US,en;q=0.9"),
@@ -557,17 +570,18 @@ class BrowserManager:
             extra_headers["Sec-CH-UA-Mobile"] = "?0"
             extra_headers["Sec-CH-UA-Platform"] = f'"Windows"'
             extra_headers["Sec-CH-UA-Full-Version-List"] = f'"Chromium";v="{edge_match}.0.0.0", "Microsoft Edge";v="{edge_match}.0.0.0", "Not-A.Brand";v="99.0.0.0"'
-        
+
         # Remove None values (e.g., DNT)
         extra_headers = {k: v for k, v in extra_headers.items() if v is not None}
         context_args["extra_http_headers"] = extra_headers
 
-        logger.info("Creating isolated stealth context (Profile: %s, Proxy: %s, Resolution: %sx%s)", profile_name or "Anonymous", proxy or "None", dims[0], dims[1])
+        logger.info("Creating isolated stealth context (Profile: %s, Proxy: %s, Resolution: %sx%s)",
+                    profile_name or "Anonymous", proxy or "None", dims[0], dims[1])
         context = await self.browser.new_context(**context_args)
-        
+
         # Set global timeout for this context
         context.set_default_timeout(self.timeout)
-        
+
         # Comprehensive Anti-Fingerprinting Suite v3.0 using StealthHub
         # Generate deterministic parameters if not loaded from existing fingerprint
         if canvas_seed is None and profile_name:
@@ -576,7 +590,7 @@ class BrowserManager:
             gpu_index = hash(profile_name + "_gpu") % 17  # Expanded GPU list (0-16)
         if audio_seed is None and profile_name:
             audio_seed = hash(profile_name + "_audio") % 1000000
-        
+
         # Use defaults for anonymous profiles
         if canvas_seed is None:
             canvas_seed = 12345
@@ -584,17 +598,17 @@ class BrowserManager:
             gpu_index = 0
         if audio_seed is None:
             audio_seed = 98765
-        
+
         if not languages:
             languages = [locale or "en-US", (locale or "en-US").split("-")[0]]
         if not platform_name:
             platform_name = "Win32"
-        
+
         # Derive hardware_concurrency deterministically per profile
         hardware_concurrency = None
         if profile_name:
             hardware_concurrency = 4 + (hash(profile_name + "_cores") % 5) * 2  # 4,6,8,10,12
-        
+
         await context.add_init_script(
             StealthHub.get_stealth_script(
                 canvas_seed=canvas_seed,
@@ -605,7 +619,7 @@ class BrowserManager:
                 hardware_concurrency=hardware_concurrency
             )
         )
-        logger.debug("🎨 Injected stealth v4.0: canvas_seed=%s, gpu=%s, cores=%s", 
+        logger.debug("🎨 Injected stealth v4.0: canvas_seed=%s, gpu=%s, cores=%s",
                      canvas_seed, gpu_index, hardware_concurrency)
 
         # Apply Resource Blocker using instance settings or overrides
@@ -614,11 +628,11 @@ class BrowserManager:
         blocker = ResourceBlocker(block_images=block_images, block_media=block_media)
         await context.route("**/*", blocker.handle_route)
         context.resource_blocker = blocker  # type: ignore[attr-defined]
-        
+
         # Load cookies if profile name provided
         if profile_name:
             await self.load_cookies(context, profile_name)
-        
+
         return context
 
     async def save_cookies(self, context: BrowserContext, profile_name: str) -> None:
@@ -633,7 +647,7 @@ class BrowserManager:
         """
         try:
             cookies = await context.cookies()
-            
+
             # Use encrypted storage if available
             if self._secure_storage:
                 await self._secure_storage.save_cookies(cookies, profile_name)
@@ -652,21 +666,21 @@ class BrowserManager:
         """
         Load previously saved cookies into a browser context.
         Tries encrypted storage first, falls back to unencrypted.
-        
+
         Args:
             context: The browser context to load cookies into
             profile_name: Unique identifier for this profile
-            
+
         Returns:
             True if cookies were loaded successfully, False otherwise
         """
         cookies = None
-        
+
         try:
             # Try encrypted storage first
             if self._secure_storage:
                 cookies = await self._secure_storage.load_cookies(profile_name)
-            
+
             # Fallback to unencrypted if no encrypted cookies found
             if not cookies:
                 cookies_file = CONFIG_DIR / "cookies" / f"{profile_name}.json"
@@ -674,7 +688,7 @@ class BrowserManager:
                     with open(cookies_file, "r") as f:
                         cookies = json.load(f)
                     logger.debug(f"Loaded unencrypted cookies for {profile_name}")
-            
+
             if cookies:
                 await context.add_cookies(cookies)
                 logger.info(f"🍪 Loaded {len(cookies)} cookies for {profile_name}")
@@ -683,10 +697,10 @@ class BrowserManager:
             if self.seed_cookie_jar:
                 await self._seed_cookie_jar(context, profile_name)
                 return True
-            
+
             logger.debug(f"No saved cookies for {profile_name}")
             return False
-            
+
         except Exception as e:
             logger.warning(f"Failed to load cookies for {profile_name}: {e}")
             return False
@@ -704,7 +718,7 @@ class BrowserManager:
 
     async def _seed_cookie_jar(self, context: BrowserContext, profile_name: str) -> None:
         """Seed a minimal cookie jar to avoid a brand new profile signature.
-        
+
         Uses realistic domain/cookie patterns that mimic organic browsing:
         - Popular sites with realistic cookie names
         - Consent cookies (GDPR compliance signals)
@@ -730,7 +744,7 @@ class BrowserManager:
             "linkedin.com",
             "medium.com",
         ]
-        
+
         # Realistic cookie names that don't look auto-generated
         cookie_templates = [
             {"name": "_ga", "value_fn": lambda: f"GA1.2.{random.randint(100000000, 999999999)}.{int(time.time()) - random.randint(86400, 7776000)}"},
@@ -759,22 +773,22 @@ class BrowserManager:
 
         cookies = []
         used_combos = set()
-        
+
         for _ in range(cookie_count):
             domain = random.choice(base_domains)
             template = random.choice(cookie_templates)
             combo_key = f"{domain}:{template['name']}"
-            
+
             # Avoid duplicate domain+name combos
             if combo_key in used_combos:
                 continue
             used_combos.add(combo_key)
-            
+
             max_age_days = random.randint(30, 365)
             expires = int(created_at + (max_age_days * 86400))
             if expires < now:
                 expires = int(now + random.randint(30, 180) * 86400)
-            
+
             cookies.append({
                 "name": template["name"],
                 "value": template["value_fn"](),
@@ -869,7 +883,7 @@ class BrowserManager:
             if canvas_seed is None:
                 # Use hash of profile name to generate consistent seed
                 canvas_seed = hash(profile_name) % 1000000
-            
+
             if gpu_index is None:
                 # Use hash to select GPU from 17 available configs (0-16)
                 gpu_index = hash(profile_name + "_gpu") % 17
@@ -882,7 +896,7 @@ class BrowserManager:
 
             if platform is None:
                 platform = "Win32"
-            
+
             data[profile_name] = {
                 "locale": locale,
                 "timezone_id": timezone_id,
@@ -897,7 +911,7 @@ class BrowserManager:
             }
 
             self._safe_json_write(str(fingerprint_file), data)
-            
+
             logger.debug(f"💾 Saved fingerprint for {profile_name}: canvas_seed={canvas_seed}, gpu_index={gpu_index}")
         except Exception as e:
             logger.error(f"Failed to save fingerprint for {profile_name}: {e}")
@@ -951,9 +965,9 @@ class BrowserManager:
             blocker = ResourceBlocker(block_images=True, block_media=True)
             await page.route("**/*", blocker.handle_route)
             page.resource_blocker = blocker
-            
+
         return page
-    
+
     async def safe_new_page(self, context: BrowserContext) -> Optional[Page]:
         """Create a new page with a context-health pre-check.
 
@@ -1020,13 +1034,13 @@ class BrowserManager:
         try:
             if not context:
                 return False
-            
+
             # Check if context is in our closed set
             context_id = id(context)
             if context_id in self._closed_contexts:
                 logger.debug(f"Context {context_id} is in closed set")
                 return False
-            
+
             # Try a lightweight operation that will fail if context is closed
             # Creating a new page is reliable but we close it immediately
             test_page = await asyncio.wait_for(context.new_page(), timeout=5.0)
@@ -1045,7 +1059,7 @@ class BrowserManager:
             if context:
                 self._closed_contexts.add(id(context))
             return False
-    
+
     async def check_page_alive(self, page: Page) -> bool:
         """Check if a page is still alive and responsive.
 
@@ -1081,28 +1095,28 @@ class BrowserManager:
         """
         Safely close a browser context with health checks and cookie saving.
         Tracks closed contexts to prevent double-close errors.
-        
+
         Args:
             context: The context to close
             profile_name: Optional profile name for cookie saving
-            
+
         Returns:
             True if successfully closed, False if already closed or error
         """
         if not context:
             return False
-        
+
         context_id = id(context)
-        
+
         # Check if already closed
         if context_id in self._closed_contexts:
             logger.debug(f"Context {context_id} already marked as closed")
             return False
-        
+
         try:
             # Check if context is still alive
             is_alive = await self.check_context_alive(context)
-            
+
             if is_alive and profile_name:
                 # Try to save cookies before closing
                 try:
@@ -1114,18 +1128,18 @@ class BrowserManager:
                     logger.warning(f"Cookie save timed out for {profile_name}")
                 except Exception as e:
                     logger.debug(f"Cookie save failed for {profile_name}: {e}")
-            
+
             if is_alive:
                 # Close the context with timeout
                 await asyncio.wait_for(context.close(), timeout=5.0)
                 logger.debug(f"Successfully closed context {context_id}")
             else:
                 logger.debug(f"Context {context_id} was already closed - skipping close()")
-            
+
             # Mark as closed
             self._closed_contexts.add(context_id)
             return True
-            
+
         except asyncio.TimeoutError:
             logger.warning(f"Context close timed out for {context_id}")
             self._closed_contexts.add(context_id)
@@ -1139,7 +1153,7 @@ class BrowserManager:
                 logger.warning(f"Context close failed: {e}")
             self._closed_contexts.add(context_id)
             return False
-    
+
     async def check_page_status(self, page: Page) -> Dict[str, Any]:
         """Probe the page for HTTP-level blocks or network errors.
 
@@ -1159,18 +1173,18 @@ class BrowserManager:
             if not await self.check_page_alive(page):
                 logger.warning("Page is closed - cannot check status")
                 return {"blocked": False, "network_error": True, "status": -1}
-            
-            # We don't need listeners for the primary status, 
+
+            # We don't need listeners for the primary status,
             # we can just use the page.url and a lightweight eval
             status = await page.evaluate("async () => { try { return (await fetch(window.location.href, {method: 'HEAD'})).status; } catch(e) { return 0; } }")
-            
+
             # Note: Fetch might be blocked too, so we also check readyState and content
             if status in (403, 401):
                 return {"blocked": True, "network_error": False, "status": status}
             if status == 0:
                 # Potential network error or fetch blocked
                 return {"blocked": False, "network_error": True, "status": 0}
-                
+
             return {"blocked": False, "network_error": False, "status": status}
         except Exception as e:
             logger.debug(f"Status check failed: {e}")
@@ -1187,6 +1201,7 @@ class BrowserManager:
             # Clear closed contexts tracking
             self._closed_contexts.clear()
             logger.info("Browser closed.")
+
 
 async def create_stealth_browser(headless: bool = True, proxy: Optional[str] = None):
     """

@@ -1388,6 +1388,9 @@ class JobScheduler:
         Args:
             job: The :class:`Job` to add.
         """
+        if not job.profile:
+            logger.warning(f"⚠️ Skipping job {job.name}: no profile assigned")
+            return
         username = job.profile.username
         # 1. Check if an identical job is already in the queue
         for pending_job in self.queue:

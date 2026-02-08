@@ -19,7 +19,7 @@
 - **Azure VM**: 4.155.230.212 (West US 2) - RUNNING but service CRASHING
 - **Critical Issue**: faucet_worker service in crash loop - NameError: Dict not defined in browser/instance.py
 - **VM Has Two Installations**: ~/backend_service (active, broken) + ~/Repositories/cryptobot (newer, not used)
-- **Faucet Status**: 7 fully implemented, 11 Pick.io faucets partially implemented (missing login)
+- **Faucet Status**: 18 fully implemented (Pick.io family verified complete)
 - **Known Issues**: FreeBitcoin bot has 100% login failure rate - needs investigation
 - **Testing Phase**: Most analytics data is test data, limited production usage
 - See docs/summaries/PROJECT_STATUS_REPORT.md and docs/azure/AZURE_VM_STATUS.md for complete details
@@ -32,9 +32,7 @@
 
 ## Implementation Patterns
 - Faucets must implement async login/get_balance/get_timer/claim returning ClaimResult; never parse timers manually—use DataExtractor helpers.
-- **Pick.io Family**: 11 faucets (LTC, TRX, DOGE, SOL, BNB, BCH, TON, MATIC, DASH, ETH, USDT) should inherit from pick_base.py which provides login implementation.
-  - TronPick is correctly implemented as reference (has login via base, implements get_balance/get_timer/claim).
-  - Other Pick.io faucets need same pattern: inherit pick_base, set base_url, implement coin-specific methods.
+- **Pick.io Family**: 11 faucets (LTC, TRX, DOGE, SOL, BNB, BCH, TON, MATIC, DASH, ETH, USDT) inherit from pick_base.py which provides login implementation.
 - **Known Issue**: FreeBitcoin login failing 100% - selectors may need update or credentials issue.
 - Use human_type/idle_mouse anti-detection helpers; webRTC hardening is automatic.
 - All I/O async; public funcs typed; logging module only (no print); paths via pathlib.Path.
