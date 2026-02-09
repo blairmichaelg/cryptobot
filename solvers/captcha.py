@@ -2,7 +2,7 @@
 
 Supports multiple CAPTCHA types and providers:
     * **Turnstile** (Cloudflare) -- via 2Captcha or CapSolver.
-    * **hCaptcha** -- via CapSolver (2Captcha cannot solve hCaptcha).
+    * **hCaptcha** -- via 2Captcha createTask API or CapSolver.
     * **reCAPTCHA v2 / v3** -- via 2Captcha or CapSolver.
     * **Image CAPTCHAs** -- via 2Captcha.
     * **Altcha** (proof-of-work) -- solved locally, zero cost.
@@ -1640,6 +1640,15 @@ class CaptchaSolver:
         Raises:
             Exception: For fallback-worthy errors.
         """
+        # Use the newer createTask API for hCaptcha
+        # (the legacy in.php method=hcaptcha returns
+        # ERROR_METHOD_CALL)
+        if method == "hcaptcha":
+            return await self._solve_2captcha_task_api(
+                sitekey, url, method,
+                proxy_context, api_key,
+            )
+
         session = await self._get_session()
         api_key = api_key or self.api_key
 
@@ -1800,6 +1809,239 @@ class CaptchaSolver:
                     )
 
                 return None
+        return None
+
+    async def _solve_2captcha_task_api(
+        self,
+        sitekey: str,
+        url: str,
+        method: str,
+        proxy_context: Optional[
+            Dict[str, Any]
+        ] = None,
+        api_key: Optional[str] = None,
+    ) -> Optional[str]:
+        """Solve CAPTCHA via 2Captcha createTask API.
+
+        Uses the newer JSON-based API which handles
+        hCaptcha more reliably than the legacy in.php
+        endpoint.
+
+        Args:
+            sitekey: CAPTCHA site key.
+            url: Page URL.
+            method: CAPTCHA method string.
+            proxy_context: Optional proxy config.
+            api_key: Override API key.
+
+        Returns:
+            Solution token or None.
+
+        Raises:
+            Exception: For fallback-worthy errors.
+        """
+        session = await self._get_session()
+        api_key = api_key or self.api_key
+
+        type_map = {
+            "hcaptcha": "HCaptchaTaskProxyless",
+            "turnstile": "TurnstileTaskProxyless",
+            "userrecaptcha": "RecaptchaV2TaskProxyless",
+        }
+        type_map_proxy = {
+            "hcaptcha": "HCaptchaTask",
+            "turnstile": "TurnstileTask",
+            "userrecaptcha": "RecaptchaV2Task",
+        }
+
+        use_proxy = bool(
+            proxy_context
+            and proxy_context.get("proxy_string")
+        )
+
+        task_type = (
+            type_map_proxy.get(method, "HCaptchaTask")
+            if use_proxy
+            else type_map.get(
+                method, "HCaptchaTaskProxyless"
+            )
+        )
+
+        task: Dict[str, Any] = {
+            "type": task_type,
+            "websiteURL": url,
+            "websiteKey": sitekey,
+        }
+
+        if use_proxy and proxy_context:
+            raw = proxy_context["proxy_string"]
+            if "://" not in raw:
+                raw = f"http://{raw}"
+            parsed = urlparse(raw)
+            task["proxyType"] = (
+                "socks5"
+                if "socks" in parsed.scheme.lower()
+                else "http"
+            )
+            task["proxyAddress"] = parsed.hostname
+            task["proxyPort"] = parsed.port
+            if parsed.username:
+                task["proxyLogin"] = parsed.username
+            if parsed.password:
+                task["proxyPassword"] = (
+                    parsed.password
+                )
+            logger.info(
+                "Using proxy for 2Captcha Task API"
+                " (%s): %s:%s",
+                task["proxyType"],
+                parsed.hostname,
+                parsed.port,
+            )
+
+        if (
+            proxy_context
+            and "user_agent" in proxy_context
+        ):
+            task["userAgent"] = (
+                proxy_context["user_agent"]
+            )
+
+        payload: Dict[str, Any] = {
+            "clientKey": api_key,
+            "task": task,
+        }
+
+        logger.info(
+            "Submitting %s to 2Captcha Task API "
+            "(sitekey: %s...)...",
+            method,
+            sitekey[:20],
+        )
+
+        try:
+            async with session.post(
+                "https://api.2captcha.com/createTask",
+                json=payload,
+            ) as resp:
+                data = await resp.json()
+                error_id = data.get("errorId", 0)
+                if error_id != 0:
+                    ec = data.get(
+                        "errorCode", "UNKNOWN"
+                    )
+                    logger.error(
+                        "2Captcha Task API Error: "
+                        "%s - %s",
+                        ec,
+                        data.get(
+                            "errorDescription", ""
+                        ),
+                    )
+                    fb_codes = [
+                        "ERROR_ZERO_BALANCE",
+                        "ERROR_NO_SLOT_AVAILABLE",
+                    ]
+                    if ec in fb_codes:
+                        raise Exception(
+                            f"2Captcha Error: {ec}"
+                        )
+                    return None
+                task_id = data.get("taskId")
+                if not task_id:
+                    logger.error(
+                        "2Captcha Task API: "
+                        "no taskId in response"
+                    )
+                    return None
+        except aiohttp.ClientError as e:
+            logger.error(
+                "2Captcha Task API connection "
+                "error: %s",
+                e,
+            )
+            return None
+
+        logger.info(
+            "Waiting for solution (Task: %s)...",
+            task_id,
+        )
+
+        result_payload: Dict[str, Any] = {
+            "clientKey": api_key,
+            "taskId": task_id,
+        }
+        waited = 0
+        while waited < 120:
+            await asyncio.sleep(
+                POLL_INTERVAL_SECONDS
+            )
+            waited += POLL_INTERVAL_SECONDS
+
+            try:
+                async with session.post(
+                    "https://api.2captcha.com"
+                    "/getTaskResult",
+                    json=result_payload,
+                ) as resp:
+                    data = await resp.json()
+            except Exception:
+                continue
+
+            if waited % 10 == 0:
+                logger.info(
+                    "Still waiting "
+                    "(Task: %s, %ds)...",
+                    task_id,
+                    waited,
+                )
+
+            status = data.get("status")
+            if status == "ready":
+                sol = data.get("solution", {})
+                token = (
+                    sol.get("gRecaptchaResponse")
+                    or sol.get("token")
+                )
+                if not token:
+                    logger.error(
+                        "2Captcha Task ready but "
+                        "no token: %s",
+                        list(sol.keys()),
+                    )
+                    return None
+                return token
+
+            error_id = data.get("errorId", 0)
+            if error_id != 0:
+                ec = data.get(
+                    "errorCode", "UNKNOWN"
+                )
+                logger.error(
+                    "2Captcha Task Error: %s", ec
+                )
+                fb_codes = [
+                    "ERROR_ZERO_BALANCE",
+                    "ERROR_NO_SLOT_AVAILABLE",
+                ]
+                if ec in fb_codes:
+                    raise Exception(
+                        f"2Captcha Error: {ec}"
+                    )
+                return None
+
+            if status != "processing":
+                logger.warning(
+                    "2Captcha unexpected status: "
+                    "%s",
+                    status,
+                )
+
+        logger.warning(
+            "2Captcha Task API timed out "
+            "after %ds",
+            waited,
+        )
         return None
 
     async def _solve_capsolver(
