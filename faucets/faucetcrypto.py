@@ -9,12 +9,10 @@ Implements ``faucetcrypto.com`` with:
 Claim interval: ~30 minutes.
 """
 
-import asyncio
+from .base import FaucetBot, ClaimResult
 import logging
+import asyncio
 import random
-from typing import Any, List
-
-from .base import ClaimResult, FaucetBot
 
 logger = logging.getLogger(__name__)
 
@@ -22,216 +20,105 @@ logger = logging.getLogger(__name__)
 class FaucetCryptoBot(FaucetBot):
     """FaucetCrypto.com faucet bot.
 
-    Handles login, faucet claiming, level tracking, and PTC
-    ad viewing with stealth and robust error handling.
+    Handles login, faucet claiming, level tracking, and PTC ad viewing.
     """
-
-    def __init__(
-        self,
-        settings: Any,
-        page: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Initialize FaucetCrypto bot.
-
-        Args:
-            settings: BotSettings configuration object.
-            page: Playwright Page instance.
-            **kwargs: Additional arguments passed to FaucetBot.
-        """
+    def __init__(self, settings, page, **kwargs):
         super().__init__(settings, page, **kwargs)
         self.faucet_name = "FaucetCrypto"
         self.base_url = "https://faucetcrypto.com"
 
     async def is_logged_in(self) -> bool:
-        """Check whether the user is currently logged in.
-
-        Returns:
-            True if dashboard URL is detected.
-        """
         return "dashboard" in self.page.url
 
     async def login(self) -> bool:
-        """Login to FaucetCrypto with stealth and retries.
-
-        Returns:
-            True if login successful, False otherwise.
         """
-        if (
-            hasattr(self, 'settings_account_override')
-            and self.settings_account_override
-        ):
+        Login to FaucetCrypto with enhanced stealth and error handling.
+        
+        Returns:
+            True if login successful, False otherwise
+        """
+        if hasattr(self, 'settings_account_override') and self.settings_account_override:
             creds = self.settings_account_override
         else:
-            creds = self.settings.get_account(
-                "faucetcrypto",
-            )
-
+            creds = self.settings.get_account("faucetcrypto")
+        
         if not creds:
-            logger.error(
-                f"[{self.faucet_name}] "
-                "No credentials found."
-            )
+            logger.error(f"[{self.faucet_name}] No credentials found.")
             return False
-
+        
         max_retries = 2
         for attempt in range(max_retries):
             try:
-                logger.info(
-                    f"[{self.faucet_name}] Navigating to "
-                    "login page (attempt "
-                    f"{attempt + 1}/{max_retries})..."
-                )
+                logger.info(f"[{self.faucet_name}] Navigating to login page (attempt {attempt + 1}/{max_retries})...")
                 # v4.0+ uses /login (not /login.php)
-                nav_timeout = max(
-                    getattr(
-                        self.settings, "timeout", 180000,
-                    ),
-                    120000,
-                )
+                nav_timeout = max(getattr(self.settings, "timeout", 180000), 120000)  # At least 120s
                 try:
-                    await self.page.goto(
-                        f"{self.base_url}/login",
-                        timeout=nav_timeout,
-                    )
+                    await self.page.goto(f"{self.base_url}/login", timeout=nav_timeout)
                 except Exception as e:
                     error_str = str(e)
                     if "Timeout" in error_str:
-                        logger.warning(
-                            f"[{self.faucet_name}] "
-                            "domcontentloaded timeout, "
-                            "trying networkidle..."
-                        )
-                        await self.page.goto(
-                            f"{self.base_url}/login",
-                            wait_until="networkidle",
-                            timeout=nav_timeout,
-                        )
+                        logger.warning(f"[{self.faucet_name}] domcontentloaded timeout, trying networkidle...")
+                        await self.page.goto(f"{self.base_url}/login", wait_until="networkidle", timeout=nav_timeout)
                     else:
-                        logger.warning(
-                            f"[{self.faucet_name}] Login "
-                            "navigation retry with "
-                            f"commit: {e}"
-                        )
-                        await self.page.goto(
-                            f"{self.base_url}/login",
-                            wait_until="commit",
-                            timeout=nav_timeout,
-                        )
+                        logger.warning(f"[{self.faucet_name}] Login navigation retry with commit: {e}")
+                        await self.page.goto(f"{self.base_url}/login", wait_until="commit", timeout=nav_timeout)
                 await self.handle_cloudflare()
                 await self.random_delay(1, 2)
-
+                
                 # Check if already logged in
                 if "dashboard" in self.page.url:
-                    logger.info(
-                        f"[{self.faucet_name}] "
-                        "Already logged in."
-                    )
+                    logger.info(f"[{self.faucet_name}] ✅ Already logged in.")
                     return True
 
-                # Simulate human behavior
-                await self.idle_mouse(
-                    duration=random.uniform(0.5, 1.5),
-                )
-
-                # Warm up page
+                # Simulate human behavior before interacting
+                await self.idle_mouse(duration=random.uniform(0.5, 1.5))
+                
+                # Warm up page with natural browsing behavior
                 await self.warm_up_page()
-
-                # v4.0+ may use different input names
-                email_input = self.page.locator(
-                    'input[name="email"], '
-                    'input[type="email"], #email'
-                )
-                password_input = self.page.locator(
-                    'input[name="password"], '
-                    'input[type="password"], #password'
-                )
-
-                # Use human_type for stealth
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Entering credentials..."
-                )
-                await self.human_type(
-                    email_input.first, creds['username'],
-                )
+                
+                # v4.0+ may use different input names - try multiple selectors
+                email_input = self.page.locator('input[name="email"], input[type="email"], #email')
+                password_input = self.page.locator('input[name="password"], input[type="password"], #password')
+                
+                # Use human_type for stealth instead of fill
+                logger.info(f"[{self.faucet_name}] Entering credentials...")
+                await self.human_type(email_input.first, creds['username'])
                 await self.random_delay(0.5, 1.0)
-                await self.human_type(
-                    password_input.first,
-                    creds['password'],
-                )
+                await self.human_type(password_input.first, creds['password'])
                 await self.random_delay(0.5, 1.0)
-
+                
                 # Solve CAPTCHA if present
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Checking for login CAPTCHA..."
-                )
-                captcha_solved = (
-                    await self.solver.solve_captcha(
-                        self.page,
-                    )
-                )
+                logger.info(f"[{self.faucet_name}] Checking for login CAPTCHA...")
+                captcha_solved = await self.solver.solve_captcha(self.page)
                 if captcha_solved:
-                    logger.info(
-                        f"[{self.faucet_name}] Login "
-                        "CAPTCHA solved successfully"
-                    )
+                    logger.info(f"[{self.faucet_name}] Login CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
-
-                # Click login button
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Clicking login button..."
-                )
-                await self.thinking_pause()
-                login_btn = self.page.locator(
-                    'button:has-text("Login"), '
-                    'button:has-text("Sign In"), '
-                    'input[type="submit"]'
-                )
-                await self.human_like_click(
-                    login_btn.first,
-                )
-
-                # Wait for navigation to dashboard
+                
+                # Click login button with human-like behavior
+                logger.info(f"[{self.faucet_name}] Clicking login button...")
+                await self.thinking_pause()  # Brief hesitation before submitting
+                login_btn = self.page.locator('button:has-text("Login"), button:has-text("Sign In"), input[type="submit"]')
+                await self.human_like_click(login_btn.first)
+                
+                # Wait for navigation to dashboard with multiple fallback methods
                 try:
-                    await self.page.wait_for_url(
-                        "**/dashboard**", timeout=20000,
-                    )
-                    logger.info(
-                        f"[{self.faucet_name}] "
-                        "Login successful!"
-                    )
+                    await self.page.wait_for_url("**/dashboard**", timeout=20000)
+                    logger.info(f"[{self.faucet_name}] ✅ Login successful!")
                     return True
                 except Exception as url_err:
-                    logger.debug(
-                        f"[{self.faucet_name}] "
-                        f"URL wait failed: {url_err}"
-                    )
-                    # Fallback: check by content
+                    logger.debug(f"[{self.faucet_name}] URL wait failed: {url_err}")
+                    # Fallback: check if we're on dashboard by content
                     await self.human_wait(3)
                     current_url = self.page.url
-
+                    
                     # Check URL patterns
-                    indicators = [
-                        'dashboard', 'home',
-                        'account', 'profile',
-                    ]
-                    if any(
-                        ind in current_url.lower()
-                        for ind in indicators
-                    ):
-                        logger.info(
-                            f"[{self.faucet_name}] Login "
-                            "successful "
-                            f"(URL: {current_url})"
-                        )
+                    if any(indicator in current_url.lower() for indicator in ['dashboard', 'home', 'account', 'profile']):
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (URL: {current_url})")
                         return True
-
+                    
                     # Check for dashboard elements
                     dashboard_indicators = [
-                        ".user-balance",
+                        ".user-balance", 
                         ".wallet-balance",
                         "[class*='dashboard']",
                         "a[href*='logout']",
@@ -240,399 +127,221 @@ class FaucetCryptoBot(FaucetBot):
                     ]
                     for indicator in dashboard_indicators:
                         try:
-                            loc = self.page.locator(
-                                indicator,
-                            )
-                            if await loc.count() > 0:
-                                logger.info(
-                                    f"[{self.faucet_name}]"
-                                    " Login successful "
-                                    "(detected: "
-                                    f"{indicator})"
-                                )
+                            if await self.page.locator(indicator).count() > 0:
+                                logger.info(f"[{self.faucet_name}] ✅ Login successful (detected: {indicator})")
                                 return True
                         except Exception:
                             continue
 
-                    # Check if still on login page
+                    # Check if we're still on login page (failure)
                     if "/login" in current_url.lower():
-                        error_selectors = [
-                            ".alert-danger",
-                            ".error-message",
-                            "[class*='error']",
-                        ]
+                        # Check for error messages
+                        error_selectors = [".alert-danger", ".error-message", "[class*='error']"]
                         for sel in error_selectors:
                             try:
-                                loc = self.page.locator(
-                                    sel,
-                                )
-                                if await loc.count() > 0:
-                                    error_text = (
-                                        await loc.first
-                                        .text_content()
-                                    )
-                                    logger.error(
-                                        f"[{self.faucet_name}]"
-                                        " Login error: "
-                                        f"{error_text}"
-                                    )
+                                if await self.page.locator(sel).count() > 0:
+                                    error_text = await self.page.locator(sel).first.text_content()
+                                    logger.error(f"[{self.faucet_name}] Login error: {error_text}")
                                     break
-                            except Exception:
+                            except:
                                 continue
-                        raise TimeoutError(
-                            "Still on login page "
-                            "after submit"
-                        )
-
-                    # URL changed but no dashboard
-                    logger.warning(
-                        f"[{self.faucet_name}] Uncertain "
-                        "login state, "
-                        f"URL: {current_url}"
-                    )
+                        raise TimeoutError(f"Still on login page after submit")
+                    
+                    # If URL changed but no dashboard detected, log and try anyway
+                    logger.warning(f"[{self.faucet_name}] Uncertain login state, URL: {current_url}")
+                    # Give it a chance - might be slow loading
                     await self.human_wait(5)
-                    if "dashboard" in (
-                        self.page.url.lower()
-                    ):
-                        logger.info(
-                            f"[{self.faucet_name}] Login "
-                            "successful (delayed)"
-                        )
+                    if "dashboard" in self.page.url.lower():
+                        logger.info(f"[{self.faucet_name}] ✅ Login successful (delayed detection)")
                         return True
-
-                    raise TimeoutError(
-                        "Could not verify login success"
-                    )
-
+                    
+                    raise TimeoutError(f"Could not verify login success")
+                
             except TimeoutError as e:
-                logger.warning(
-                    f"[{self.faucet_name}] Login timeout "
-                    f"(attempt {attempt + 1}/"
-                    f"{max_retries}): {e}"
-                )
+                logger.warning(f"[{self.faucet_name}] Login timeout (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await self.human_wait(
-                        5, with_interactions=True,
-                    )
+                    await self.human_wait(5, with_interactions=True)
                     continue
             except Exception as e:
-                logger.error(
-                    f"[{self.faucet_name}] Login failed "
-                    f"(attempt {attempt + 1}/"
-                    f"{max_retries}): {e}"
-                )
+                logger.error(f"[{self.faucet_name}] Login failed (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await self.human_wait(
-                        5, with_interactions=True,
-                    )
+                    await self.human_wait(5, with_interactions=True)
                     continue
-
-        logger.error(
-            f"[{self.faucet_name}] Login failed "
-            f"after {max_retries} attempts"
-        )
+        
+        logger.error(f"[{self.faucet_name}] ❌ Login failed after {max_retries} attempts")
         return False
 
     async def claim(self) -> ClaimResult:
-        """Claim from FaucetCrypto with stealth and retries.
-
+        """
+        Claim from FaucetCrypto with optimized stealth, robustness, and profitability.
+        
         Returns:
-            ClaimResult with success status, next claim time,
-            and balance.
+            ClaimResult with success status, next claim time, and balance
         """
         max_retries = 3
         retry_delay = 5
-
+        
         for attempt in range(max_retries):
             try:
-                # Navigate to faucet page if needed
+                # Navigate to faucet page if not already there
                 if "faucet" not in self.page.url.lower():
-                    logger.info(
-                        f"[{self.faucet_name}] "
-                        "Navigating to faucet page..."
-                    )
-                    nav_timeout = getattr(
-                        self.settings, "timeout", 180000,
-                    )
+                    logger.info(f"[{self.faucet_name}] Navigating to faucet page...")
+                    nav_timeout = getattr(self.settings, "timeout", 180000)
                     try:
-                        await self.page.goto(
-                            f"{self.base_url}/faucet",
-                            timeout=nav_timeout,
-                        )
+                        await self.page.goto(f"{self.base_url}/faucet", timeout=nav_timeout)
                     except Exception as e:
-                        logger.warning(
-                            f"[{self.faucet_name}] Faucet "
-                            "navigation retry with "
-                            f"commit: {e}"
-                        )
-                        await self.page.goto(
-                            f"{self.base_url}/faucet",
-                            wait_until="commit",
-                            timeout=nav_timeout,
-                        )
+                        logger.warning(f"[{self.faucet_name}] Faucet navigation retry with commit: {e}")
+                        await self.page.goto(f"{self.base_url}/faucet", wait_until="commit", timeout=nav_timeout)
                     await self.handle_cloudflare()
                     await self.random_delay(1, 3)
-
-                # Simulate human browsing
-                await self.simulate_reading(
-                    duration=random.uniform(2.0, 4.0),
-                )
+                
+                # Simulate human reading/browsing the page
+                await self.simulate_reading(duration=random.uniform(2.0, 4.0))
                 if random.random() < 0.4:
                     await self.natural_scroll()
-                await self.idle_mouse(
-                    duration=random.uniform(1.0, 2.0),
-                )
-
-                # Extract balance with fallbacks
+                await self.idle_mouse(duration=random.uniform(1.0, 2.0))
+                
+                # Extract balance with fallback selectors
                 balance = await self.get_balance(
                     ".user-balance",
-                    fallback_selectors=[
-                        ".balance-text",
-                        "[class*='balance']",
-                        "#balance",
-                    ],
+                    fallback_selectors=[".balance-text", "[class*='balance']", "#balance"]
                 )
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    f"Current balance: {balance}"
-                )
-
+                logger.info(f"[{self.faucet_name}] Current balance: {balance}")
+                
                 # Check if claim button is available
-                claim_btn = self.page.locator(
-                    "button:has-text('Ready To Claim'),"
-                    " button:has-text('Claim Now'), "
-                    ".claim-button"
-                )
+                claim_btn = self.page.locator("button:has-text('Ready To Claim'), button:has-text('Claim Now'), .claim-button")
                 if await claim_btn.count() == 0:
-                    # Timer is active
-                    logger.info(
-                        f"[{self.faucet_name}] Claim "
-                        "button not ready, "
-                        "checking timer..."
-                    )
+                    # Timer is active - extract actual wait time
+                    logger.info(f"[{self.faucet_name}] Claim button not ready, checking timer...")
                     wait_min = await self.get_timer(
                         ".timer-text",
-                        fallback_selectors=[
-                            ".fa-clock",
-                            "[class*='timer']",
-                            "[class*='countdown']",
-                            "#timer",
-                        ],
+                        fallback_selectors=[".fa-clock", "[class*='timer']", "[class*='countdown']", "#timer"]
                     )
                     if wait_min == 0.0:
-                        wait_min = 20.0
-                    logger.info(
-                        f"[{self.faucet_name}] Timer "
-                        f"active: {wait_min:.1f} "
-                        "minutes remaining"
-                    )
+                        wait_min = 20.0  # Default fallback
+                    logger.info(f"[{self.faucet_name}] Timer active: {wait_min:.1f} minutes remaining")
                     return ClaimResult(
-                        success=True,
-                        status="Timer Active",
-                        next_claim_minutes=wait_min,
-                        balance=balance,
+                        success=True, 
+                        status="Timer Active", 
+                        next_claim_minutes=wait_min, 
+                        balance=balance
                     )
-
-                # Simulate reading before clicking
-                await self.simulate_reading(
-                    duration=random.uniform(1.5, 3.0),
-                )
+                
+                # Simulate reading before clicking claim
+                await self.simulate_reading(duration=random.uniform(1.5, 3.0))
                 await self.thinking_pause()
-
+                
                 # Click claim button
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Clicking claim button..."
-                )
-                await self.human_like_click(
-                    claim_btn.first,
-                )
-
-                # Wait for internal countdown timer
-                logger.info(
-                    f"[{self.faucet_name}] Waiting "
-                    "for internal timer..."
-                )
+                logger.info(f"[{self.faucet_name}] Clicking claim button...")
+                await self.human_like_click(claim_btn.first)
+                
+                # Wait for internal countdown timer (10-15s typically)
+                # Use human_wait for natural micro-interactions during the wait
+                logger.info(f"[{self.faucet_name}] Waiting for internal timer...")
                 timer_wait = random.uniform(12, 18)
-                await self.human_wait(
-                    timer_wait, with_interactions=True,
-                )
-
+                await self.human_wait(timer_wait, with_interactions=True)
+                
                 # Solve CAPTCHA if present
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Checking for CAPTCHA..."
-                )
-                captcha_solved = (
-                    await self.solver.solve_captcha(
-                        self.page,
-                    )
-                )
+                logger.info(f"[{self.faucet_name}] Checking for CAPTCHA...")
+                captcha_solved = await self.solver.solve_captcha(self.page)
                 if captcha_solved:
-                    logger.info(
-                        f"[{self.faucet_name}] "
-                        "CAPTCHA solved successfully"
-                    )
+                    logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
-
-                    # Enable submit button if disabled
+                    
+                    # Manually enable submit button (some sites disable it until CAPTCHA callback)
                     try:
                         await self.page.evaluate("""
-                            const btns =
-                                document.querySelectorAll(
-                                    'button[type="submit"],'
-                                    + ' button.reward-button,'
-                                    + ' button:has-text('
-                                    + '"Get Reward"),'
-                                    + ' button:has-text('
-                                    + '"Collect")'
-                                );
+                            const btns = document.querySelectorAll('button[type="submit"], button.reward-button, button:has-text("Get Reward"), button:has-text("Collect")');
                             btns.forEach(btn => {
                                 if (btn.disabled) {
                                     btn.disabled = false;
-                                    btn.removeAttribute(
-                                        'disabled'
-                                    );
+                                    btn.removeAttribute('disabled');
                                 }
                             });
                         """)
-                        logger.debug(
-                            f"[{self.faucet_name}] "
-                            "Manually enabled buttons"
-                        )
+                        logger.debug(f"[{self.faucet_name}] Manually enabled buttons")
                     except Exception as e:
-                        logger.debug(
-                            f"[{self.faucet_name}] "
-                            f"Button enable: {e}"
-                        )
-
+                        logger.debug(f"[{self.faucet_name}] Button enable: {e}")
+                
                 # Click "Get Reward" button
-                reward_btn = self.page.locator(
-                    "button:has-text('Get Reward'), "
-                    "button:has-text('Collect'), "
-                    ".reward-button"
-                )
-                if await reward_btn.is_visible(
-                    timeout=5000,
-                ):
-                    logger.info(
-                        f"[{self.faucet_name}] "
-                        "Clicking reward button..."
-                    )
-                    await self.simulate_reading(
-                        duration=random.uniform(
-                            1.0, 2.0,
-                        ),
-                    )
+                reward_btn = self.page.locator("button:has-text('Get Reward'), button:has-text('Collect'), .reward-button")
+                if await reward_btn.is_visible(timeout=5000):
+                    logger.info(f"[{self.faucet_name}] Clicking reward button...")
+                    await self.simulate_reading(duration=random.uniform(1.0, 2.0))
                     await self.thinking_pause()
-                    await self.human_like_click(
-                        reward_btn.first,
-                    )
+                    await self.human_like_click(reward_btn.first)
                     await self.random_delay(2, 4)
-
+                    
                     # Extract updated balance
                     new_balance = await self.get_balance(
                         ".user-balance",
-                        fallback_selectors=[
-                            ".balance-text",
-                            "[class*='balance']",
-                            "#balance",
-                        ],
+                        fallback_selectors=[".balance-text", "[class*='balance']", "#balance"]
                     )
-
-                    # Extract next claim timer
-                    next_claim_min = (
-                        await self.get_timer(
-                            ".timer-text",
-                            fallback_selectors=[
-                                ".fa-clock",
-                                "[class*='timer']",
-                                "[class*='countdown']",
-                                "#timer",
-                            ],
-                        )
+                    
+                    # Extract next claim timer for accurate scheduling
+                    next_claim_min = await self.get_timer(
+                        ".timer-text",
+                        fallback_selectors=[".fa-clock", "[class*='timer']", "[class*='countdown']", "#timer"]
                     )
                     if next_claim_min == 0.0:
-                        next_claim_min = 30.0
-
-                    logger.info(
-                        f"[{self.faucet_name}] Claim "
-                        f"successful! Balance: "
-                        f"{new_balance}, Next claim: "
-                        f"{next_claim_min:.1f}min"
-                    )
+                        next_claim_min = 30.0  # Default to 30 min if extraction fails
+                    
+                    logger.info(f"[{self.faucet_name}] ✅ Claim successful! Balance: {new_balance}, Next claim: {next_claim_min:.1f}min")
                     return ClaimResult(
-                        success=True,
-                        status="Claimed",
+                        success=True, 
+                        status="Claimed", 
                         next_claim_minutes=next_claim_min,
-                        amount="claimed",
-                        balance=new_balance,
+                        amount="claimed",  # Could extract specific amount if visible
+                        balance=new_balance
                     )
-
-                logger.warning(
-                    f"[{self.faucet_name}] Reward button"
-                    " not found after timer"
-                )
+                
+                logger.warning(f"[{self.faucet_name}] Reward button not found after timer")
                 return ClaimResult(
-                    success=False,
-                    status="Reward Button Not Found",
-                    next_claim_minutes=5,
-                    balance=balance,
+                    success=False, 
+                    status="Reward Button Not Found", 
+                    next_claim_minutes=5, 
+                    balance=balance
                 )
-
+            
             except TimeoutError as e:
-                logger.warning(
-                    f"[{self.faucet_name}] Timeout error "
-                    f"(attempt {attempt + 1}/"
-                    f"{max_retries}): {e}"
-                )
+                logger.warning(f"[{self.faucet_name}] Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await self.human_wait(retry_delay)
                     continue
                 return ClaimResult(
-                    success=False,
-                    status=(
-                        f"Timeout after "
-                        f"{max_retries} attempts"
-                    ),
-                    next_claim_minutes=15,
+                    success=False, 
+                    status=f"Timeout after {max_retries} attempts", 
+                    next_claim_minutes=15
                 )
-
+            
             except Exception as e:
-                logger.error(
-                    f"[{self.faucet_name}] Claim error "
-                    f"(attempt {attempt + 1}/"
-                    f"{max_retries}): {e}"
-                )
+                logger.error(f"[{self.faucet_name}] Claim error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await self.human_wait(retry_delay)
                     continue
                 return ClaimResult(
-                    success=False,
-                    status=f"Error: {e}",
-                    next_claim_minutes=30,
+                    success=False, 
+                    status=f"Error: {e}", 
+                    next_claim_minutes=30
                 )
-
+        
         # Should never reach here, but just in case
         return ClaimResult(
-            success=False,
-            status="Max retries exceeded",
-            next_claim_minutes=30,
+            success=False, 
+            status="Max retries exceeded", 
+            next_claim_minutes=30
         )
 
-    def get_jobs(self) -> List[Any]:
-        """Return FaucetCrypto jobs for the scheduler.
-
-        Returns:
-            List of Job objects for claiming, withdrawal,
-            and PTC ads.
+    def get_jobs(self):
+        """
+        Returns FaucetCrypto-specific jobs for the scheduler.
         """
         from core.orchestrator import Job
         import time
-
-        jobs: List[Any] = []
+        
+        jobs = []
         f_type = self.faucet_name.lower()
-
+        
         # Job 1: Faucet Claim
         jobs.append(Job(
             priority=1,
@@ -640,9 +349,9 @@ class FaucetCryptoBot(FaucetBot):
             name=f"{self.faucet_name} Claim",
             profile=None,
             faucet_type=f_type,
-            job_type="claim_wrapper",
+            job_type="claim_wrapper"
         ))
-
+        
         # Job 2: Withdrawal Job
         jobs.append(Job(
             priority=5,
@@ -650,9 +359,9 @@ class FaucetCryptoBot(FaucetBot):
             name=f"{self.faucet_name} Withdraw",
             profile=None,
             faucet_type=f_type,
-            job_type="withdraw_wrapper",
+            job_type="withdraw_wrapper"
         ))
-
+        
         # Job 3: PTC Ads
         jobs.append(Job(
             priority=3,
@@ -660,292 +369,160 @@ class FaucetCryptoBot(FaucetBot):
             name=f"{self.faucet_name} PTC",
             profile=None,
             faucet_type=f_type,
-            job_type="ptc_wrapper",
+            job_type="ptc_wrapper"
         ))
-
+        
         return jobs
 
     async def view_ptc_ads(self) -> None:
-        """View PTC ads on FaucetCrypto for bonus earnings.
-
-        Processes ads by clicking Watch buttons, waiting for
-        internal timers, and clicking Get Reward / Continue
-        buttons.
-        """
         try:
-            logger.info(
-                f"[{self.faucet_name}] "
-                "Checking PTC Ads..."
-            )
-            await self.page.goto(
-                f"{self.base_url}/ptc/list",
-            )
-            await self.warm_up_page()
-
-            # Find available PTC ads
-            ad_cards = self.page.locator(
-                ".ptc-card:not(.viewed), "
-                ".card:has(button:has-text('Watch'))"
-            )
+            logger.info(f"[{self.faucet_name}] Checking PTC Ads...")
+            await self.page.goto(f"{self.base_url}/ptc/list")
+            await self.warm_up_page()  # Natural browsing behavior on page load
+            
+            # Find "Watch" buttons
+            # Selector for available PTC ads
+            ad_cards = self.page.locator(".ptc-card:not(.viewed), .card:has(button:has-text('Watch'))")
             count = await ad_cards.count()
-            logger.info(
-                f"[{self.faucet_name}] Found {count} "
-                "potential PTC ads."
-            )
-
+            logger.info(f"[{self.faucet_name}] Found {count} potential PTC ads.")
+            
             limit = 10
             processed = 0
-
+            
             for i in range(count):
-                if processed >= limit:
-                    break
+                if processed >= limit: break
 
-                # Watch button on list page
-                watch_btn = self.page.locator(
-                    "button:has-text('Watch')"
-                ).first
-                if not await watch_btn.is_visible():
-                    break
+                # Intermediate buttons on list page
+                watch_btn = self.page.locator("button:has-text('Watch')").first
+                if not await watch_btn.is_visible(): break
 
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    f"Opening Ad {processed + 1}..."
-                )
-                await self.simulate_reading(
-                    duration=random.uniform(1.0, 2.0),
-                )
+                logger.info(f"[{self.faucet_name}] Opening Ad {processed+1}...")
+                await self.simulate_reading(duration=random.uniform(1.0, 2.0))
                 await self.human_like_click(watch_btn)
 
                 # 1. Intermediate Page (Step 1)
+                # FaucetCrypto usually shows a 10s timer before "Get Reward"
                 try:
-                    await self.page.wait_for_selector(
-                        "button:has-text('Get Reward')",
-                        timeout=20000,
-                    )
-                    reward_btn = self.page.locator(
-                        "button:has-text('Get Reward')"
-                    )
+                    await self.page.wait_for_selector("button:has-text('Get Reward')", timeout=20000)
+                    reward_btn = self.page.locator("button:has-text('Get Reward')")
 
-                    # Solve antibot / CAPTCHA
-                    await self.solver.solve_captcha(
-                        self.page,
-                    )
+                    # Sometimes there is an antibot check (select symbols in order)
+                    # We look for turnstile/recaptcha first
+                    await self.solver.solve_captcha(self.page)
 
-                    await self.thinking_pause()
+                    await self.thinking_pause()  # Brief hesitation before clicking reward
                     await self.human_like_click(reward_btn)
                 except Exception as e:
-                    logger.warning(
-                        f"[{self.faucet_name}] "
-                        "Intermediate page "
-                        f"failed: {e}"
-                    )
-                    await self.page.goto(
-                        f"{self.base_url}/ptc/list",
-                    )
+                    logger.warning(f"[{self.faucet_name}] Intermediate page failed: {e}")
+                    await self.page.goto(f"{self.base_url}/ptc/list")
                     continue
 
                 # 2. Main Ad Page (Step 2)
-                logger.info(
-                    f"[{self.faucet_name}] "
-                    "Watching Ad timer..."
-                )
+                # Ad opens (usually in current tab or new tab depending on ad type)
+                # Real internal PTCs open in current tab with a top bar timer
+                logger.info(f"[{self.faucet_name}] Watching Ad timer...")
 
-                # Poll for "Continue" button
+                # Poll for the "Continue" button on the top bar
                 try:
-                    continue_btn = self.page.locator(
-                        "#continue-button, "
-                        "button:has-text('Continue'), "
-                        ".btn-success"
-                        ":has-text('Continue')"
-                    )
-                    await continue_btn.wait_for(
-                        state="visible", timeout=60000,
-                    )
-                    await self.human_like_click(
-                        continue_btn,
-                    )
+                    # Wait for the top bar timer to finish and "Continue" button to appear
+                    # v4.0+: Button often has a .success class when ready
+                    continue_btn = self.page.locator("#continue-button, button:has-text('Continue'), .btn-success:has-text('Continue')")
+                    await continue_btn.wait_for(state="visible", timeout=60000)
+                    await self.human_like_click(continue_btn)
 
-                    logger.info(
-                        f"[{self.faucet_name}] Ad "
-                        f"{processed + 1} completed."
-                    )
+                    logger.info(f"[{self.faucet_name}] Ad {processed+1} completed.")
                     processed += 1
                 except Exception as e:
-                    logger.warning(
-                        f"[{self.faucet_name}] Failed to "
-                        "find Continue button: "
-                        f"{e}"
-                    )
+                    logger.warning(f"[{self.faucet_name}] Failed to find Continue button: {e}")
 
                 # Return to list
-                await self.page.goto(
-                    f"{self.base_url}/ptc/list",
-                )
+                await self.page.goto(f"{self.base_url}/ptc/list")
                 await self.random_delay(2, 5)
 
-            logger.info(
-                f"[{self.faucet_name}] PTC session "
-                f"complete. Watched {processed} ads."
-            )
-
+            logger.info(f"[{self.faucet_name}] PTC session complete. Watched {processed} ads.")
+                
         except Exception as e:
-            logger.error(
-                f"[{self.faucet_name}] PTC Error: {e}"
-            )
+             logger.error(f"[{self.faucet_name}] PTC Error: {e}")
 
     async def withdraw(self) -> ClaimResult:
         """Automated withdrawal for FaucetCrypto.
-
-        FaucetCrypto uses a multi-step modal withdrawal:
-        1. Select cryptocurrency from withdrawal list.
-        2. Step I: Select Network.
-        3. Step II: Fill Info (amount + address).
-        4. Step III: Review and Submit.
-
-        Returns:
-            ClaimResult with withdrawal status.
+        
+        FaucetCrypto uses a multi-step modal withdrawal process:
+        1. Select cryptocurrency from withdrawal list
+        2. Step I: Select Network
+        3. Step II: Fill Info (amount + address)
+        4. Step III: Review & Submit
         """
         try:
-            logger.info(
-                f"[{self.faucet_name}] Navigating "
-                "to withdrawal page..."
-            )
-            await self.page.goto(
-                f"{self.base_url}/withdraw",
-            )
+            logger.info(f"[{self.faucet_name}] Navigating to withdrawal page...")
+            await self.page.goto(f"{self.base_url}/withdraw")
             await self.handle_cloudflare()
-
+            
             # Get current balance
-            balance = await self.get_balance(
-                ".user-balance, .balance-text",
-            )
-
-            # Find available cryptocurrencies
-            crypto_rows = self.page.locator(
-                ".crypto-row"
-                ":has(button.withdraw-btn), "
-                ".card:has(button"
-                ":has-text('Withdraw'))"
-            )
+            balance = await self.get_balance(".user-balance, .balance-text")
+            
+            # Find available cryptocurrencies with withdraw buttons
+            crypto_rows = self.page.locator(".crypto-row:has(button.withdraw-btn), .card:has(button:has-text('Withdraw'))")
             if await crypto_rows.count() == 0:
-                logger.info(
-                    f"[{self.faucet_name}] No "
-                    "withdrawable balances found."
-                )
-                return ClaimResult(
-                    success=True,
-                    status="No Balance",
-                    next_claim_minutes=1440,
-                )
-
+                logger.info(f"[{self.faucet_name}] No withdrawable balances found.")
+                return ClaimResult(success=True, status="No Balance", next_claim_minutes=1440)
+            
             # Click first available withdraw button
-            withdraw_btn = crypto_rows.first.locator(
-                "button.withdraw-btn, "
-                "button:has-text('Withdraw')"
-            )
+            withdraw_btn = crypto_rows.first.locator("button.withdraw-btn, button:has-text('Withdraw')")
             await self.human_like_click(withdraw_btn)
             await self.random_delay(2, 4)
-
-            # Step I: Select Network
-            next_btn = self.page.locator(
-                "button:has-text('Next Step'), "
-                "button.next-step"
-            )
+            
+            # Step I: Select Network (usually pre-selected or simple confirmation)
+            next_btn = self.page.locator("button:has-text('Next Step'), button.next-step")
             if await next_btn.is_visible():
                 await self.human_like_click(next_btn)
                 await self.random_delay(1, 2)
-
+            
             # Step II: Fill Info
-            address_field = self.page.locator(
-                "input[name='address'], "
-                "#wallet-address"
-            )
-
+            amount_field = self.page.locator("input[name='amount'], #amount")
+            address_field = self.page.locator("input[name='address'], #wallet-address")
+            
             # Use max available
-            max_btn = self.page.locator(
-                "button:has-text('Max'), .max-btn"
-            )
+            max_btn = self.page.locator("button:has-text('Max'), .max-btn")
             if await max_btn.is_visible():
                 await self.human_like_click(max_btn)
-
-            # Get withdrawal address
-            coin = "BTC"
+            
+            # Get withdrawal address (prioritize FaucetPay for lower thresholds)
+            coin = "BTC"  # FaucetCrypto primarily uses BTC
             address = self.get_withdrawal_address(coin)
             if not address:
-                logger.error(
-                    f"[{self.faucet_name}] No withdrawal "
-                    "address configured"
-                )
-                return ClaimResult(
-                    success=False,
-                    status="No Address",
-                    next_claim_minutes=1440,
-                )
-
-            await self.human_type(
-                address_field, address,
-            )
-
+                logger.error(f"[{self.faucet_name}] No withdrawal address configured")
+                return ClaimResult(success=False, status="No Address", next_claim_minutes=1440)
+            
+            await self.human_type(address_field, address)
+            
             # Click Next Step to proceed to review
-            next_btn = self.page.locator(
-                "button:has-text('Next Step'), "
-                "button.next-step"
-            )
+            next_btn = self.page.locator("button:has-text('Next Step'), button.next-step")
             if await next_btn.is_visible():
                 await self.human_like_click(next_btn)
                 await self.random_delay(1, 2)
-
-            # Step III: Review and Submit
-            confirm_switch = self.page.locator(
-                "input[type='checkbox']"
-                ".confirm-switch, "
-                ".confirm-checkbox"
-            )
+            
+            # Step III: Review & Submit
+            # Look for confirmation switch if present
+            confirm_switch = self.page.locator("input[type='checkbox'].confirm-switch, .confirm-checkbox")
             if await confirm_switch.is_visible():
-                await self.human_like_click(
-                    confirm_switch,
-                )
-
+                await self.human_like_click(confirm_switch)
+            
             # Submit withdrawal
-            await self.thinking_pause()
-            submit_btn = self.page.locator(
-                "button:has-text('Submit Withdrawal'),"
-                " button.submit-btn"
-            )
+            await self.thinking_pause()  # Brief pause before submitting withdrawal
+            submit_btn = self.page.locator("button:has-text('Submit Withdrawal'), button.submit-btn")
             await self.human_like_click(submit_btn)
-
+            
             await self.random_delay(3, 5)
-
+            
             # Check for success
-            success_msg = self.page.locator(
-                ".alert-success, "
-                ".toast-success, "
-                ":has-text('Withdrawal submitted')"
-            )
+            success_msg = self.page.locator(".alert-success, .toast-success, :has-text('Withdrawal submitted')")
             if await success_msg.count() > 0:
-                logger.info(
-                    f"[{self.faucet_name}] Withdrawal "
-                    "submitted successfully!"
-                )
-                return ClaimResult(
-                    success=True,
-                    status="Withdrawn",
-                    next_claim_minutes=1440,
-                )
-
-            return ClaimResult(
-                success=False,
-                status="Withdrawal may be pending",
-                next_claim_minutes=360,
-            )
-
+                logger.info(f"🚀 [{self.faucet_name}] Withdrawal submitted successfully!")
+                return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
+            
+            return ClaimResult(success=False, status="Withdrawal may be pending", next_claim_minutes=360)
+            
         except Exception as e:
-            logger.error(
-                f"[{self.faucet_name}] "
-                f"Withdrawal error: {e}"
-            )
-            return ClaimResult(
-                success=False,
-                status=f"Error: {e}",
-                next_claim_minutes=60,
-            )
+            logger.error(f"[{self.faucet_name}] Withdrawal error: {e}")
+            return ClaimResult(success=False, status=f"Error: {e}", next_claim_minutes=60)
