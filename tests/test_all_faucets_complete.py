@@ -46,7 +46,7 @@ ALL_FAUCETS = [
     "usdpick",
 ]
 
-async def test_single_faucet(faucet_name: str, settings: BotSettings, headless: bool = True):
+async def _run_single_faucet(faucet_name: str, settings: BotSettings, headless: bool = True):
     """Test login for a single faucet."""
     result = {
         "faucet": faucet_name,
@@ -196,7 +196,7 @@ async def main():
         print(f"\n[{i}/{len(ALL_FAUCETS)}] Testing {faucet_name.upper()}...")
         print("-" * 60)
         
-        result = await test_single_faucet(faucet_name, settings, headless)
+        result = await _run_single_faucet(faucet_name, settings, headless)
         results.append(result)
         
         # Print immediate result

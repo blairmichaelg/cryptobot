@@ -30,7 +30,7 @@ TEST_FAUCETS = [
     ("dutchy", "DUTCHY"),
 ]
 
-async def test_faucet(faucet_name: str, env_prefix: str, settings: BotSettings) -> dict:
+async def _run_faucet(faucet_name: str, env_prefix: str, settings: BotSettings) -> dict:
     """Test a single faucet's login and basic operations."""
     result = {
         "name": faucet_name,
@@ -134,7 +134,7 @@ async def main():
     results = []
     
     for faucet_name, env_prefix in TEST_FAUCETS:
-        result = await test_faucet(faucet_name, env_prefix, settings)
+        result = await _run_faucet(faucet_name, env_prefix, settings)
         results.append(result)
         await asyncio.sleep(1)  # Brief pause between tests
     

@@ -1,4 +1,8 @@
-"""Test different 2Captcha hCaptcha submission methods."""
+"""Test different 2Captcha hCaptcha submission methods.
+
+This is a manual diagnostic script, not an automated test.
+Run directly: python tests/test_2captcha_methods.py
+"""
 import os
 import aiohttp
 import asyncio
@@ -6,7 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-async def test_method(session, api_key, method_name, extra_params=None):
+
+async def _try_method(session, api_key, method_name, extra_params=None):
     """Test a specific method configuration."""
     sitekey = "3c089553-e981-4f04-b63a-7db7b8c1f88e"
     url = "https://cointiply.com/login"
@@ -60,7 +65,7 @@ async def main():
         ]
         
         for method, extra in methods_to_try:
-            success = await test_method(session, api_key, method, extra)
+            success = await _try_method(session, api_key, method, extra)
             if success:
                 print(f"\n\n🎉 WORKING METHOD FOUND: {method} with params {extra}")
                 return True

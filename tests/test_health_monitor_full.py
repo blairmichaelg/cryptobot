@@ -29,7 +29,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch, PropertyMock
 
 import pytest
 
@@ -135,6 +135,7 @@ class TestHealthCheckResult:
     def test_to_dict_json_serializable(self):
         r = self._make_result(
             status=HealthStatus.CRITICAL,
+            disk_usage_percent=99,
             alerts=["disk full"],
             metrics={"disk_usage": 99, "memory_usage": 88},
         )
@@ -226,9 +227,10 @@ class TestCheckServiceStatus:
         with patch.object(monitor, "_run_command") as mc:
             mc.side_effect = [
                 (0, "active", ""),
-                (0, "Active: active (running)\nRestart=restart\nrestart triggered\nrestart", ""),
+                (0, "Active: active (running)\nRestart=on\nrestart triggered\nrestart", ""),
             ]
             _, _, crash_count = monitor.check_service_status()
+        # "Restart" (in Restart=on), "restart" in "restart triggered", "restart" final = 3
         assert crash_count == 3
 
     def test_active_but_not_running(self, monitor):
@@ -877,63 +879,51 @@ class TestRestartStatePersistence:
 # ===================================================================
 
 class TestCheckBrowserHealth:
-    def test_no_browser_manager(self, monitor):
+    async def test_no_browser_manager(self, monitor):
         monitor.browser_manager = None
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert result["healthy"] is True
         assert "No browser manager" in result["message"]
 
-    def test_no_browser_instance(self, monitor):
+    async def test_no_browser_instance(self, monitor):
         bm = MagicMock()
         bm.browser = None
         monitor.browser_manager = bm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert result["healthy"] is False
         assert monitor.browser_context_failures == 1
 
-    def test_browser_missing_browser_attr(self, monitor):
+    async def test_browser_missing_browser_attr(self, monitor):
         bm = MagicMock(spec=[])  # no 'browser' attribute
         monitor.browser_manager = bm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert result["healthy"] is False
 
-    def test_healthy_browser_resets_failures(self, monitor):
+    async def test_healthy_browser_resets_failures(self, monitor):
         monitor.browser_context_failures = 2
         bm = MagicMock()
         bm.browser.contexts = [MagicMock(), MagicMock()]
         monitor.browser_manager = bm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert result["healthy"] is True
         assert result["context_count"] == 2
         assert monitor.browser_context_failures == 0
 
-    def test_browser_contexts_exception(self, monitor):
+    async def test_browser_contexts_exception(self, monitor):
         bm = MagicMock()
         type(bm.browser).contexts = PropertyMock(side_effect=RuntimeError("crash"))
         monitor.browser_manager = bm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert monitor.browser_context_failures == 1
         # Still healthy when below threshold
         assert result["healthy"] is True
 
-    def test_browser_exceeds_failure_threshold(self, monitor):
+    async def test_browser_exceeds_failure_threshold(self, monitor):
         monitor.browser_context_failures = monitor.MAX_BROWSER_CONTEXT_FAILURES - 1
         bm = MagicMock()
         type(bm.browser).contexts = PropertyMock(side_effect=RuntimeError("crash"))
         monitor.browser_manager = bm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_browser_health()
-        )
+        result = await monitor.check_browser_health()
         assert result["healthy"] is False
 
 
@@ -942,14 +932,12 @@ class TestCheckBrowserHealth:
 # ===================================================================
 
 class TestCheckProxyHealth:
-    def test_no_proxy_manager(self, monitor):
+    async def test_no_proxy_manager(self, monitor):
         monitor.proxy_manager = None
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_proxy_health()
-        )
+        result = await monitor.check_proxy_health()
         assert result["healthy"] is True
 
-    def test_healthy_proxy_pool(self, monitor):
+    async def test_healthy_proxy_pool(self, monitor):
         pm = MagicMock()
         pm.all_proxies = ["p1", "p2", "p3", "p4", "p5"]
         pm.proxies = ["p1", "p2", "p3", "p4"]
@@ -957,14 +945,12 @@ class TestCheckProxyHealth:
         pm.proxy_cooldowns = {}
         pm.proxy_latency = {"p1": [100, 120], "p2": [90]}
         monitor.proxy_manager = pm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_proxy_health()
-        )
+        result = await monitor.check_proxy_health()
         assert result["healthy"] is True
         assert result["healthy_count"] == 4
         assert result["dead"] == 1
 
-    def test_unhealthy_proxy_pool(self, monitor):
+    async def test_unhealthy_proxy_pool(self, monitor):
         pm = MagicMock()
         pm.all_proxies = ["p1", "p2", "p3"]
         pm.proxies = ["p1"]  # below MIN_HEALTHY_PROXIES
@@ -972,18 +958,14 @@ class TestCheckProxyHealth:
         pm.proxy_cooldowns = {}
         pm.proxy_latency = {}
         monitor.proxy_manager = pm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_proxy_health()
-        )
+        result = await monitor.check_proxy_health()
         assert result["healthy"] is False
 
-    def test_proxy_check_exception(self, monitor):
+    async def test_proxy_check_exception(self, monitor):
         pm = MagicMock()
         type(pm).all_proxies = PropertyMock(side_effect=RuntimeError("oops"))
         monitor.proxy_manager = pm
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_proxy_health()
-        )
+        result = await monitor.check_proxy_health()
         assert result["healthy"] is False
 
 
@@ -1008,41 +990,33 @@ class TestFaucetAttemptTracking:
             monitor.record_faucet_attempt("fb", i % 2 == 0)
         assert len(monitor.faucet_attempt_history["fb"]) == monitor.MAX_FAUCET_HISTORY
 
-    def test_faucet_health_empty(self, monitor):
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_faucet_health()
-        )
+    async def test_faucet_health_empty(self, monitor):
+        result = await monitor.check_faucet_health()
         assert result == {}
 
-    def test_faucet_health_high_success(self, monitor):
+    async def test_faucet_health_high_success(self, monitor):
         for _ in range(8):
             monitor.record_faucet_attempt("good", True)
         for _ in range(2):
             monitor.record_faucet_attempt("good", False)
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_faucet_health()
-        )
+        result = await monitor.check_faucet_health()
         assert result["good"]["healthy"] is True
         assert result["good"]["success_rate"] == 0.8
 
-    def test_faucet_health_low_success(self, monitor):
+    async def test_faucet_health_low_success(self, monitor):
         for _ in range(1):
             monitor.record_faucet_attempt("bad", True)
         for _ in range(9):
             monitor.record_faucet_attempt("bad", False)
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_faucet_health()
-        )
+        result = await monitor.check_faucet_health()
         assert result["bad"]["healthy"] is False
         assert result["bad"]["success_rate"] == 0.1
 
-    def test_faucet_health_few_attempts_healthy(self, monitor):
+    async def test_faucet_health_few_attempts_healthy(self, monitor):
         """Fewer than 3 attempts => always healthy regardless of rate."""
         monitor.record_faucet_attempt("new", False)
         monitor.record_faucet_attempt("new", False)
-        result = asyncio.get_event_loop().run_until_complete(
-            monitor.check_faucet_health()
-        )
+        result = await monitor.check_faucet_health()
         assert result["new"]["healthy"] is True
 
 
@@ -1051,78 +1025,66 @@ class TestFaucetAttemptTracking:
 # ===================================================================
 
 class TestCheckSystemHealth:
-    def test_psutil_not_available(self, monitor):
+    async def test_psutil_not_available(self, monitor):
         with patch("core.health_monitor.PSUTIL_AVAILABLE", False):
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is True
         assert "psutil not available" in result["message"]
 
-    def test_all_metrics_ok(self, monitor):
+    async def test_all_metrics_ok(self, monitor):
         mock_mem = MagicMock(percent=50.0)
         mock_disk = MagicMock(free=10 * 1024**3)  # 10 GB
         with patch("core.health_monitor.PSUTIL_AVAILABLE", True), \
-             patch("core.health_monitor.psutil") as mock_ps:
+             patch("core.health_monitor.psutil", create=True) as mock_ps:
             mock_ps.virtual_memory.return_value = mock_mem
             mock_ps.cpu_percent.return_value = 30.0
             mock_ps.disk_usage.return_value = mock_disk
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is True
         assert result["memory_percent"] == 50.0
         assert result["cpu_percent"] == 30.0
 
-    def test_high_memory(self, monitor):
+    async def test_high_memory(self, monitor):
         mock_mem = MagicMock(percent=95.0)
         mock_disk = MagicMock(free=10 * 1024**3)
         with patch("core.health_monitor.PSUTIL_AVAILABLE", True), \
-             patch("core.health_monitor.psutil") as mock_ps:
+             patch("core.health_monitor.psutil", create=True) as mock_ps:
             mock_ps.virtual_memory.return_value = mock_mem
             mock_ps.cpu_percent.return_value = 30.0
             mock_ps.disk_usage.return_value = mock_disk
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is False
         assert "High memory" in result["message"]
 
-    def test_high_cpu(self, monitor):
+    async def test_high_cpu(self, monitor):
         mock_mem = MagicMock(percent=50.0)
         mock_disk = MagicMock(free=10 * 1024**3)
         with patch("core.health_monitor.PSUTIL_AVAILABLE", True), \
-             patch("core.health_monitor.psutil") as mock_ps:
+             patch("core.health_monitor.psutil", create=True) as mock_ps:
             mock_ps.virtual_memory.return_value = mock_mem
             mock_ps.cpu_percent.return_value = 98.0
             mock_ps.disk_usage.return_value = mock_disk
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is False
         assert "High CPU" in result["message"]
 
-    def test_low_disk_space(self, monitor):
+    async def test_low_disk_space(self, monitor):
         mock_mem = MagicMock(percent=50.0)
         mock_disk = MagicMock(free=1 * 1024**3)  # 1 GB < MIN_DISK_GB (2)
         with patch("core.health_monitor.PSUTIL_AVAILABLE", True), \
-             patch("core.health_monitor.psutil") as mock_ps:
+             patch("core.health_monitor.psutil", create=True) as mock_ps:
             mock_ps.virtual_memory.return_value = mock_mem
             mock_ps.cpu_percent.return_value = 30.0
             mock_ps.disk_usage.return_value = mock_disk
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is False
         assert "Low disk" in result["message"]
 
-    def test_exception_handled(self, monitor):
+    async def test_exception_handled(self, monitor):
         with patch("core.health_monitor.PSUTIL_AVAILABLE", True), \
-             patch("core.health_monitor.psutil") as mock_ps:
+             patch("core.health_monitor.psutil", create=True) as mock_ps:
             mock_ps.virtual_memory.side_effect = RuntimeError("access denied")
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.check_system_health()
-            )
+            result = await monitor.check_system_health()
         assert result["healthy"] is False
 
 
@@ -1131,17 +1093,12 @@ class TestCheckSystemHealth:
 # ===================================================================
 
 class TestSendHealthAlert:
-    def test_alert_logged(self, monitor):
-        asyncio.get_event_loop().run_until_complete(
-            monitor.send_health_alert("WARNING", "test msg", "browser")
-        )
+    async def test_alert_logged(self, monitor):
+        await monitor.send_health_alert("WARNING", "test msg", "browser")
         assert "browser:WARNING:test msg" in monitor.alert_cooldowns
 
-    def test_duplicate_alert_suppressed(self, monitor):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
-            monitor.send_health_alert("WARNING", "dup", "browser")
-        )
+    async def test_duplicate_alert_suppressed(self, monitor):
+        await monitor.send_health_alert("WARNING", "dup", "browser")
         # Record the cooldown timestamp
         first_ts = monitor.alert_cooldowns["browser:WARNING:dup"]
 
@@ -1149,16 +1106,11 @@ class TestSendHealthAlert:
         monitor.alert_webhook_url = "https://hook.example.com"
         with patch("core.health_monitor.REQUESTS_AVAILABLE", True), \
              patch("core.health_monitor.requests") as mock_req:
-            loop.run_until_complete(
-                monitor.send_health_alert("WARNING", "dup", "browser")
-            )
+            await monitor.send_health_alert("WARNING", "dup", "browser")
             mock_req.post.assert_not_called()
 
-    def test_alert_sent_after_cooldown(self, monitor):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
-            monitor.send_health_alert("CRITICAL", "issue", "system")
-        )
+    async def test_alert_sent_after_cooldown(self, monitor):
+        await monitor.send_health_alert("CRITICAL", "issue", "system")
         # Simulate cooldown expired
         key = "system:CRITICAL:issue"
         monitor.alert_cooldowns[key] = time.time() - monitor.ALERT_COOLDOWN_SECONDS - 1
@@ -1166,19 +1118,15 @@ class TestSendHealthAlert:
         monitor.alert_webhook_url = "https://hook.example.com"
         with patch("core.health_monitor.REQUESTS_AVAILABLE", True), \
              patch("core.health_monitor.requests") as mock_req:
-            loop.run_until_complete(
-                monitor.send_health_alert("CRITICAL", "issue", "system")
-            )
+            await monitor.send_health_alert("CRITICAL", "issue", "system")
             mock_req.post.assert_called_once()
 
-    def test_webhook_failure_handled(self, monitor):
+    async def test_webhook_failure_handled(self, monitor):
         monitor.alert_webhook_url = "https://hook.example.com"
         with patch("core.health_monitor.REQUESTS_AVAILABLE", True), \
              patch("core.health_monitor.requests") as mock_req:
             mock_req.post.side_effect = ConnectionError("fail")
-            asyncio.get_event_loop().run_until_complete(
-                monitor.send_health_alert("INFO", "test", "general")
-            )
+            await monitor.send_health_alert("INFO", "test", "general")
             # No exception raised
 
 
@@ -1187,16 +1135,14 @@ class TestSendHealthAlert:
 # ===================================================================
 
 class TestRunFullHealthCheck:
-    def test_all_healthy(self, monitor):
+    async def test_all_healthy(self, monitor):
         monitor.browser_manager = None
         monitor.proxy_manager = None
         with patch("core.health_monitor.PSUTIL_AVAILABLE", False):
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.run_full_health_check()
-            )
+            result = await monitor.run_full_health_check()
         assert result["overall_healthy"] is True
 
-    def test_degraded_proxy(self, monitor):
+    async def test_degraded_proxy(self, monitor):
         monitor.browser_manager = None
 
         pm = MagicMock()
@@ -1208,14 +1154,12 @@ class TestRunFullHealthCheck:
         monitor.proxy_manager = pm
 
         with patch("core.health_monitor.PSUTIL_AVAILABLE", False), \
-             patch.object(monitor, "send_health_alert") as mock_alert:
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.run_full_health_check()
-            )
+             patch.object(monitor, "send_health_alert", new_callable=AsyncMock) as mock_alert:
+            result = await monitor.run_full_health_check()
         assert result["overall_healthy"] is False
         mock_alert.assert_called()
 
-    def test_unhealthy_faucet_sends_warning(self, monitor):
+    async def test_unhealthy_faucet_sends_warning(self, monitor):
         monitor.browser_manager = None
         monitor.proxy_manager = None
         # Record many failures
@@ -1223,17 +1167,15 @@ class TestRunFullHealthCheck:
             monitor.record_faucet_attempt("bad_faucet", False)
 
         with patch("core.health_monitor.PSUTIL_AVAILABLE", False), \
-             patch.object(monitor, "send_health_alert") as mock_alert:
-            result = asyncio.get_event_loop().run_until_complete(
-                monitor.run_full_health_check()
-            )
+             patch.object(monitor, "send_health_alert", new_callable=AsyncMock) as mock_alert:
+            result = await monitor.run_full_health_check()
         assert result["overall_healthy"] is False
         # Should have called send_health_alert for the faucet
         faucet_calls = [c for c in mock_alert.call_args_list
                         if "faucet_" in str(c)]
         assert len(faucet_calls) >= 1
 
-    def test_browser_critical_alert(self, monitor):
+    async def test_browser_critical_alert(self, monitor):
         monitor.proxy_manager = None
         monitor.browser_context_failures = monitor.MAX_BROWSER_CONTEXT_FAILURES
 
@@ -1242,10 +1184,8 @@ class TestRunFullHealthCheck:
         monitor.browser_manager = bm
 
         with patch("core.health_monitor.PSUTIL_AVAILABLE", False), \
-             patch.object(monitor, "send_health_alert") as mock_alert:
-            asyncio.get_event_loop().run_until_complete(
-                monitor.run_full_health_check()
-            )
+             patch.object(monitor, "send_health_alert", new_callable=AsyncMock) as mock_alert:
+            await monitor.run_full_health_check()
         # Check that a CRITICAL browser alert was sent
         critical_calls = [
             c for c in mock_alert.call_args_list

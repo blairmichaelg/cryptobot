@@ -11,7 +11,7 @@ from browser.instance import BrowserManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def test_faucet_structure(faucet_name: str, faucet_class):
+async def _check_faucet_structure(faucet_name: str, faucet_class):
     """Test that a faucet class has all required methods and can initialize."""
     try:
         # Create a test browser manager (won't actually launch browser)
@@ -58,7 +58,7 @@ async def main():
             results[faucet_name] = False
             continue
         
-        results[faucet_name] = await test_faucet_structure(faucet_name, faucet_class)
+        results[faucet_name] = await _check_faucet_structure(faucet_name, faucet_class)
     
     # Summary
     logger.info("\n" + "=" * 60)

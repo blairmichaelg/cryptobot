@@ -24,7 +24,7 @@ FAUCETS = [
     ("litepick", "LitePickBot"),
 ]
 
-async def test_faucet(faucet_module, faucet_class, max_proxy_attempts=3):
+async def _run_faucet(faucet_module, faucet_class, max_proxy_attempts=3):
     """Test a single faucet with proxy rotation"""
     from browser.instance import BrowserManager
     from core.config import BotSettings
@@ -129,7 +129,7 @@ async def main():
         logger.info(f"Testing {faucet_name}")
         logger.info(f"{'='*60}")
         
-        result = await test_faucet(faucet_module, faucet_class)
+        result = await _run_faucet(faucet_module, faucet_class)
         results[faucet_name] = result
         
         logger.info(f"\n{faucet_name} result: {result}\n")

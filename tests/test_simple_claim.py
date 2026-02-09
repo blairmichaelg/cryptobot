@@ -16,7 +16,7 @@ from browser.instance import BrowserManager
 from core.registry import get_faucet_class
 
 
-async def test_faucet(faucet_name: str):
+async def _run_faucet_test(faucet_name: str):
     """Test a single faucet's login and claim flow."""
     print(f"\n{'='*80}")
     print(f"🧪 TESTING: {faucet_name.upper()}")
@@ -165,7 +165,7 @@ async def main():
         sys.exit(1)
     
     faucet_name = sys.argv[1].lower()
-    success = await test_faucet(faucet_name)
+    success = await _run_faucet_test(faucet_name)
     
     sys.exit(0 if success else 1)
 

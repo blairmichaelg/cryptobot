@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-async def test_single_faucet_claim(faucet_name: str, browser_mgr, settings) -> dict:
+async def _run_single_faucet_claim(faucet_name: str, browser_mgr, settings) -> dict:
     """
     Test a single faucet's complete claim cycle.
     
@@ -195,7 +195,7 @@ async def main():
     try:
         # Test each faucet
         for faucet_name in all_faucets:
-            result = await test_single_faucet_claim(faucet_name, browser_mgr, settings)
+            result = await _run_single_faucet_claim(faucet_name, browser_mgr, settings)
             results.append(result)
             
             # Brief pause between faucets

@@ -55,7 +55,7 @@ class FaucetTestResult:
             + (f" | Error: {self.error}" if self.error else "")
         )
 
-async def test_faucet(faucet_name: str, settings: BotSettings, browser_manager: BrowserManager) -> FaucetTestResult:
+async def _run_faucet(faucet_name: str, settings: BotSettings, browser_manager: BrowserManager) -> FaucetTestResult:
     """Test a single faucet through its full cycle."""
     result = FaucetTestResult(faucet_name)
     context = None
@@ -196,7 +196,7 @@ async def main():
         await browser_manager.launch()
         
         for faucet_name in all_faucets:
-            result = await test_faucet(faucet_name, settings, browser_manager)
+            result = await _run_faucet(faucet_name, settings, browser_manager)
             results.append(result)
             
             # Brief pause between faucets

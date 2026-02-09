@@ -21,7 +21,7 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s - %(message)s'
 )
 
-async def test_faucet_claim(faucet_name: str):
+async def _run_faucet_claim(faucet_name: str):
     """Test a single faucet claim end-to-end."""
     settings = BotSettings()
     browser_mgr = BrowserManager(settings)
@@ -124,7 +124,7 @@ async def main():
         sys.exit(1)
     
     faucet_name = sys.argv[1].lower()
-    success = await test_faucet_claim(faucet_name)
+    success = await _run_faucet_claim(faucet_name)
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":

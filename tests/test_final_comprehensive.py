@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-async def test_single_faucet(faucet_name: str, browser_mgr, settings) -> dict:
+async def _run_single_faucet(faucet_name: str, browser_mgr, settings) -> dict:
     """Test a single faucet with all fixes applied."""
     result = {
         "name": faucet_name,
@@ -165,7 +165,7 @@ async def main():
         await browser_mgr.launch()
         
         for faucet in all_faucets:
-            result = await test_single_faucet(faucet, browser_mgr, settings)
+            result = await _run_single_faucet(faucet, browser_mgr, settings)
             results.append(result)
             await asyncio.sleep(1)
     finally:

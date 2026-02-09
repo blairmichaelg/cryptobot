@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 logging.getLogger('playwright').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 
-async def test_faucet_login(faucet_name: str, browser_manager: BrowserManager, settings: BotSettings, context, page) -> dict:
+async def _run_faucet_login(faucet_name: str, browser_manager: BrowserManager, settings: BotSettings, context, page) -> dict:
     """Test login for a single faucet.
     
     Returns:
@@ -136,7 +136,7 @@ async def main():
             logger.info(f"Testing: {faucet_name.upper()}")
             logger.info(f"{'='*60}")
             
-            result = await test_faucet_login(faucet_name, browser_manager, settings, context, page)
+            result = await _run_faucet_login(faucet_name, browser_manager, settings, context, page)
             results.append(result)
             
             # Log result

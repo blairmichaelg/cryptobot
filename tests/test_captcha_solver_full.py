@@ -1828,7 +1828,7 @@ class TestSolveCaptcha:
 
     async def test_altcha_detected(self):
         s = _make_solver()
-        page = MagicMock()
+        page = AsyncMock()
         page.wait_for_selector = AsyncMock(side_effect=Exception("timeout"))
         page.frames = []
         # query_selector calls in order:

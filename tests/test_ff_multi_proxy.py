@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-async def test_with_proxy(session_id):
+async def _run_with_proxy(session_id):
     """Test a single proxy session"""
     from browser.instance import BrowserManager
     from faucets.firefaucet import FireFaucetBot
@@ -76,7 +76,7 @@ async def main():
     for i in range(10):  # Try up to 10 different sessions
         session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
         
-        success = await test_with_proxy(session_id)
+        success = await _run_with_proxy(session_id)
         if success:
             logger.info(f"🎉 SUCCESS with session: {session_id}")
             break
