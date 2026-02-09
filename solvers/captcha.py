@@ -2197,46 +2197,54 @@ class CaptchaSolver:
             method: CAPTCHA method string.
             token: The solution token.
         """
-        await page.evaluate(f"""(token) => {{
-            const setVal = (sel, val, ensure = false) => {{
-                let el = document.querySelector(sel);
-                if (!el && ensure) {{
-                    el = document.createElement('input');
-                    el.type = 'hidden';
-                    el.name = sel.replace('[name="', '').replace('"]', '');
-                    (document.querySelector('form') || document.body).appendChild(el);
-                }}
-                if (el) {{
-                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') el.value = val;
-                    else el.innerHTML = val;
-                }}
-            }};
+        try:
+            await asyncio.wait_for(
+                page.evaluate(f"""(token) => {{
+                    const setVal = (sel, val, ensure = false) => {{
+                        let el = document.querySelector(sel);
+                        if (!el && ensure) {{
+                            el = document.createElement('input');
+                            el.type = 'hidden';
+                            el.name = sel.replace('[name="', '').replace('"]', '');
+                            (document.querySelector('form') || document.body).appendChild(el);
+                        }}
+                        if (el) {{
+                            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') el.value = val;
+                            else el.innerHTML = val;
+                        }}
+                    }};
 
-            if ("{method}" === "hcaptcha") {{
-                setVal('[name="h-captcha-response"]', token);
-                setVal('[name="g-recaptcha-response"]', token);
-            }} else if ("{method}" === "userrecaptcha") {{
-                setVal('#g-recaptcha-response', token);
-                setVal('[name="g-recaptcha-response"]', token);
-            }} else if ("{method}" === "turnstile") {{
-                setVal('[name="cf-turnstile-response"]', token, true);
-            }}
+                    if ("{method}" === "hcaptcha") {{
+                        setVal('[name="h-captcha-response"]', token);
+                        setVal('[name="g-recaptcha-response"]', token);
+                    }} else if ("{method}" === "userrecaptcha") {{
+                        setVal('#g-recaptcha-response', token);
+                        setVal('[name="g-recaptcha-response"]', token);
+                    }} else if ("{method}" === "turnstile") {{
+                        setVal('[name="cf-turnstile-response"]', token, true);
+                    }}
 
-            const callbacks = ['onCaptchaSuccess', 'onhCaptchaSuccess', 'onTurnstileSuccess', 'recaptchaCallback', 'grecaptchaCallback', 'captchaCallback'];
-            callbacks.forEach(cb => {{
-                if (typeof window[cb] === 'function') {{
-                    try {{ window[cb](token); }} catch(e) {{ console.error('Callback error:', e); }}
-                }}
-            }});
+                    const callbacks = ['onCaptchaSuccess', 'onhCaptchaSuccess', 'onTurnstileSuccess', 'recaptchaCallback', 'grecaptchaCallback', 'captchaCallback'];
+                    callbacks.forEach(cb => {{
+                        if (typeof window[cb] === 'function') {{
+                            try {{ window[cb](token); }} catch(e) {{ console.error('Callback error:', e); }}
+                        }}
+                    }});
 
-            ['h-captcha-response', 'g-recaptcha-response', 'cf-turnstile-response'].forEach(name => {{
-                const el = document.querySelector(`[name="${{name}}"]`);
-                if (el) {{
-                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                }}
-            }});
-        }}""", token)
+                    ['h-captcha-response', 'g-recaptcha-response', 'cf-turnstile-response'].forEach(name => {{
+                        const el = document.querySelector(`[name="${{name}}"]`);
+                        if (el) {{
+                            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }});
+                }}""", token),
+                timeout=10,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Token injection timed out (callback may have triggered navigation)"
+            )
 
     async def _wait_for_human(
         self,
