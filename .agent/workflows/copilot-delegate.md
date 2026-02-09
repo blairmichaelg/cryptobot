@@ -36,10 +36,13 @@ The new Copilot CLI has specialized built-in agents:
 
 ## What Happens When You Delegate
 
-1. **Checkpoint Created**: Unstaged changes committed to new branch
-2. **Agent Works**: Copilot makes changes in background
-3. **Draft PR Opened**: Changes submitted as draft pull request
-4. **Review Requested**: You receive notification to review
+1. **Agent Works**: Copilot makes changes in background
+2. **Draft PR Opened**: Changes submitted as draft pull request on a temporary branch
+3. **Review Requested**: You receive notification to review
+4. **Merge to master**: Squash-merge the PR to master, then delete the temporary branch
+5. **Sync everywhere**: Pull master locally and on the VM to stay in sync
+
+> **IMPORTANT**: This project uses a single-branch (`master`) workflow. If Copilot creates a branch for a PR, merge it to master promptly and delete the branch. Never leave stale branches.
 
 ## Best Use Cases
 

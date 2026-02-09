@@ -1,8 +1,15 @@
 # Copilot Instructions (Cryptobot Gen 3.0)
 
-## Branch & Repo Safety
-- Work only on master in C:\Users\azureuser\Repositories\cryptobot; never create branches/worktrees; pull before changes, push after.
-- Do not force reset/delete/push; if extra branches exist, review PRs/issues, sync, then delete only with approval.
+## Branch & Repo Safety — SINGLE BRANCH ONLY
+- **ALL work happens on `master`** in C:\Users\azureuser\Repositories\cryptobot. No exceptions.
+- **NEVER** create branches, worktrees, feature branches, or PR branches. All commits go directly to `master`.
+- **NEVER** force push, hard reset, or delete branches without explicit user approval.
+- **Keep local, remote, and deployment in sync at all times:**
+  1. `git pull origin master` before making any changes.
+  2. Commit logically with conventional commit messages.
+  3. `git push origin master` after every commit session.
+  4. If deploying: SSH to VM, `cd ~/Repositories/cryptobot && git pull origin master`, restart service.
+- If an agent (Copilot, Gemini, Claude, etc.) creates a branch or worktree, that is a bug — delete it and commit directly to master instead.
 
 ## ⚠️ CRITICAL: Testing Environment Rules
 **DO NOT run Camoufox or browser tests on this Windows machine.**
@@ -14,15 +21,14 @@
 - If you need to test code changes: push to repo, pull on VM, run tests there.
 - **Never suggest running `python test_*.py` or `python main.py` locally** - always SSH to the VM first.
 
-## Current Project Status (Last Updated: 2026-01-24)
-- **Environment**: Dual - Local Windows dev machine + Azure VM (DevNode01 in APPSERVRG)
-- **Azure VM**: 4.155.230.212 (West US 2) - RUNNING but service CRASHING
-- **Critical Issue**: faucet_worker service in crash loop - NameError: Dict not defined in browser/instance.py
-- **VM Has Two Installations**: ~/backend_service (active, broken) + ~/Repositories/cryptobot (newer, not used)
-- **Faucet Status**: 18 fully implemented (Pick.io family verified complete)
-- **Known Issues**: FreeBitcoin bot has 100% login failure rate - needs investigation
-- **Testing Phase**: Most analytics data is test data, limited production usage
-- See docs/summaries/PROJECT_STATUS_REPORT.md and docs/azure/AZURE_VM_STATUS.md for complete details
+## Current Project Status (Last Updated: 2026-02-08)
+- **Environment**: Dual - Local Windows dev machine (code editing) + Azure VM (production/testing)
+- **Azure VM**: DevNode01 in APPSERVRG, IP 4.155.230.212 (West US 2)
+- **Service**: faucet_worker systemd service — use `~/Repositories/cryptobot` as working directory
+- **Proxy**: Zyte proxies enabled (USE_2CAPTCHA_PROXIES=true), 100 endpoints
+- **Faucet Status**: 18 fully implemented (7 standard + 11 Pick.io family)
+- **Git**: Single branch (`master`) only — local, remote (GitHub), and VM must stay in sync
+- **Sync workflow**: Edit locally → push to GitHub → SSH to VM → `git pull` → restart service
 
 ## Architecture Snapshot
 - main.py bootstraps JobScheduler in core/orchestrator.py; jobs carry next_run and requeue themselves—avoid manual event loops or asyncio.sleep in main flows.
@@ -52,13 +58,18 @@
 - Bots should catch/log exceptions instead of propagating.
 
 ## Deployment
-- Azure VM: DevNode01 in APPSERVRG (4.155.230.212, West US 2) - RUNNING but service FAILING
-- **Critical Issue**: faucet_worker service crashing - missing Dict import in browser/instance.py
-- **Two Code Locations**: ~/backend_service (systemd active, has bugs) vs ~/Repositories/cryptobot (newer, not used)
-- **Fix Required**: Either update ~/backend_service code OR reconfigure systemd to use ~/Repositories/cryptobot
-- To deploy updates: Use deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
-- Health check: ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"
-- See docs/azure/AZURE_VM_STATUS.md for critical service failure details and remediation steps
+- **Azure VM**: DevNode01 in APPSERVRG (4.155.230.212, West US 2) — ACTIVE
+- **Working directory on VM**: `~/Repositories/cryptobot` (systemd service uses this path)
+- **Deploy workflow** (keep local, remote, and VM in sync):
+  1. Commit and push on local: `git push origin master`
+  2. SSH to VM: `ssh azureuser@4.155.230.212`
+  3. Pull latest: `cd ~/Repositories/cryptobot && git pull origin master`
+  4. Install deps if changed: `pip install -r requirements.txt`
+  5. Restart: `sudo systemctl restart faucet_worker`
+  6. Verify: `sudo systemctl status faucet_worker`
+- **Automated deploy**: `./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01`
+- **Health check**: `ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"`
+- **Logs**: `ssh azureuser@4.155.230.212 "journalctl -u faucet_worker -f"`
 
 ## Common Tasks
 - New faucet: create faucets/<name>.py subclassing FaucetBot; wire login/claim/balance/timer via DataExtractor; register in core/registry.py; add env creds and tests in tests/.

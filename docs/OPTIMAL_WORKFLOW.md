@@ -19,83 +19,63 @@ Use the appropriate tool based on the complexity and scope of the task:
 
 ## 2. GitHub & Development Workflow
 
-Maintain a clean `master` branch by following these steps:
+All work is done on a single `master` branch. No feature branches, no worktrees.
 
-- **Always Branch**: Create a branch for every fix/feature (`fix/xx-desc` or `feat/xx-desc`).
-- **Atomic Commits**: Keep commits focused and well-described.
-- **Pull Requests**: Use `gh pr create` with a clear description linking back to the issue.
-- **Review**: Use `gh pr status` and `gh pr diff` to review your own (or agent's) work before merging.
+- **Single Branch**: Commit directly to `master`. Never create branches.
+- **Sync Always**: `git pull` before work, `git push` after commits, `git pull` on VM before restarting service.
+- **Atomic Commits**: Keep commits focused and well-described using conventional commit format.
+- **Review**: Use `gh pr status` and `git log` to review agent work before deploying.
 
 ## 3. Azure & Deployment
 
-**Current Status**: No active Azure VM deployment. See [DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md) for details.
+**Current Status**: Azure VM (DevNode01) is ACTIVE at 4.155.230.212.
 
-### For Local Development (Current Mode)
+### Deployment Workflow (Keep Local, Remote, and VM in Sync)
 
-Always run tests in headless mode locally first:
+```bash
+# 1. Push changes from local to GitHub
+git push origin master
 
-```powershell
-$env:HEADLESS="true"; pytest
+# 2. SSH to VM and pull
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git pull origin master"
+
+# 3. Restart service
+ssh azureuser@4.155.230.212 "sudo systemctl restart faucet_worker"
+
+# 4. Verify
+ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"
 ```
 
-Run the bot:
+### Automated Deploy
 
-```powershell
-# Standard run
-python main.py
-
-# Debug mode (visible browser)
-python main.py --visible
-
-# Test specific faucet
-python main.py --single firefaucet
+```bash
+./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
 ```
 
-### When Azure VM is Deployed (Future)
+### Monitoring
 
-To maintain consistency and uptime on the production VM:
+```bash
+# Live logs
+ssh azureuser@4.155.230.212 "journalctl -u faucet_worker -f"
 
-#### **Verification Before Deploy**
-
-Always run tests in headless mode locally first:
-
-```powershell
-$env:HEADLESS="true"; pytest
+# Health check
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && python meta.py health"
 ```
 
-#### **Deployment Steps**
+### For Local Development (Code Editing Only)
 
-1. **Provision VM** (if not exists):
-   ```bash
-   az group create --name cryptobot-rg --location eastus
-   az vm create --resource-group cryptobot-rg --name cryptobot-vm \
-     --image Ubuntu2204 --size Standard_B2s \
-     --admin-username azureuser --generate-ssh-keys
-   ```
+Windows is for editing code only. Do NOT run Camoufox or browser tests locally.
 
-2. **Deploy Code**:
-   ```bash
-   # Option A: Azure CLI-based deployment
-   ./deploy/azure_deploy.sh --resource-group cryptobot-rg --vm-name cryptobot-vm
-   
-   # Option B: PowerShell-based deployment
-   ./deploy/deploy_vm.ps1 -VmIp <IP> -SshKey ~/.ssh/id_rsa
-   ```
+```powershell
+# Run linting/type checking locally
+$env:HEADLESS="true"; pytest tests/ -k "not browser"
+```
 
-3. **Restart Service**:
+To test changes, push and run on the VM:
 
-   ```bash
-   ssh azureuser@<VM-IP> "sudo systemctl restart faucet_worker"
-   ```
-
-4. **Monitor Logs**: Keep an eye on the service log:
-
-   ```bash
-   ssh azureuser@<VM-IP> "journalctl -u faucet_worker -f"
-   
-   # OR use health check script
-   ./deploy/vm_health.sh cryptobot-rg cryptobot-vm
-   ```
+```bash
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git pull && HEADLESS=true pytest"
+```
 
 ## 4. Profitability & Stealth
 

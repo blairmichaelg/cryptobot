@@ -6,14 +6,18 @@ description: Optimal workflow for GitHub PR and issue management with delegation
 
 Systematic approach to managing GitHub issues, PRs, and delegation to Copilot and Gemini agents.
 
-## Daily CheckinConcurrency
+## Daily Checkin
 
-// turbo
+> **REMINDER**: This project uses `master` only. No feature branches. Keep local, remote, and VM in sync.
 
 ```bash
 # Quick status check
 gh pr list --state open
 gh issue list --state open --label priority:high
+
+# Verify no stale branches exist
+git branch -a
+# Should only show: master, remotes/origin/HEAD, remotes/origin/master
 ```
 
 ## PR Review Process
@@ -33,6 +37,8 @@ gh pr checks 3
 
 ### 2. Auto-Merge Strategy
 
+**This project uses `master` only. Merge PRs via squash-merge and delete the branch immediately.**
+
 **Criteria for auto-merge:**
 
 - All CI checks passed
@@ -41,11 +47,23 @@ gh pr checks 3
 - Squash merge to keep history clean
 
 ```bash
-# Enable auto-merge when checks pass
-gh pr merge 3 --auto --squash
+# Squash merge and delete branch
+gh pr merge 3 --squash --delete-branch
 
-# Or merge immediately if ready
-gh pr merge 3 --squash
+# Or enable auto-merge when checks pass
+gh pr merge 3 --auto --squash --delete-branch
+```
+
+**After merging, sync everywhere:**
+```bash
+# Pull locally
+git pull origin master
+
+# Pull on VM
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git pull origin master"
+
+# Prune stale remote refs
+git remote prune origin
 ```
 
 ## Issue Delegation Strategy
@@ -130,15 +148,21 @@ gh pr list --draft
 bash deploy/github_automation.sh
 ```
 
-### Friday: Weekly Summary
+### Friday: Weekly Summary & Sync Check
 
 ```bash
 # Generate weekly report (last 7 days)
 gh issue list --state closed --search "closed:>=WEEK_AGO"
 gh pr list --state merged --search "merged:>=WEEK_AGO"
 
-# Clean up merged branches
-git branch --merged master | grep -v "master" | xargs git branch -d
+# Verify no stale branches (should only be master)
+git branch -a
+git remote prune origin
+
+# Verify VM is in sync with remote
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git log -1 --oneline"
+git log -1 --oneline
+# Both should show the same commit
 ```
 
 ## Best Practices

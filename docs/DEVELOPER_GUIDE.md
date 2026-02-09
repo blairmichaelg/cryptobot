@@ -5,10 +5,11 @@ This guide outlines the standard operating procedures, architecture, and workflo
 > [!IMPORTANT]
 > **CRITICAL CONTEXT**
 >
-> 1. **OS**: Development is on Windows (Git Bash/Powershell), Production is Linux (Azure VM).
-> 2. **Current Deployment**: System is NOT deployed to Azure - runs locally on Windows dev machine only.
-> 3. **Paths**: Always use `pathlib` for cross-platform compatibility.
-> 4. **Stealth**: Standardized on `Camoufox` with session-based proxy rotation.
+> 1. **OS**: Development is on Windows (Git Bash/Powershell), Production is Linux (Azure VM at 4.155.230.212).
+> 2. **Current Deployment**: Azure VM (DevNode01) is ACTIVE — `~/Repositories/cryptobot` with systemd `faucet_worker` service.
+> 3. **Git**: Single branch (`master`) only. Keep local, remote (GitHub), and VM in sync at all times.
+> 4. **Paths**: Always use `pathlib` for cross-platform compatibility.
+> 5. **Stealth**: Standardized on `Camoufox` with session-based proxy rotation.
 
 ## 1. Development Workflow
 
@@ -64,48 +65,37 @@ git pull origin master
 
 ## 3. Deployment (Azure VM)
 
-**Current Status**: No active Azure VM deployment. System runs locally on Windows development machine.
+**Current Status**: Azure VM (DevNode01) is ACTIVE at 4.155.230.212.
 
-See [docs/DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md) for complete deployment documentation.
+The production deployment uses `~/Repositories/cryptobot` on the VM with systemd `faucet_worker` service.
 
-### When Azure VM Deployment is Active
+### Deployment Workflow (Keep Everything in Sync)
 
-The production environment is designed for an Azure VM running Ubuntu.
+1. **Push from local**: `git push origin master`
+2. **Pull on VM**: `ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git pull origin master"`
+3. **Install deps** (if requirements.txt changed): `ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && pip install -r requirements.txt"`
+4. **Restart**: `ssh azureuser@4.155.230.212 "sudo systemctl restart faucet_worker"`
+5. **Verify**: `ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"`
 
-### Deployment Checklist
+### Automated Deploy
 
-1. **Code Sync**: Use `deploy/deploy.sh` or `deploy/azure_deploy.sh` to sync code.
-2. **Dependency Update**: If `requirements.txt` changed, install updates on VM.
-3. **Service Restart**:
+```bash
+./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
+```
 
-    ```bash
-    sudo systemctl restart faucet_worker
-    ```
+### Local Development (Code Editing Only)
 
-4. **Health Check**:
-
-    ```bash
-    python meta.py health
-    # OR from local machine:
-    ./deploy/vm_health.sh <resource-group> <vm-name>
-    ```
-
-### Local Development (Current Mode)
-
-Run the bot locally for testing:
+The Windows machine is for editing code. Run tests and the bot on the Azure VM.
 
 ```powershell
-# Standard run
-python main.py
+# Edit code, then push
+git add . && git commit -m "feat: description" && git push origin master
 
-# Visible browser (for debugging)
-python main.py --visible
+# Test on VM
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && git pull && HEADLESS=true pytest"
 
-# Single faucet test
-python main.py --single firefaucet
-
-# Health check
-python meta.py health
+# Run single faucet test on VM
+ssh azureuser@4.155.230.212 "cd ~/Repositories/cryptobot && HEADLESS=true python main.py --single firefaucet --once"
 ```
 
 ## 4. Architecture Standards
@@ -140,26 +130,23 @@ python meta.py health
 - Anti-bot detection triggering
 - Proxy IP blocking
 
-**Debug Steps**:
-```powershell
-# Run with visible browser to see actual behavior
-python main.py --single freebitcoin --visible
+**Debug Steps** (run on VM, not Windows):
+```bash
+# SSH to VM first
+ssh azureuser@4.155.230.212
+
+# Run with visible browser (if X11 forwarding or VNC available)
+cd ~/Repositories/cryptobot
+HEADLESS=true python main.py --single freebitcoin --once
 
 # Check logs for specific error
-Get-Content logs/production_run.log | Select-String "FreeBitcoin"
+grep "FreeBitcoin" logs/faucet_bot.log | tail -20
 ```
 
-#### Pick.io Family Implementation
-**Status**: Incomplete - 10/11 faucets missing implementation
+#### Pick.io Family
+**Status**: All 11 faucets fully implemented (LTC, TRX, DOGE, SOL, BNB, BCH, TON, MATIC, DASH, ETH, USDT)
 
-**Working**: TronPick (reference implementation)
-**Missing**: LitePick, DogePick, SolPick, BchPick, BinPick, DashPick, EthPick, PolygonPick, TonPick, UsdPick
-
-**Implementation Pattern** (use TronPick as reference):
-1. Inherit from `PickFaucetBase`
-2. Set `base_url` in __init__
-3. Implement coin-specific methods (login is in base class)
-4. Add to `core/registry.py`
+All Pick.io faucets inherit from `PickFaucetBase` in `faucets/pick_base.py` which provides the shared login implementation. Each coin-specific faucet sets its `base_url` and is registered in `core/registry.py`.
 
 ### System Health
 
@@ -170,17 +157,21 @@ Get-Content logs/production_run.log | Select-String "FreeBitcoin"
 - **Browser**: If `Camoufox` fails to launch, check for zombie Firefox processes.
 - **Heartbeat**: File `logs/heartbeat.txt` should update every 60 seconds when system is running.
 
-### Performance Monitoring
+### Performance Monitoring (Run on VM)
 
-```powershell
+```bash
+# SSH to VM
+ssh azureuser@4.155.230.212
+cd ~/Repositories/cryptobot
+
 # Check current system health
 python meta.py health
 
 # View recent activity
-Get-Content logs/production_run.log -Tail 50
+tail -50 logs/faucet_bot.log
 
 # Check heartbeat
-Get-Content logs/heartbeat.txt
+cat /tmp/cryptobot_heartbeat
 
 # Analyze profitability (when enough data exists)
 python meta.py profitability
