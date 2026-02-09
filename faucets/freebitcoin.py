@@ -9,8 +9,10 @@ Implements ``freebitco.in`` -- one of the oldest Bitcoin faucets.  Features:
 Claim interval: ~60 minutes.
 
 Known issues:
-    * Login success rate is currently ~0 %% -- selectors may require update
-      or credential refresh (see ``copilot-instructions.md``).
+    * Login success rate is currently low -- selectors may require updating
+      due to site changes. See SELECTOR_UPDATE_GUIDE.md in docs/ for how to
+      diagnose and fix selector issues. If login failures persist, verify
+      credentials are current in the .env file.
 """
 
 from .base import FaucetBot, ClaimResult
@@ -27,8 +29,11 @@ class FreeBitcoinBot(FaucetBot):
     """FreeBitco.in faucet bot.
 
     Handles login, hourly roll claims, balance extraction, and withdrawal.
-    Currently experiencing 100 %% login failure rate -- investigate selector
-    changes on the site.
+    
+    Known Issues:
+        Login reliability varies -- if experiencing failures, check that
+        selectors match current site structure using browser dev tools.
+        See docs/SELECTOR_UPDATE_GUIDE.md for troubleshooting steps.
     """
 
     def __init__(self, settings, page, **kwargs):

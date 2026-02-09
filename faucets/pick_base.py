@@ -1,3 +1,34 @@
+"""Base class for Pick.io family faucets (11 cryptocurrencies).
+
+This module provides the PickFaucetBase class that implements shared login,
+claim, and withdrawal logic for the Pick.io faucet family, which includes:
+
+* LitePick (LTC) - litepick.io
+* TronPick (TRX) - tronpick.io
+* DogePick (DOGE) - dogepick.io
+* SolPick (SOL) - solpick.io
+* BinPick (BNB) - binpick.io
+* BchPick (BCH) - bchpick.io
+* TonPick (TON) - tonpick.io
+* PolygonPick (MATIC) - polygonpick.io
+* DashPick (DASH) - dashpick.io
+* EthPick (ETH) - ethpick.io
+* UsdPick (USDT) - usdpick.io
+
+These sites share identical structure and UI patterns. Subclasses only need
+to define base_url and currency-specific details. The base class handles
+TLS fingerprinting resistance, Cloudflare bypass, connection retry logic,
+and anti-bot detection avoidance.
+
+Usage:
+    class LitePickBot(PickFaucetBase):
+        def __init__(self, settings, page, **kwargs):
+            super().__init__(settings, page, **kwargs)
+            self.faucet_name = "LitePick"
+            self.base_url = "https://litepick.io"
+            self.login_url = f"{self.base_url}/login.php"
+            self.faucet_url = f"{self.base_url}/faucet.php"
+"""
 import asyncio
 import logging
 import random

@@ -52,8 +52,19 @@ class DutchyBot(FaucetBot):
             return False
 
     def get_jobs(self):
-        """
-        Returns DutchyCorp-specific jobs including rolls, shortlinks and withdrawals.
+        """Generate scheduled jobs for DutchyCorp faucet operations.
+
+        Creates a list of Job objects for the orchestrator to execute, including:
+        
+        1. Main claim job (hourly rolls) - Priority 1, runs immediately
+        2. Withdrawal job - Priority 5, runs after 1 hour delay
+
+        Returns:
+            List[Job]: Scheduled jobs for this faucet with timing and priority.
+
+        Note:
+            Jobs requeue themselves after execution based on extracted timer data.
+            The initial next_run times here are just bootstrap values.
         """
         from core.orchestrator import Job
         import time
@@ -83,13 +94,25 @@ class DutchyBot(FaucetBot):
         return jobs
 
     async def claim_shortlinks(self, separate_context: bool = True) -> ClaimResult:
-        """Claim available shortlinks on DutchyCorp.
+        """Claim available shortlinks on DutchyCorp for additional earnings.
+
+        Navigates to the shortlinks page, identifies available shortlinks,
+        and solves each one using the ShortlinkSolver. Uses anti-detection
+        measures including human-like timing and mouse movements.
 
         Args:
-            separate_context: Use separate browser context to avoid interference
+            separate_context (bool): If True, uses a separate browser context
+                to avoid interfering with the main claim session. Defaults to True.
+                Set to False when already in an isolated context.
 
         Returns:
-            ClaimResult with shortlink earnings
+            ClaimResult: Contains total shortlink earnings, success/failure status,
+                and next timer (0 if more shortlinks available, or next refresh time).
+
+        Example:
+            >>> result = await bot.claim_shortlinks()
+            >>> if result.success:
+            ...     print(f"Earned {result.amount} from {result.message}")
         """
         shortlink_earnings = 0.0
         shortlinks_claimed = 0
