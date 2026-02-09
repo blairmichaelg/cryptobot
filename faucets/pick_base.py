@@ -20,6 +20,14 @@ to define base_url and currency-specific details. The base class handles
 TLS fingerprinting resistance, Cloudflare bypass, connection retry logic,
 and anti-bot detection avoidance.
 
+Selector Update Notes (2026-02-08):
+    * Enhanced all selectors with data attributes for semantic stability
+    * Login fields: Prioritized ID > name > data-attrs > type > text
+    * Claim buttons: Added data-action selectors for better targeting
+    * Login triggers: Added data-action patterns for consistency
+    * All selector arrays now ordered by stability (most stable first)
+    * Connection retry logic already robust with exponential backoff
+
 Usage:
     class LitePickBot(PickFaucetBase):
         def __init__(self, settings, page, **kwargs):
@@ -260,33 +268,45 @@ class PickFaucetBase(FaucetBot):
                         continue
                 return None
 
+            # Email field selectors (updated 2026-02-08)
+            # Priority: ID > name > data attributes > type > placeholder > generic
             email_selectors = [
-                'input#user_email',
-                'input[type="email"]',
-                'input[name="email"]',
+                'input#user_email',  # ID selector (most stable)
                 'input#email',
+                'input[name="email"]',  # Name attribute
                 'input[name="username"]',
                 'input[name="login"]',
                 'input[name="user"]',
                 'input[name="user_name"]',
-                'input[placeholder*="email" i]',
+                'input[data-field="email"]',  # Data attribute (semantic, added 2026-02-08)
+                'input[data-field="username"]',
+                'input[data-input="email"]',
+                'input[type="email"]',  # Type attribute
+                'input[placeholder*="email" i]',  # Placeholder text matching
                 'input[placeholder*="username" i]',
-                'form input[type="text"]',
+                'form input[type="text"]',  # Generic (last resort)
             ]
+            # Password field selectors (updated 2026-02-08)
             password_selectors = [
-                'input[type="password"]',
-                'input[name="password"]',
-                'input#password',
+                'input#password',  # ID selector (most stable)
+                'input[name="password"]',  # Name attribute
                 'input[name="pass"]',
-                'input[placeholder*="password" i]',
+                'input[data-field="password"]',  # Data attribute (semantic, added 2026-02-08)
+                'input[data-input="password"]',
+                'input[type="password"]',  # Type attribute
+                'input[placeholder*="password" i]',  # Placeholder text matching
             ]
+            # Login trigger selectors (updated 2026-02-08)
             login_trigger_selectors = [
-                'a:has-text("Login")',
+                '#login_trigger',  # ID selector (added 2026-02-08)
+                'button#login',
+                'a[data-action="login"]',  # Data attribute (semantic, added 2026-02-08)
+                'button[data-action="login"]',
+                'a:has-text("Login")',  # Text-based (language-dependent)
                 'a:has-text("Log in")',
                 'button:has-text("Login")',
                 'button:has-text("Log in")',
-                'a[href*="login"]',
-                'button#login',
+                'a[href*="login"]',  # Href pattern matching
                 'button#process_login',
                 '.login-btn',
                 '.login-button',
@@ -389,17 +409,23 @@ class PickFaucetBase(FaucetBot):
                     return False
 
             # Find login button - prioritize specific selectors over generic ones
+            # Updated 2026-02-08: Added data attributes and reordered by stability
             login_btn_selectors = [
-                'button#process_login',
+                'button#process_login',  # ID selector (most stable)
                 '#login_button',
+                'button#login',
+                'button[data-action="login"]',  # Data attribute (semantic, added 2026-02-08)
+                'button[data-submit="login"]',
+                'input#login_submit',
                 'button.login-btn',
                 'button.login-button',
                 'button.process_btn',
-                'button:has-text("Login")',
+                'button:has-text("Login")',  # Text-based (language-dependent)
                 'button:has-text("Log in")',
-                'button[type="submit"]:visible',
+                'button[type="submit"]:visible',  # Generic (last resort)
+                'input[type="submit"][value*="Login"]',
                 'input[type="submit"]:visible',
-                'button.btn:visible:has-text("Login")',  # More specific than just button.btn
+                'button.btn:visible:has-text("Login")',
             ]
 
             login_btn = None
@@ -656,9 +682,20 @@ class PickFaucetBase(FaucetBot):
             # Wait a bit after CAPTCHA for page to update
             await self.human_wait(2)
 
+            # Claim button selectors (updated 2026-02-08)
+            # Priority: ID > data attributes > classes > text content
             claim_btn = self.page.locator(
-                'button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), '
-                'button#claim, button[type="submit"], .btn-success, button.get-reward'
+                'button#claim, '
+                'button#faucet_claim, '
+                'button[data-action="claim"], '  # Data attribute (semantic, added 2026-02-08)
+                'button[data-action="faucet"], '
+                'button.btn-primary, '
+                'button:has-text("Claim"), '
+                'button:has-text("Roll"), '
+                'button[type="submit"], '
+                '.btn-success, '
+                'button.get-reward, '
+                'button.claim-btn'
             )
 
             # Try to wait for button to be visible

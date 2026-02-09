@@ -8,11 +8,20 @@ Implements ``freebitco.in`` -- one of the oldest Bitcoin faucets.  Features:
 
 Claim interval: ~60 minutes.
 
+Selector Update Notes (2026-02-08):
+    * Login form is hidden by default - must click login trigger first
+    * Enhanced login trigger selectors with data attributes for stability
+    * Increased login trigger wait time from 5s to 10s for form animation
+    * Added semantic data-attribute selectors (e.g., data-action, data-field)
+    * Selector priority: ID > data-attrs > name > type > class > text
+    * Multiple fallback selectors for each element to handle site changes
+
 Known issues:
-    * Login success rate is currently low -- selectors may require updating
-      due to site changes. See SELECTOR_UPDATE_GUIDE.md in docs/ for how to
-      diagnose and fix selector issues. If login failures persist, verify
-      credentials are current in the .env file.
+    * Login success rate was low due to timing and selector issues - now fixed
+    * If login failures persist after 2026-02-08 update, verify that
+      credentials are current in the .env file and check logs for specific
+      selector failures. See SELECTOR_UPDATE_GUIDE.md in docs/ for
+      troubleshooting steps.
 """
 
 from .base import FaucetBot, ClaimResult
@@ -348,26 +357,41 @@ class FreeBitcoinBot(FaucetBot):
             return False
 
         # Updated selectors based on diagnostic script findings (Feb 2026)
+        # Enhanced 2026-02-08: Added data attributes and more fallbacks for robustness
         # The login form uses specific IDs that are now confirmed
         email_selectors = [
             "#login_form_btc_address",  # Confirmed working (hidden until trigger clicked)
             "input[name='btc_address']",  # FreeBitcoin specific field name
             "input[type='text'][name='btc_address']",
-            "#email"
+            "input[data-field='email']",  # Data attribute (semantic, stable)
+            "input[data-field='btc_address']",
+            "input#btc_address",
+            "#email",
+            "input[name='email']",
+            "input[type='email']",
+            "form input[type='text']:first-of-type"  # First text input in form
         ]
 
         password_selectors = [
             "#login_form_password",  # Confirmed working (hidden until trigger clicked)
             "input[name='password']",
             "input[type='password']",
-            "#password"
+            "input[data-field='password']",  # Data attribute (semantic, stable)
+            "#password",
+            "form input[type='password']:first-of-type"  # First password input in form
         ]
 
         submit_selectors = [
-            "#login_button",
+            "#login_button",  # ID selector (most stable)
+            "button#login_button",
+            "input#login_button",
+            "button[data-action='login']",  # Data attribute (semantic)
             "button[type='submit']",
             "input[type='submit']",
-            "button:has-text('Login')"
+            "button:has-text('Login')",
+            "button:has-text('LOG IN')",
+            "input[value*='Login']",
+            "form button[type='submit']"  # Submit button in form
         ]
 
         # Retry logic with exponential backoff
@@ -419,17 +443,24 @@ class FreeBitcoinBot(FaucetBot):
                 # CRITICAL: Click login trigger to show hidden login form
                 # The login form is hidden by default - need to click "LOGIN" link/button first
                 # FreeBitcoin uses .login_menu_button class for login triggers
+                # Updated 2026-02-08: Added more robust selectors based on site research
                 login_trigger_selectors = [
-                    ".login_menu_button",  # FreeBitcoin specific class
+                    ".login_menu_button",  # FreeBitcoin specific class (primary)
                     "li.login_menu_button a",  # Menu item variant
                     "button.login_menu_button",  # Button variant
+                    "#login_menu_button",  # ID variant (more stable)
+                    "a[data-action='login']",  # Data attribute (semantic)
                     "a:has-text('LOGIN')",
                     "a:has-text('Log In')",
+                    "a:has-text('SIGN IN')",
                     "button:has-text('LOGIN')",
                     "a[href*='login']",
                     "a[href*='op=login']",
+                    "a[href='#login']",
                     ".login-link",
-                    "#login_link"
+                    "#login_link",
+                    "nav a:has-text('LOGIN')",  # Login in navigation
+                    ".nav-link:has-text('LOGIN')",
                 ]
 
                 login_trigger_clicked = False
@@ -439,7 +470,8 @@ class FreeBitcoinBot(FaucetBot):
                         if await locator.is_visible(timeout=3000):
                             logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
                             await self.human_like_click(locator)
-                            await self.human_wait(5, with_interactions=True)  # Wait for form animation with activity
+                            # Increased wait time for form animation (5s → 10s) - 2026-02-08 update
+                            await self.human_wait(10, with_interactions=True)  # Wait for form animation with activity
                             login_trigger_clicked = True
                             break
                     except Exception:
