@@ -370,9 +370,7 @@ class FreeBitcoinBot(FaucetBot):
             try:
                 if attempt > 0:
                     backoff_seconds = 5 * attempt  # 5s, 10s, 15s
-                    logger.info(
-                        f"[FreeBitcoin] Login attempt {
-                            attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
+                    logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
                     await self.human_wait(backoff_seconds, with_interactions=True)
                 else:
                     logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
