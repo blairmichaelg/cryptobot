@@ -41,7 +41,8 @@ def temp_dirs():
     
     try:
         shutil.rmtree(config_dir)
-    except Exception:
+    except Exception as e:
+        # Cleanup failure is not critical in tests
         pass
 
 
