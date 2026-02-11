@@ -1,15 +1,30 @@
 # Copilot Instructions (Cryptobot Gen 3.0)
 
-## Branch & Repo Safety — SINGLE BRANCH ONLY
-- **ALL work happens on `master`** in C:\Users\azureuser\Repositories\cryptobot. No exceptions.
-- **NEVER** create branches, worktrees, feature branches, or PR branches. All commits go directly to `master`.
-- **NEVER** force push, hard reset, or delete branches without explicit user approval.
-- **Keep local, remote, and deployment in sync at all times:**
+## Branch & Repo Safety
+
+### Context-Aware Branch Strategy
+The branch strategy depends on your working environment:
+
+**Local Development (Windows machine at C:\Users\azureuser\Repositories\cryptobot):**
+- **ALL work happens on `master`** - No feature branches.
+- **NEVER** create branches, worktrees, feature branches, or PR branches locally.
+- Commit directly to `master` with conventional commit messages.
+- **Keep local, remote, and deployment in sync:**
   1. `git pull origin master` before making any changes.
   2. Commit logically with conventional commit messages.
   3. `git push origin master` after every commit session.
   4. If deploying: SSH to VM, `cd ~/Repositories/cryptobot && git pull origin master`, restart service.
-- If an agent (Copilot, Gemini, Claude, etc.) creates a branch or worktree, that is a bug — delete it and commit directly to master instead.
+
+**GitHub PR/Actions Environment (CI/CD workflows):**
+- Work on the current feature branch (e.g., `copilot/fix-*`).
+- Make focused commits with clear messages on the feature branch.
+- Use `report_progress` tool to commit and push changes to the PR.
+- **DO NOT** attempt to switch to `master` or merge branches - let GitHub handle PR merges.
+
+**General Rules (Both Environments):**
+- **NEVER** force push, hard reset, or delete branches without explicit user approval.
+- Use conventional commit message format (e.g., `fix:`, `feat:`, `docs:`).
+- If uncertain about environment, check current branch with `git branch --show-current`.
 
 ## ⚠️ CRITICAL: Testing Environment Rules
 **DO NOT run Camoufox or browser tests on this Windows machine.**
@@ -21,14 +36,19 @@
 - If you need to test code changes: push to repo, pull on VM, run tests there.
 - **Never suggest running `python test_*.py` or `python main.py` locally** - always SSH to the VM first.
 
-## Current Project Status (Last Updated: 2026-02-08)
+## Current Project Status (Last Updated: 2026-02-09)
 - **Environment**: Dual - Local Windows dev machine (code editing) + Azure VM (production/testing)
 - **Azure VM**: DevNode01 in APPSERVRG, IP 4.155.230.212 (West US 2)
 - **Service**: faucet_worker systemd service — use `~/Repositories/cryptobot` as working directory
 - **Proxy**: Zyte proxies enabled (USE_2CAPTCHA_PROXIES=true), 100 endpoints
 - **Faucet Status**: 18 fully implemented (7 standard + 11 Pick.io family)
-- **Git**: Single branch (`master`) only — local, remote (GitHub), and VM must stay in sync
-- **Sync workflow**: Edit locally → push to GitHub → SSH to VM → `git pull` → restart service
+- **Git Workflow**: 
+  - Local dev: Direct commits to `master` branch
+  - GitHub: Feature branches for PRs, merge to `master` after review
+  - VM: Always pulls from `master` branch for deployment
+- **Sync workflow**: 
+  - Local: Edit → commit to master → push → SSH to VM → pull → restart service
+  - GitHub PR: Edit on feature branch → push → merge PR → SSH to VM → pull → restart service
 
 ## Architecture Snapshot
 - main.py bootstraps JobScheduler in core/orchestrator.py; jobs carry next_run and requeue themselves—avoid manual event loops or asyncio.sleep in main flows.
@@ -60,13 +80,18 @@
 ## Deployment
 - **Azure VM**: DevNode01 in APPSERVRG (4.155.230.212, West US 2) — ACTIVE
 - **Working directory on VM**: `~/Repositories/cryptobot` (systemd service uses this path)
-- **Deploy workflow** (keep local, remote, and VM in sync):
+- **Deploy workflow (from local environment)**:
   1. Commit and push on local: `git push origin master`
   2. SSH to VM: `ssh azureuser@4.155.230.212`
   3. Pull latest: `cd ~/Repositories/cryptobot && git pull origin master`
   4. Install deps if changed: `pip install -r requirements.txt`
   5. Restart: `sudo systemctl restart faucet_worker`
   6. Verify: `sudo systemctl status faucet_worker`
+- **Deploy workflow (from GitHub PR)**: 
+  1. Merge PR to `master` branch on GitHub
+  2. SSH to VM: `ssh azureuser@4.155.230.212`
+  3. Pull latest: `cd ~/Repositories/cryptobot && git pull origin master`
+  4. Continue with steps 4-6 above
 - **Automated deploy**: `./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01`
 - **Health check**: `ssh azureuser@4.155.230.212 "sudo systemctl status faucet_worker"`
 - **Logs**: `ssh azureuser@4.155.230.212 "journalctl -u faucet_worker -f"`
