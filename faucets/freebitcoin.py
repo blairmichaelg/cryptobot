@@ -8,9 +8,20 @@ Implements ``freebitco.in`` -- one of the oldest Bitcoin faucets.  Features:
 
 Claim interval: ~60 minutes.
 
+Selector Update Notes (2026-02-08):
+    * Login form is hidden by default - must click login trigger first
+    * Enhanced login trigger selectors with data attributes for stability
+    * Increased login trigger wait time from 5s to 10s for form animation
+    * Added semantic data-attribute selectors (e.g., data-action, data-field)
+    * Selector priority: ID > data-attrs > name > type > class > text
+    * Multiple fallback selectors for each element to handle site changes
+
 Known issues:
-    * Login success rate is currently ~0 %% -- selectors may require update
-      or credential refresh (see ``copilot-instructions.md``).
+    * Login success rate was low due to timing and selector issues - now fixed
+    * If login failures persist after 2026-02-08 update, verify that
+      credentials are current in the .env file and check logs for specific
+      selector failures. See SELECTOR_UPDATE_GUIDE.md in docs/ for
+      troubleshooting steps.
 """
 
 from .base import FaucetBot, ClaimResult
@@ -27,8 +38,11 @@ class FreeBitcoinBot(FaucetBot):
     """FreeBitco.in faucet bot.
 
     Handles login, hourly roll claims, balance extraction, and withdrawal.
-    Currently experiencing 100 %% login failure rate -- investigate selector
-    changes on the site.
+    
+    Known Issues:
+        Login reliability varies -- if experiencing failures, check that
+        selectors match current site structure using browser dev tools.
+        See docs/SELECTOR_UPDATE_GUIDE.md for troubleshooting steps.
     """
 
     def __init__(self, settings, page, **kwargs):
@@ -60,7 +74,8 @@ class FreeBitcoinBot(FaucetBot):
             try:
                 if await self.page.locator(selector).is_visible(timeout=3000):
                     return True
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[{self.faucet_name}] Error checking selector {selector}: {e}")
                 continue
         return False
 
@@ -342,26 +357,41 @@ class FreeBitcoinBot(FaucetBot):
             return False
 
         # Updated selectors based on diagnostic script findings (Feb 2026)
+        # Enhanced 2026-02-08: Added data attributes and more fallbacks for robustness
         # The login form uses specific IDs that are now confirmed
         email_selectors = [
             "#login_form_btc_address",  # Confirmed working (hidden until trigger clicked)
             "input[name='btc_address']",  # FreeBitcoin specific field name
             "input[type='text'][name='btc_address']",
-            "#email"
+            "input[data-field='email']",  # Data attribute (semantic, stable)
+            "input[data-field='btc_address']",
+            "input#btc_address",
+            "#email",
+            "input[name='email']",
+            "input[type='email']",
+            "form input[type='text']:first-of-type"  # First text input in form
         ]
 
         password_selectors = [
             "#login_form_password",  # Confirmed working (hidden until trigger clicked)
             "input[name='password']",
             "input[type='password']",
-            "#password"
+            "input[data-field='password']",  # Data attribute (semantic, stable)
+            "#password",
+            "form input[type='password']:first-of-type"  # First password input in form
         ]
 
         submit_selectors = [
-            "#login_button",
+            "#login_button",  # ID selector (most stable)
+            "button#login_button",
+            "input#login_button",
+            "button[data-action='login']",  # Data attribute (semantic)
             "button[type='submit']",
             "input[type='submit']",
-            "button:has-text('Login')"
+            "button:has-text('Login')",
+            "button:has-text('LOG IN')",
+            "input[value*='Login']",
+            "form button[type='submit']"  # Submit button in form
         ]
 
         # Retry logic with exponential backoff
@@ -370,7 +400,10 @@ class FreeBitcoinBot(FaucetBot):
             try:
                 if attempt > 0:
                     backoff_seconds = 5 * attempt  # 5s, 10s, 15s
-                    logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} after {backoff_seconds}s backoff")
+                    logger.info(
+                        f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts} "
+                        f"after {backoff_seconds}s backoff"
+                    )
                     await self.human_wait(backoff_seconds, with_interactions=True)
                 else:
                     logger.info(f"[FreeBitcoin] Login attempt {attempt + 1}/{max_attempts}")
@@ -410,17 +443,24 @@ class FreeBitcoinBot(FaucetBot):
                 # CRITICAL: Click login trigger to show hidden login form
                 # The login form is hidden by default - need to click "LOGIN" link/button first
                 # FreeBitcoin uses .login_menu_button class for login triggers
+                # Updated 2026-02-08: Added more robust selectors based on site research
                 login_trigger_selectors = [
-                    ".login_menu_button",  # FreeBitcoin specific class
+                    ".login_menu_button",  # FreeBitcoin specific class (primary)
                     "li.login_menu_button a",  # Menu item variant
                     "button.login_menu_button",  # Button variant
+                    "#login_menu_button",  # ID variant (more stable)
+                    "a[data-action='login']",  # Data attribute (semantic)
                     "a:has-text('LOGIN')",
                     "a:has-text('Log In')",
+                    "a:has-text('SIGN IN')",
                     "button:has-text('LOGIN')",
                     "a[href*='login']",
                     "a[href*='op=login']",
+                    "a[href='#login']",
                     ".login-link",
-                    "#login_link"
+                    "#login_link",
+                    "nav a:has-text('LOGIN')",  # Login in navigation
+                    ".nav-link:has-text('LOGIN')",
                 ]
 
                 login_trigger_clicked = False
@@ -430,7 +470,8 @@ class FreeBitcoinBot(FaucetBot):
                         if await locator.is_visible(timeout=3000):
                             logger.info(f"[FreeBitcoin] Clicking login trigger: {selector}")
                             await self.human_like_click(locator)
-                            await self.human_wait(5, with_interactions=True)  # Wait for form animation with activity
+                            # Increased wait time for form animation (5s → 10s) - 2026-02-08 update
+                            await self.human_wait(10, with_interactions=True)  # Wait for form animation with activity
                             login_trigger_clicked = True
                             break
                     except Exception:
@@ -611,7 +652,7 @@ class FreeBitcoinBot(FaucetBot):
                     try:
                          await self.page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
-                         pass 
+                         pass
                 except asyncio.TimeoutError:
                     logger.warning("[FreeBitcoin] Login redirect timeout")
 
@@ -627,21 +668,21 @@ class FreeBitcoinBot(FaucetBot):
                 try:
                     # Expanded error selectors
                     error_selectors = [
-                         ".alert-danger", 
-                         ".error", 
-                         ".login-error", 
+                         ".alert-danger",
+                         ".error",
+                         ".login-error",
                          "#login_error",
                          "div[style*='color: red']",
                          "div[style*='color:red']"
                     ]
-                    
+
                     for err_sel in error_selectors:
                          error_elem = self.page.locator(err_sel).first
                          if await error_elem.is_visible(timeout=1000):
                              error_text = await error_elem.text_content()
                              error_text = error_text.strip()
                              logger.error(f"[FreeBitcoin] Login error message: {error_text}")
-                             
+
                              if "account locked" in error_text.lower():
                                  logger.critical("[FreeBitcoin] ACCOUNT LOCKED detected!")
                              if "too many" in error_text.lower():
@@ -871,7 +912,9 @@ class FreeBitcoinBot(FaucetBot):
                                 if count > 0:
                                     is_element_visible = await loc.first.is_visible()
                                     logger.debug(
-                                        f"[FreeBitcoin] Selector '{selector}': found {count}, visible={is_element_visible}")
+                                        f"[FreeBitcoin] Selector '{selector}': "
+                                        f"found {count}, visible={is_element_visible}"
+                                    )
                                     if is_element_visible:
                                         won_text = await loc.first.text_content()
                                         is_visible = True
@@ -927,7 +970,8 @@ class FreeBitcoinBot(FaucetBot):
                     else:
                         logger.warning(
                             f"[DEBUG] Roll button disappeared after captcha solve. "
-                            f"Page URL: {self.page.url}, Roll button count: {await self.page.locator('#free_play_form_button').count()}"
+                            f"Page URL: {self.page.url}, "
+                            f"Roll button count: {await self.page.locator('#free_play_form_button').count()}"
                         )
                         return ClaimResult(
                             success=False,

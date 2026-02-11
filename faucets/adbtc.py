@@ -9,6 +9,13 @@ advertisements ("surf ads").  This module automates the full lifecycle:
 * Automated ad surfing and claim submission.
 * Withdrawal request generation.
 
+Selector Update Notes (2026-02-08):
+    * Simplified fragile balance selector from complex descendant path
+    * Old: .nomargbot > div.col.s6.l3.m3.left.hide-on-small-only > p > b
+    * New: Prioritize semantic selectors (data-*, IDs, simple classes)
+    * Selector priority: data-attrs > IDs > semantic classes > generic patterns
+    * Added multiple fallback selectors for robustness against layout changes
+
 See Also:
     :class:`faucets.base.FaucetBot` for the inherited interface.
 """
@@ -177,10 +184,21 @@ class AdBTCBot(FaucetBot):
             await self.idle_mouse(duration=1.5)
             
             # Extract balance using DataExtractor
+            # Updated 2026-02-08: Simplified fragile complex descendant selector
+            # Old selector was brittle: .nomargbot > div.col.s6.l3.m3.left.hide-on-small-only > p > b
+            # New approach: prioritize semantic selectors, add data attributes
             balance_selectors = [
-                ".nomargbot > div.col.s6.l3.m3.left.hide-on-small-only > p > b",
-                ".balance-value",
-                ".user-balance"
+                "[data-balance]",  # Data attribute (most semantic and stable)
+                ".balance-value",  # Semantic class name
+                "#user-balance",  # ID selector
+                ".user-balance",  # Generic balance class
+                ".account-balance",
+                "p > b:has-text('BTC')",  # Balance in bold within paragraph (more generic)
+                ".balance",
+                "span.balance",
+                "[class*='balance']:visible",  # Wildcard class match
+                ".nomargbot .balance",  # Simplified version of old selector
+                ".nomargbot > div.col.s6.l3.m3.left.hide-on-small-only > p > b",  # Original (last resort)
             ]
             balance = "0"
             

@@ -1,3 +1,42 @@
+"""Base class for Pick.io family faucets (11 cryptocurrencies).
+
+This module provides the PickFaucetBase class that implements shared login,
+claim, and withdrawal logic for the Pick.io faucet family, which includes:
+
+* LitePick (LTC) - litepick.io
+* TronPick (TRX) - tronpick.io
+* DogePick (DOGE) - dogepick.io
+* SolPick (SOL) - solpick.io
+* BinPick (BNB) - binpick.io
+* BchPick (BCH) - bchpick.io
+* TonPick (TON) - tonpick.io
+* PolygonPick (MATIC) - polygonpick.io
+* DashPick (DASH) - dashpick.io
+* EthPick (ETH) - ethpick.io
+* UsdPick (USDT) - usdpick.io
+
+These sites share identical structure and UI patterns. Subclasses only need
+to define base_url and currency-specific details. The base class handles
+TLS fingerprinting resistance, Cloudflare bypass, connection retry logic,
+and anti-bot detection avoidance.
+
+Selector Update Notes (2026-02-08):
+    * Enhanced all selectors with data attributes for semantic stability
+    * Login fields: Prioritized ID > name > data-attrs > type > text
+    * Claim buttons: Added data-action selectors for better targeting
+    * Login triggers: Added data-action patterns for consistency
+    * All selector arrays now ordered by stability (most stable first)
+    * Connection retry logic already robust with exponential backoff
+
+Usage:
+    class LitePickBot(PickFaucetBase):
+        def __init__(self, settings, page, **kwargs):
+            super().__init__(settings, page, **kwargs)
+            self.faucet_name = "LitePick"
+            self.base_url = "https://litepick.io"
+            self.login_url = f"{self.base_url}/login.php"
+            self.faucet_url = f"{self.base_url}/faucet.php"
+"""
 import asyncio
 import logging
 import random
@@ -32,21 +71,21 @@ class PickFaucetBase(FaucetBot):
 
     async def _navigate_with_retry(self, url: str, max_retries: int = 3) -> bool:
         """Navigate with exponential backoff retry for connection errors.
-        
+
         Pick family faucets are known to use TLS fingerprinting and aggressive
         anti-bot measures that can result in ERR_CONNECTION_CLOSED. This method
         provides robust retry logic with exponential backoff.
-        
+
         Args:
             url: Target URL to navigate to
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             True if navigation succeeded, False if all retries exhausted
         """
         # Use longer timeout for Pick.io sites - they're consistently slow behind Cloudflare
         # Minimum 90s to account for CF challenges + slow page loads
-        nav_timeout = max(getattr(self.settings, "timeout", 60000), 90000)  # At least 90s for Pick.io 
+        nav_timeout = max(getattr(self.settings, "timeout", 60000), 90000)  # At least 90s for Pick.io
 
         for attempt in range(max_retries):
             try:
@@ -56,7 +95,7 @@ class PickFaucetBase(FaucetBot):
                 except Exception:
                     # Fallback to commit for Cloudflare challenges
                     response = await self.page.goto(url, timeout=nav_timeout, wait_until="commit")
-                
+
                 if response:
                     # Even 403/503 responses mean we got the page (might be Cloudflare)
                     logger.debug(f"[{self.faucet_name}] Navigation returned status {response.status}")
@@ -67,7 +106,7 @@ class PickFaucetBase(FaucetBot):
                 # Check for connection/TLS errors that warrant retry
                 if any(err in error_str for err in [
                     "ERR_CONNECTION_CLOSED",
-                    "ERR_CONNECTION_RESET", 
+                    "ERR_CONNECTION_RESET",
                     "net::",
                     "NS_ERROR",
                     "Timeout",
@@ -83,7 +122,7 @@ class PickFaucetBase(FaucetBot):
                     # Non-retryable error
                     logger.error(f"[{self.faucet_name}] Non-retryable navigation error: {e}")
                     return False
-        
+
         logger.error(f"[{self.faucet_name}] All {max_retries} navigation attempts failed for {url}")
         return False
 
@@ -107,7 +146,7 @@ class PickFaucetBase(FaucetBot):
 
         register_url = f"{self.base_url}/signup.php"
         logger.info(f"[{self.faucet_name}] Registering at {register_url}")
-        
+
         try:
             if not await self._navigate_with_retry(register_url):
                 logger.error(f"[{self.faucet_name}] Failed to navigate to registration page")
@@ -116,23 +155,30 @@ class PickFaucetBase(FaucetBot):
             await self.close_popups()
 
             # Fill registration form - using researched selectors
-            email_field = self.page.locator('input[type="email"], input[name="email"], input#email')
-            pass_field = self.page.locator('input[type="password"], input[name="password"], input#password')
-            confirm_pass_field = self.page.locator('input[name="password2"], input[name="confirm_password"], input#password2')
-            
+            email_field = self.page.locator(
+                'input[type="email"], input[name="email"], input#email'
+            )
+            pass_field = self.page.locator(
+                'input[type="password"], input[name="password"], input#password'
+            )
+            confirm_pass_field = self.page.locator(
+                'input[name="password2"], input[name="confirm_password"], '
+                'input#password2'
+            )
+
             await email_field.fill(email)
             await pass_field.fill(password)
-            
+
             # Fill confirm password if it exists
             if await confirm_pass_field.count() > 0:
                 await confirm_pass_field.fill(password)
-            
+
             # Fill wallet address if provided and field exists
             if wallet_address:
                 wallet_field = self.page.locator('input[name="address"], input[name="wallet"], input#address')
                 if await wallet_field.count() > 0:
                     await wallet_field.fill(wallet_address)
-            
+
             # Check for and solve hCaptcha or Turnstile
             captcha_locator = self.page.locator(".h-captcha, .cf-turnstile")
             if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
@@ -141,34 +187,37 @@ class PickFaucetBase(FaucetBot):
                 await self.random_delay(2, 5)
 
             # Find and click register button
-            register_btn = self.page.locator('button.btn, button.process_btn, button:has-text("Register"), button:has-text("Sign Up"), button:has-text("Create Account")')
+            register_btn = self.page.locator(
+                'button.btn, button.process_btn, button:has-text("Register"), '
+                'button:has-text("Sign Up"), button:has-text("Create Account")'
+            )
             await self.human_like_click(register_btn)
-            
+
             await self.page.wait_for_load_state("domcontentloaded", timeout=30000)
-            
+
             # Check for success indicators
             page_content = await self.page.content()
             success_indicators = [
                 "successfully registered",
-                "registration successful", 
+                "registration successful",
                 "account created",
                 "welcome",
                 "check your email",
                 "verification email"
             ]
-            
+
             if any(indicator in page_content.lower() for indicator in success_indicators):
                 logger.info(f"[{self.faucet_name}] Registration successful for {email}")
                 return True
-            
+
             # Check if already redirected to dashboard (auto-login after registration)
             if await self.is_logged_in():
                 logger.info(f"[{self.faucet_name}] Registration successful, auto-logged in")
                 return True
-            
+
             logger.warning(f"[{self.faucet_name}] Registration uncertain - no clear success message")
             return False
-            
+
         except Exception as e:
             logger.error(f"[{self.faucet_name}] Registration error: {e}")
             return False
@@ -214,37 +263,50 @@ class PickFaucetBase(FaucetBot):
                             target = locator.first
                             if await target.is_visible():
                                 return target
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[{self.faucet_name}] Error checking selector {selector}: {e}")
                         continue
                 return None
 
+            # Email field selectors (updated 2026-02-08)
+            # Priority: ID > name > data attributes > type > placeholder > generic
             email_selectors = [
-                'input#user_email',
-                'input[type="email"]',
-                'input[name="email"]',
+                'input#user_email',  # ID selector (most stable)
                 'input#email',
+                'input[name="email"]',  # Name attribute
                 'input[name="username"]',
                 'input[name="login"]',
                 'input[name="user"]',
                 'input[name="user_name"]',
-                'input[placeholder*="email" i]',
+                'input[data-field="email"]',  # Data attribute (semantic, added 2026-02-08)
+                'input[data-field="username"]',
+                'input[data-input="email"]',
+                'input[type="email"]',  # Type attribute
+                'input[placeholder*="email" i]',  # Placeholder text matching
                 'input[placeholder*="username" i]',
-                'form input[type="text"]',
+                'form input[type="text"]',  # Generic (last resort)
             ]
+            # Password field selectors (updated 2026-02-08)
             password_selectors = [
-                'input[type="password"]',
-                'input[name="password"]',
-                'input#password',
+                'input#password',  # ID selector (most stable)
+                'input[name="password"]',  # Name attribute
                 'input[name="pass"]',
-                'input[placeholder*="password" i]',
+                'input[data-field="password"]',  # Data attribute (semantic, added 2026-02-08)
+                'input[data-input="password"]',
+                'input[type="password"]',  # Type attribute
+                'input[placeholder*="password" i]',  # Placeholder text matching
             ]
+            # Login trigger selectors (updated 2026-02-08)
             login_trigger_selectors = [
-                'a:has-text("Login")',
+                '#login_trigger',  # ID selector (added 2026-02-08)
+                'button#login',
+                'a[data-action="login"]',  # Data attribute (semantic, added 2026-02-08)
+                'button[data-action="login"]',
+                'a:has-text("Login")',  # Text-based (language-dependent)
                 'a:has-text("Log in")',
                 'button:has-text("Login")',
                 'button:has-text("Log in")',
-                'a[href*="login"]',
-                'button#login',
+                'a[href*="login"]',  # Href pattern matching
                 'button#process_login',
                 '.login-btn',
                 '.login-button',
@@ -259,7 +321,7 @@ class PickFaucetBase(FaucetBot):
                 # Wait up to 30 seconds for Cloudflare challenges (sufficient for most CF)
                 await self.handle_cloudflare(max_wait_seconds=30)
                 await self.close_popups()
-                
+
                 # Warm up page to establish organic behavioral baseline
                 await self.warm_up_page()
 
@@ -287,7 +349,7 @@ class PickFaucetBase(FaucetBot):
             await self.human_type(email_target, login_id)
             await self.random_delay(0.4, 0.9)
             await self.human_type(pass_target, creds['password'])
-            
+
             # Select preferred captcha type if dropdown exists
             # Pick.io sites offer: hCaptcha, reCAPTCHA, Turnstile, IconCaptcha, pCaptcha
             # We prefer hCaptcha/Turnstile as the solver supports them
@@ -322,7 +384,7 @@ class PickFaucetBase(FaucetBot):
                     try:
                         if await self.solver.solve_captcha(self.page):
                             solved = True
-                            
+
                             # Manually enable submit button
                             try:
                                 await self.page.evaluate("""
@@ -336,7 +398,7 @@ class PickFaucetBase(FaucetBot):
                                 """)
                             except Exception:
                                 pass
-                            
+
                             break
                         await self.human_wait(2)
                     except Exception as captcha_err:
@@ -347,19 +409,25 @@ class PickFaucetBase(FaucetBot):
                     return False
 
             # Find login button - prioritize specific selectors over generic ones
+            # Updated 2026-02-08: Added data attributes and reordered by stability
             login_btn_selectors = [
-                'button#process_login',
+                'button#process_login',  # ID selector (most stable)
                 '#login_button',
+                'button#login',
+                'button[data-action="login"]',  # Data attribute (semantic, added 2026-02-08)
+                'button[data-submit="login"]',
+                'input#login_submit',
                 'button.login-btn',
                 'button.login-button',
                 'button.process_btn',
-                'button:has-text("Login")',
+                'button:has-text("Login")',  # Text-based (language-dependent)
                 'button:has-text("Log in")',
-                'button[type="submit"]:visible',
+                'button[type="submit"]:visible',  # Generic (last resort)
+                'input[type="submit"][value*="Login"]',
                 'input[type="submit"]:visible',
-                'button.btn:visible:has-text("Login")',  # More specific than just button.btn
+                'button.btn:visible:has-text("Login")',
             ]
-            
+
             login_btn = None
             for sel in login_btn_selectors:
                 try:
@@ -370,11 +438,11 @@ class PickFaucetBase(FaucetBot):
                         break
                 except Exception:
                     continue
-            
+
             if not login_btn:
                 logger.error(f"[{self.faucet_name}] No visible login button found")
                 return False
-            
+
             # Thinking pause before login submission
             await self.thinking_pause()
             await self.human_like_click(login_btn)
@@ -473,9 +541,9 @@ class PickFaucetBase(FaucetBot):
             list[Job]: A list of Job objects for the scheduler.
         """
         from core.orchestrator import Job
-        
+
         f_type = self.faucet_name.lower()
-        
+
         return [
             Job(
                 priority=2, # Higher than PTC/Shortlinks, lower than main faucets like Dutchy
@@ -506,13 +574,13 @@ class PickFaucetBase(FaucetBot):
         """
         faucet_url = f"{self.base_url}/faucet.php"
         logger.info(f"[{self.faucet_name}] Navigating to faucet: {faucet_url}")
-        
+
         if not await self._navigate_with_retry(faucet_url):
             logger.error(f"[{self.faucet_name}] Failed to navigate to faucet page")
             return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=15)
         await self.handle_cloudflare()
         await self.close_popups()
-        
+
         # Warm up and simulate natural browsing before claim
         await self.warm_up_page()
         if random.random() < 0.3:
@@ -541,7 +609,12 @@ class PickFaucetBase(FaucetBot):
             minutes = DataExtractor.parse_timer_to_minutes(timer_text)
             if minutes > 0:
                 logger.info(f"[{self.faucet_name}] Faucet on cooldown: {minutes}m remaining")
-                return ClaimResult(success=True, status="Cooldown", next_claim_minutes=minutes, balance=await self.get_balance())
+                return ClaimResult(
+                    success=True,
+                    status="Cooldown",
+                    next_claim_minutes=minutes,
+                    balance=await self.get_balance()
+                )
 
         try:
             # Select preferred captcha type if dropdown exists on faucet page
@@ -573,7 +646,7 @@ class PickFaucetBase(FaucetBot):
                     try:
                         if await self.solver.solve_captcha(self.page):
                             solved = True
-                            
+
                             # Manually enable submit button
                             try:
                                 await self.page.evaluate("""
@@ -587,7 +660,7 @@ class PickFaucetBase(FaucetBot):
                                 """)
                             except Exception:
                                 pass
-                            
+
                             break
                         await self.human_wait(2)
                     except Exception as captcha_err:
@@ -604,28 +677,44 @@ class PickFaucetBase(FaucetBot):
                 await self.natural_scroll(distance=random.randint(50, 150), direction=1)
                 await asyncio.sleep(random.uniform(0.3, 0.8))
             await self.thinking_pause()
-            
+
             # The button is often 'Claim' or 'Roll' or has class 'btn-primary'
             # Wait a bit after CAPTCHA for page to update
             await self.human_wait(2)
-            
+
+            # Claim button selectors (updated 2026-02-08)
+            # Priority: ID > data attributes > classes > text content
             claim_btn = self.page.locator(
-                'button.btn-primary, button:has-text("Claim"), button:has-text("Roll"), '
-                'button#claim, button[type="submit"], .btn-success, button.get-reward'
+                'button#claim, '
+                'button#faucet_claim, '
+                'button[data-action="claim"], '  # Data attribute (semantic, added 2026-02-08)
+                'button[data-action="faucet"], '
+                'button.btn-primary, '
+                'button:has-text("Claim"), '
+                'button:has-text("Roll"), '
+                'button[type="submit"], '
+                '.btn-success, '
+                'button.get-reward, '
+                'button.claim-btn'
             )
-            
+
             # Try to wait for button to be visible
             try:
                 await claim_btn.first.wait_for(state="visible", timeout=5000)
             except Exception:
                 pass
-            
+
             if not await claim_btn.first.is_visible():
                 logger.warning(f"[{self.faucet_name}] Claim button not visible")
                 # Log what buttons we can find
                 all_buttons = await self.page.query_selector_all("button")
                 logger.debug(f"[{self.faucet_name}] Found {len(all_buttons)} total buttons on page")
-                return ClaimResult(success=False, status="Button Not Found", next_claim_minutes=15, balance=await self.get_balance())
+                return ClaimResult(
+                    success=False,
+                    status="Button Not Found",
+                    next_claim_minutes=15,
+                    balance=await self.get_balance()
+                )
 
             await self.human_like_click(claim_btn)
             await self.random_delay(3, 6)
@@ -636,13 +725,13 @@ class PickFaucetBase(FaucetBot):
                 result_msg = await result_msg_loc.first.text_content()
                 logger.info(f"[{self.faucet_name}] Claim successful: {result_msg.strip()}")
                 return ClaimResult(
-                    success=True, 
-                    status="Claimed", 
-                    next_claim_minutes=60, 
-                    amount=result_msg.strip(), 
+                    success=True,
+                    status="Claimed",
+                    next_claim_minutes=60,
+                    amount=result_msg.strip(),
                     balance=await self.get_balance()
                 )
-            
+
             return ClaimResult(success=False, status="Claim failed or result not found", next_claim_minutes=10)
 
         except Exception as e:
@@ -660,12 +749,12 @@ class PickFaucetBase(FaucetBot):
         """
         withdraw_url = f"{self.base_url}/withdraw.php"
         logger.info(f"[{self.faucet_name}] Navigating to withdrawal: {withdraw_url}")
-        
+
         if not await self._navigate_with_retry(withdraw_url):
             logger.error(f"[{self.faucet_name}] Failed to navigate to withdrawal page")
             return ClaimResult(success=False, status="Connection Failed", next_claim_minutes=60)
         await self.handle_cloudflare()
-        
+
         # Check balance against min_withdraw thresholds
         coin = self.faucet_name.replace("Pick", "").upper()
         if coin == "LITE":
@@ -674,7 +763,7 @@ class PickFaucetBase(FaucetBot):
             coin = "TRX"
         if coin == "USD":
             coin = "USDT"
-        
+
         balance_str = await self.get_balance()
         balance_clean = DataExtractor.extract_balance(balance_str)
         try:
@@ -688,7 +777,11 @@ class PickFaucetBase(FaucetBot):
         try:
             from core.analytics import CryptoPriceFeed
             decimals = CryptoPriceFeed.CURRENCY_DECIMALS.get(coin, 8)
-            threshold = self.settings.withdrawal_thresholds.get(coin, {}) if hasattr(self.settings, "withdrawal_thresholds") else {}
+            threshold = (
+                self.settings.withdrawal_thresholds.get(coin, {})
+                if hasattr(self.settings, "withdrawal_thresholds")
+                else {}
+            )
             if isinstance(threshold, dict) and threshold.get("min") is not None:
                 min_withdraw = float(threshold.get("min")) / (10 ** decimals)
         except Exception:
@@ -701,7 +794,7 @@ class PickFaucetBase(FaucetBot):
                 min_withdraw = float(wallet_info.get('min_withdraw'))
             except Exception:
                 pass
-        
+
         if balance < min_withdraw:
             logger.info(f"[{self.faucet_name}] Balance {balance} {coin} below minimum {min_withdraw}. Skipping.")
             return ClaimResult(success=True, status="Low Balance", next_claim_minutes=1440)
@@ -710,7 +803,7 @@ class PickFaucetBase(FaucetBot):
         try:
             address_field = self.page.locator('input[name="address"], #address')
             amount_field = self.page.locator('input[name="amount"], #amount')
-            
+
             # Use 'withdraw all' button if exists
             all_btn = self.page.locator('button:has-text("Withdraw all"), #withdraw-all')
             if await all_btn.is_visible():
@@ -727,22 +820,22 @@ class PickFaucetBase(FaucetBot):
             if await address_field.count() == 0:
                 logger.error(f"[{self.faucet_name}] Withdrawal address field not found")
                 return ClaimResult(success=False, status="No Address Field", next_claim_minutes=1440)
-            
+
             await self.human_type(address_field, withdraw_address)
-            
+
             # Solve Captcha
             await self.solver.solve_captcha(self.page)
-            
+
             withdraw_btn = self.page.locator('button:has-text("Withdraw"), button.process_btn')
             await self.human_like_click(withdraw_btn)
-            
+
             await self.random_delay(3, 8)
-            
+
             # Verify Success
             if "success" in (await self.page.content()).lower():
                 logger.info(f"🚀 [{self.faucet_name}] Withdrawal processed for {balance} {coin}!")
                 return ClaimResult(success=True, status="Withdrawn", next_claim_minutes=1440)
-            
+
             return ClaimResult(success=False, status="Withdrawal Failed or pending", next_claim_minutes=360)
 
         except Exception as e:

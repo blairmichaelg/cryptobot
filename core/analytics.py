@@ -489,16 +489,9 @@ class EarningsTracker:
             log_msg += f" - {failure_reason}"
         logger.info(log_msg)
 
-        # Auto-flush when interval has elapsed
-        if (
-            time.time() - self.last_flush_time
-            > self.AUTO_FLUSH_INTERVAL
-        ):
-            logger.info(
-                "\U0001f4be Auto-flushing analytics"
-                " (interval exceeded)"
-            )
-            self._save()
+        # Save immediately to ensure data persistence
+        # This ensures claims are never lost even if the process crashes
+        self._save()
 
     def record_cost(
         self,

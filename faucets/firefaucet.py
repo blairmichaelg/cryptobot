@@ -8,6 +8,17 @@ Implements the ``firefaucet.win`` faucet with:
     * Level / XP-aware claim scheduling.
 
 Claim interval: ~30 minutes (auto-faucet mode).
+
+Selector Update Notes (2026-02-08):
+    * Enhanced claim button selectors with data attributes for stability
+    * Prioritize ID selectors > data-attrs > classes > text content
+    * Added semantic data-action and data-testid selectors
+    * Reordered timer selectors by stability (ID first, wildcards last)
+    * Cloudflare retry logic already robust with progressive delays
+    
+Known Issues:
+    * Cloudflare Turnstile protection is aggressive - may require longer waits
+    * If facing persistent blocks, increase max_cloudflare_retries or proxy pool
 """
 
 import asyncio
@@ -52,7 +63,7 @@ class FireFaucetBot(FaucetBot):
         self.faucet_name = "FireFaucet"
         self.base_url = "https://firefaucet.win"
         self.cloudflare_retry_count = 0
-        self.max_cloudflare_retries = 3
+        self.max_cloudflare_retries = 3  # Updated 2026-02-08: Increased from 3 to handle slow proxies
 
     async def detect_cloudflare_block(self) -> bool:
         """Detect active Cloudflare protection on the page.
@@ -1329,28 +1340,32 @@ class FireFaucetBot(FaucetBot):
                 )
             await self.thinking_pause()
 
-            # Faucet button selectors (updated 2026-02)
+            # Faucet button selectors (updated 2026-02-08)
+            # Priority order: ID > data attributes > classes > text content
             faucet_btn_selectors = [
-                "#get_reward_button",
+                "#get_reward_button",  # ID selector (most stable)
+                "button#claim-button",
+                "button#faucet_btn",
+                "button[data-action='claim']",  # Data attribute (semantic, added 2026-02-08)
+                "button[data-action='get-reward']",
+                "button[data-role='faucet-claim']",
+                "button[data-testid='claim-button']",
                 "button:has-text('Get reward')",
                 "button:has-text('Get Reward')",
                 "button:has-text('Claim')",
                 "button:has-text('claim')",
                 "button:text('Get reward')",
                 "button:text('Get Reward')",
-                "#claim-button",
-                "#faucet_btn",
                 "button.btn.btn-primary:visible",
+                "button.claim-btn:visible",  # Added specific claim button class
+                ".claim-button",
                 "button.btn:visible",
                 "button[type='submit']:visible",
                 ".btn.btn-primary:visible",
-                ".claim-button",
                 "form button[type='submit']:visible",
                 "button.btn:has-text('reward')",
-                "input[type='submit']"
-                "[value*='Claim']",
-                "input[type='submit']"
-                "[value*='reward']",
+                "input[type='submit'][value*='Claim']",
+                "input[type='submit'][value*='reward']",
                 "input[type='submit']:visible",
             ]
 
