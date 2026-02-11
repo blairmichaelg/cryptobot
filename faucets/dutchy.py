@@ -287,6 +287,19 @@ class DutchyBot(FaucetBot):
                     logger.info(f"[{self.faucet_name}] Already logged in")
                     return True
 
+                # Wait for login form to appear (JavaScript-heavy page)
+                try:
+                    await self.page.wait_for_selector('input[name="username"]', timeout=15000, state='visible')
+                    logger.debug(f"[{self.faucet_name}] Login form loaded")
+                except Exception as form_err:
+                    logger.error(f"[{self.faucet_name}] Login form not found after CF: {form_err}")
+                    # Check if we got redirected to dashboard (already logged in)
+                    if await self.is_logged_in():
+                        logger.info(f"[{self.faucet_name}] Redirected to dashboard - already logged in")
+                        return True
+                    # Form truly missing - fail this attempt
+                    continue
+
                 # Warm up page with natural browsing behavior
                 await self.warm_up_page()
 
