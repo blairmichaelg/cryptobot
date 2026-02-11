@@ -166,7 +166,8 @@ class DutchyBot(FaucetBot):
                         "iframe[src*='turnstile'], iframe[src*='hcaptcha'], "
                         "iframe[src*='recaptcha']"
                     ):
-                        await self.solver.solve_captcha(page)
+                        if not await self.solver.solve_captcha(page):
+                            logger.warning(f"[{self.faucet_name}] Shortlink CAPTCHA solve failed")
 
                     # Solve shortlink
                     if await solver.solve(page.url, success_patterns=["dutchycorp.space", "/shortlinks"]):
@@ -307,7 +308,7 @@ class DutchyBot(FaucetBot):
                 # Solve CAPTCHA with retry handling
                 captcha_solved = await self.solver.solve_captcha(self.page)
                 if not captcha_solved:
-                    logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not required")
+                    logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not required, continuing...")
 
                 # Simulate thinking before submitting login
                 await self.thinking_pause()

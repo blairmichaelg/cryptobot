@@ -366,7 +366,8 @@ class FireFaucetBot(FaucetBot):
                         f"[{self.faucet_name}] Custom PTC "
                         f"captcha image detected. Solving..."
                     )
-                    await self.solver.solve_captcha(self.page)
+                    if not await self.solver.solve_captcha(self.page):
+                        logger.warning(f"[{self.faucet_name}] Custom PTC captcha solve failed")
                     logger.debug(
                         f"[{self.faucet_name}] "
                         f"Custom PTC captcha solved"
@@ -381,7 +382,8 @@ class FireFaucetBot(FaucetBot):
                         f"[{self.faucet_name}] Standard "
                         f"CAPTCHA detected on PTC ad"
                     )
-                    await self.solver.solve_captcha(self.page)
+                    if not await self.solver.solve_captcha(self.page):
+                        logger.warning(f"[{self.faucet_name}] Standard CAPTCHA solve failed")
                     logger.debug(
                         f"[{self.faucet_name}] "
                         f"Standard CAPTCHA solved"
@@ -848,7 +850,8 @@ class FireFaucetBot(FaucetBot):
                 await processor.select_option("faucetpay")
                 await asyncio.sleep(1)
 
-            await self.solver.solve_captcha(self.page)
+            if not await self.solver.solve_captcha(self.page):
+                logger.warning(f"[{self.faucet_name}] Withdrawal CAPTCHA solve failed or not present")
 
             submit = self.page.locator(
                 "button:has-text('Withdraw')"
@@ -1175,19 +1178,20 @@ class FireFaucetBot(FaucetBot):
                 )
 
             # Balance selectors (updated 2026-01-30)
+            # Balance selectors (reordered 2026-02-11: ID > data-* > class for stability)
             balance_selectors = [
-                ".user-balance",
-                ".balance",
-                "#user-balance",
-                ".balance-text",
-                "span.user-balance",
-                ".navbar .balance",
-                "[data-balance]",
-                ".account-balance",
-                "#balance",
-                "[class*='balance']",
-                ".wallet-balance",
-                "span[class*='balance']:visible",
+                "#user-balance",          # ID (most stable)
+                "#balance",               # ID
+                "[data-balance]",         # Data attribute (semantic)
+                ".user-balance",          # Class (specific)
+                ".balance",               # Class
+                ".balance-text",          # Class
+                "span.user-balance",      # Element + class
+                ".navbar .balance",       # Descendant
+                ".account-balance",       # Class
+                "[class*='balance']",     # Attribute pattern
+                ".wallet-balance",        # Class
+                "span[class*='balance']:visible",  # Complex fallback
             ]
             balance = await self.get_balance(
                 balance_selectors[0],
@@ -1198,21 +1202,21 @@ class FireFaucetBot(FaucetBot):
                 f"Current balance: {balance}"
             )
 
-            # Timer selectors (updated 2026-01-30)
+            # Timer selectors (reordered 2026-02-11: ID > data-* > class for stability)
             timer_selectors = [
-                ".fa-clock + span",
-                "#claim_timer",
-                "#time",
-                ".timer",
-                ".countdown",
-                "[data-timer]",
-                "[data-countdown]",
-                ".time-remaining",
-                "[class*='timer']",
-                "[class*='countdown']",
-                "[id*='timer']",
-                "span.timer:visible",
-                ".claim-timer",
+                "#claim_timer",           # ID (most stable)
+                "#time",                  # ID
+                "[id*='timer']",          # ID pattern
+                "[data-timer]",           # Data attribute (semantic)
+                "[data-countdown]",       # Data attribute
+                ".timer",                 # Class (specific)
+                ".countdown",             # Class
+                ".time-remaining",        # Class
+                ".claim-timer",           # Class
+                "[class*='timer']",       # Attribute pattern
+                "[class*='countdown']",   # Attribute pattern
+                "span.timer:visible",     # Element + class + state
+                ".fa-clock + span",       # Complex fallback (icon + sibling)
             ]
             wait = await self.get_timer(
                 timer_selectors[0],
