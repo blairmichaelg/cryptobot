@@ -269,6 +269,11 @@ class DutchyBot(FaucetBot):
                 except Exception as load_err:
                     logger.warning(f"[{self.faucet_name}] Network idle timeout (non-fatal): {load_err}")
 
+                # Log current page state for debugging
+                current_url = self.page.url
+                page_title = await self.page.title()
+                logger.info(f"[{self.faucet_name}] After CF: URL={current_url}, Title='{page_title}'")
+
                 # Check for common failure states (including proxy detection)
                 failure_state = await self.check_failure_states()
                 if failure_state:
