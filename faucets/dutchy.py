@@ -262,6 +262,13 @@ class DutchyBot(FaucetBot):
                 # Handle Cloudflare challenges that may appear after navigation
                 await self.handle_cloudflare(max_wait_seconds=120)
 
+                # Wait for page to fully load after CF clearance
+                try:
+                    await self.page.wait_for_load_state("networkidle", timeout=30000)
+                    logger.debug(f"[{self.faucet_name}] Page loaded after CF clearance")
+                except Exception as load_err:
+                    logger.warning(f"[{self.faucet_name}] Network idle timeout (non-fatal): {load_err}")
+
                 # Check for common failure states (including proxy detection)
                 failure_state = await self.check_failure_states()
                 if failure_state:
