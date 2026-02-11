@@ -93,7 +93,7 @@ class FaucetCryptoBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] Login CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
-                elif not captcha_solved:
+                else:
                     logger.debug(f"[{self.faucet_name}] No login CAPTCHA found or solve failed")
 
                 # Click login button with human-like behavior
