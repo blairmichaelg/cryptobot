@@ -186,10 +186,16 @@ class CointiplyBot(FaucetBot):
             nav_timeout = getattr(
                 self.settings, "timeout", 180000,
             )
-            await self.safe_navigate(
+            nav_success = await self.safe_navigate(
                 f"{self.base_url}/login",
                 timeout=nav_timeout,
             )
+            if not nav_success:
+                logger.error(
+                    f"[{self.faucet_name}] "
+                    "Navigation to login page failed"
+                )
+                return False
             
             # Cointiply uses aggressive Cloudflare - give it more time
             logger.info(
