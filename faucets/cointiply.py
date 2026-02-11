@@ -190,7 +190,28 @@ class CointiplyBot(FaucetBot):
                 f"{self.base_url}/login",
                 timeout=nav_timeout,
             )
-            await self.handle_cloudflare()
+            
+            # Cointiply uses aggressive Cloudflare - give it more time
+            logger.info(
+                f"[{self.faucet_name}] "
+                "Waiting for Cloudflare challenge (up to 120s)..."
+            )
+            cf_success = await self.handle_cloudflare(max_wait_seconds=120)
+            if not cf_success:
+                logger.error(
+                    f"[{self.faucet_name}] "
+                    "Cloudflare challenge failed or timed out"
+                )
+                # Try one refresh and retry
+                logger.info(
+                    f"[{self.faucet_name}] "
+                    "Refreshing page and retrying Cloudflare..."
+                )
+                await self.page.reload()
+                await asyncio.sleep(5)
+                cf_success = await self.handle_cloudflare(max_wait_seconds=120)
+                if not cf_success:
+                    return False
 
             # Verify page is still alive
             if not await self.check_page_health():
@@ -198,7 +219,15 @@ class CointiplyBot(FaucetBot):
                     f"[{self.faucet_name}] Page became "
                     "unresponsive after Cloudflare check"
                 )
-                return False
+                # Try refresh
+                logger.info(
+                    f"[{self.faucet_name}] "
+                    "Attempting page refresh after health check failure..."
+                )
+                await self.page.reload()
+                await asyncio.sleep(5)
+                if not await self.check_page_health():
+                    return False
 
             # Warm up page with natural browsing behavior
             await self.warm_up_page()
@@ -463,7 +492,11 @@ class CointiplyBot(FaucetBot):
                     retry_count += 1
                     continue
 
-                await self.handle_cloudflare()
+                logger.info(
+                    f"[{self.faucet_name}] "
+                    "Checking for Cloudflare..."
+                )
+                await self.handle_cloudflare(max_wait_seconds=120)
 
                 # Verify page health before proceeding
                 if not await self.check_page_health():
@@ -776,7 +809,7 @@ class CointiplyBot(FaucetBot):
             await self.page.goto(
                 f"{self.base_url}/withdraw",
             )
-            await self.handle_cloudflare()
+            await self.handle_cloudflare(max_wait_seconds=120)
 
             # Get current balance in coins
             balance = await self.get_current_balance()

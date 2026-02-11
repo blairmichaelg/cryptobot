@@ -1300,10 +1300,31 @@ class FireFaucetBot(FaucetBot):
                 f"[{self.faucet_name}] "
                 f"CAPTCHA solved successfully"
             )
+            
+            # Wait for page to process CAPTCHA response and update DOM
+            try:
+                logger.info(
+                    f"[{self.faucet_name}] "
+                    f"Waiting for page to update after CAPTCHA..."
+                )
+                await self.page.wait_for_load_state(
+                    'networkidle',
+                    timeout=15000
+                )
+                logger.info(
+                    f"[{self.faucet_name}] "
+                    f"Network idle after CAPTCHA"
+                )
+            except Exception as load_err:
+                logger.warning(
+                    f"[{self.faucet_name}] "
+                    f"Network idle timeout (non-fatal): {load_err}"
+                )
+            
             await self.idle_mouse(
                 duration=random.uniform(0.5, 1.5)
             )
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)  # Increased from 1s to 2s
 
             # Try to enable the submit button
             try:
@@ -1340,13 +1361,14 @@ class FireFaucetBot(FaucetBot):
                 )
             await self.thinking_pause()
 
-            # Faucet button selectors (updated 2026-02-08)
+            # Faucet button selectors (updated 2026-02-11)
             # Priority order: ID > data attributes > classes > text content
             faucet_btn_selectors = [
                 "#get_reward_button",  # ID selector (most stable)
                 "button#claim-button",
                 "button#faucet_btn",
-                "button[data-action='claim']",  # Data attribute (semantic, added 2026-02-08)
+                "button#submit-button",  # FireFaucet specific
+                "button[data-action='claim']",  # Data attribute (semantic)
                 "button[data-action='get-reward']",
                 "button[data-role='faucet-claim']",
                 "button[data-testid='claim-button']",
@@ -1356,17 +1378,17 @@ class FireFaucetBot(FaucetBot):
                 "button:has-text('claim')",
                 "button:text('Get reward')",
                 "button:text('Get Reward')",
-                "button.btn.btn-primary:visible",
-                "button.claim-btn:visible",  # Added specific claim button class
+                "button.btn.btn-primary",  # Removed :visible to catch hidden buttons
+                "button.claim-btn",
                 ".claim-button",
-                "button.btn:visible",
-                "button[type='submit']:visible",
-                ".btn.btn-primary:visible",
-                "form button[type='submit']:visible",
+                "button.btn",
+                "button[type='submit']",
+                ".btn.btn-primary",
+                "form button[type='submit']",
                 "button.btn:has-text('reward')",
                 "input[type='submit'][value*='Claim']",
                 "input[type='submit'][value*='reward']",
-                "input[type='submit']:visible",
+                "input[type='submit']",
             ]
 
             # Debug: log all buttons on the page
@@ -1423,63 +1445,131 @@ class FireFaucetBot(FaucetBot):
                             f"button: {dbg_err}"
                         )
 
+            # Try waiting for button to appear first
+            logger.info(
+                f"[{self.faucet_name}] "
+                f"Waiting for claim button to appear..."
+            )
             faucet_btn = None
-            for selector in faucet_btn_selectors:
+            
+            # Try high-priority selectors with explicit wait
+            priority_selectors = [
+                "#get_reward_button",
+                "button#submit-button",
+                "button:has-text('Get reward')",
+                "button[type='submit']",
+            ]
+            
+            for selector in priority_selectors:
                 try:
+                    await self.page.wait_for_selector(
+                        selector,
+                        timeout=5000,
+                        state='attached'
+                    )
                     btn = self.page.locator(selector)
-                    cnt = await btn.count()
-                    logger.debug(
-                        f"[{self.faucet_name}] Testing "
-                        f"selector '{selector}': "
-                        f"found {cnt} elements"
-                    )
-                    if cnt > 0:
-                        try:
-                            is_vis = (
-                                await btn.first.is_visible(
-                                    timeout=2000
-                                )
-                            )
-                            if is_vis:
-                                faucet_btn = btn
-                                logger.info(
-                                    f"[{self.faucet_name}]"
-                                    f" Found claim button "
-                                    f"with: {selector}"
-                                )
-                                break
-                            logger.debug(
-                                f"[{self.faucet_name}] "
-                                f"Button found but not "
-                                f"visible: {selector}"
-                            )
-                        except Exception as vis_err:
-                            logger.debug(
-                                f"[{self.faucet_name}] "
-                                f"Visibility check "
-                                f"failed for "
-                                f"{selector}: {vis_err}"
-                            )
-                            continue
-                except Exception as sel_err:
-                    logger.debug(
-                        f"[{self.faucet_name}] "
-                        f"Selector '{selector}' "
-                        f"failed: {sel_err}"
-                    )
+                    if await btn.count() > 0:
+                        faucet_btn = btn
+                        logger.info(
+                            f"[{self.faucet_name}] "
+                            f"Found claim button with wait: {selector}"
+                        )
+                        break
+                except Exception:
                     continue
+            
+            # If not found, try all selectors without wait
+            if not faucet_btn:
+                logger.warning(
+                    f"[{self.faucet_name}] "
+                    f"Button not found with priority selectors, trying all..."
+                )
+                for selector in faucet_btn_selectors:
+                    try:
+                        btn = self.page.locator(selector)
+                        cnt = await btn.count()
+                        logger.debug(
+                            f"[{self.faucet_name}] Testing "
+                            f"selector '{selector}': "
+                            f"found {cnt} elements"
+                        )
+                        if cnt > 0:
+                            try:
+                                is_vis = (
+                                    await btn.first.is_visible(
+                                        timeout=1000
+                                    )
+                                )
+                                if is_vis:
+                                    faucet_btn = btn
+                                    logger.info(
+                                        f"[{self.faucet_name}]"
+                                        f" Found claim button "
+                                        f"with: {selector}"
+                                    )
+                                    break
+                                logger.debug(
+                                    f"[{self.faucet_name}] "
+                                    f"Button found but not "
+                                    f"visible: {selector}"
+                                )
+                            except Exception as vis_err:
+                                logger.debug(
+                                    f"[{self.faucet_name}] "
+                                    f"Visibility check "
+                                    f"failed for "
+                                    f"{selector}: {vis_err}"
+                                )
+                                continue
+                    except Exception as sel_err:
+                        logger.debug(
+                            f"[{self.faucet_name}] "
+                            f"Selector '{selector}' "
+                            f"failed: {sel_err}"
+                        )
+                        continue
 
             if faucet_btn and await faucet_btn.count() > 0:
                 return await self._click_and_verify_claim(
                     faucet_btn, balance, balance_selectors,
                 )
 
-            # Button not found -- debug logging
+            # Button not found -- enhanced debug logging
             logger.warning(
                 f"[{self.faucet_name}] Faucet button "
                 f"not found with any selector"
             )
             await self._debug_log_page_elements()
+            
+            # Log page HTML for analysis
+            try:
+                page_html = await self.page.content()
+                html_len = len(page_html)
+                logger.error(
+                    f"[{self.faucet_name}] Page HTML length: {html_len}"
+                )
+                # Log snippet of HTML (first 500 chars)
+                logger.error(
+                    f"[{self.faucet_name}] HTML snippet: "
+                    f"{page_html[:500]}"
+                )
+                # Check for iframes
+                iframe_count = await self.page.locator('iframe').count()
+                logger.error(
+                    f"[{self.faucet_name}] Found {iframe_count} iframes"
+                )
+                if iframe_count > 0:
+                    for i in range(min(iframe_count, 3)):
+                        iframe = self.page.locator('iframe').nth(i)
+                        src = await iframe.get_attribute('src')
+                        logger.error(
+                            f"[{self.faucet_name}] Iframe[{i}] src: {src}"
+                        )
+            except Exception as html_err:
+                logger.error(
+                    f"[{self.faucet_name}] Failed to log HTML: {html_err}"
+                )
+            
             await self.page.screenshot(
                 path=(
                     f"claim_btn_missing_"
