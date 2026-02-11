@@ -177,6 +177,11 @@ class FaucetBot:
         # Human timing profile for advanced stealth
         self.human_profile = None  # Will be loaded from fingerprint or set on first use
         self.last_error_type = None
+        
+        # Proxy state tracking
+        self.current_proxy: Optional[str] = None
+        self.proxy_failed_this_session: bool = False
+        self.should_retry_without_proxy: bool = False
 
         self._configure_solver(settings)
 
@@ -322,6 +327,7 @@ class FaucetBot:
         Args:
             proxy_string: ``user:pass@host:port`` formatted proxy string.
         """
+        self.current_proxy = proxy_string
         self.solver.set_proxy(proxy_string)
 
     def create_error_result(self, status: str, next_claim_minutes: float = 60,
@@ -1838,13 +1844,16 @@ class FaucetBot:
         timeout: Optional[int] = None,
         retry_on_proxy_error: bool = True,
     ) -> bool:
-        """Navigate to URL with proxy error handling and retry logic.
+        """Navigate to URL with proxy error handling and direct fallback.
 
         Handles common navigation failures including:
 
         * ``NS_ERROR_PROXY_CONNECTION_REFUSED`` (bad proxy).
-        * Timeout errors.
+        * Timeout errors (extreme proxy latency).
         * Network errors.
+        
+        If ENABLE_DIRECT_FALLBACK is true and proxy errors occur,
+        will signal orchestrator to retry with direct connection.
 
         Args:
             url: Target URL to navigate to.
@@ -1862,6 +1871,9 @@ class FaucetBot:
             timeout = getattr(self.settings, "timeout", 60000)
 
         max_attempts = 2
+        proxy_error_detected = False
+        timeout_error_detected = False
+        
         for attempt in range(1, max_attempts + 1):
             try:
                 # On retry, halve timeout but keep >= 60s
@@ -1894,13 +1906,14 @@ class FaucetBot:
                         "PROXY_CONNECTION_FAILED",
                         "ERR_PROXY_CONNECTION_FAILED",
                         "ECONNREFUSED",
-                        "proxy",
+                        "ERR_TUNNEL_CONNECTION_FAILED",
                     ]
-                ) or (
-                    "Timeout" in error_str and attempt == 1
                 )
+                
+                is_timeout = "Timeout" in error_str or "timeout" in error_str
 
                 if is_proxy_error:
+                    proxy_error_detected = True
                     logger.warning(
                         f"[{self.faucet_name}] Proxy/connection"
                         f" error on attempt {attempt}:"
@@ -1912,12 +1925,21 @@ class FaucetBot:
                             " attempts failed, proxy may be"
                             " blocking this site"
                         )
+                        # Signal that we should retry without proxy
+                        if getattr(self.settings, "enable_direct_fallback", True) and self.current_proxy:
+                            self.should_retry_without_proxy = True
+                            self.proxy_failed_this_session = True
+                            logger.info(
+                                f"[{self.faucet_name}] 🔄 Direct fallback enabled:"
+                                " Will request retry without proxy"
+                            )
                         return False
                     wait_time = min(attempt * 2, 5)
                     await asyncio.sleep(wait_time)
                     continue
 
-                if "Timeout" in error_str or "timeout" in error_str:
+                if is_timeout:
+                    timeout_error_detected = True
                     logger.warning(
                         f"[{self.faucet_name}] Timeout on"
                         f" attempt {attempt}:"
@@ -1931,10 +1953,21 @@ class FaucetBot:
                         )
                         await asyncio.sleep(1)
                         continue
+                    
+                    # Repeated timeouts with proxy may indicate extreme latency
                     logger.error(
                         f"[{self.faucet_name}] Navigation failed"
                         f" after {max_attempts} timeout attempts"
                     )
+                    
+                    # Signal direct fallback for repeated timeouts with proxy
+                    if getattr(self.settings, "enable_direct_fallback", True) and self.current_proxy:
+                        self.should_retry_without_proxy = True
+                        self.proxy_failed_this_session = True
+                        logger.info(
+                            f"[{self.faucet_name}] 🔄 Timeout fallback enabled:"
+                            " Will request retry without proxy (extreme latency detected)"
+                        )
                     return False
 
                 # Other errors - don't retry

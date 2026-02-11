@@ -329,6 +329,16 @@ class BotSettings(BaseSettings):
         default=False, alias="CANARY_ONLY"
     )
 
+    # Direct Connection Fallback
+    # Enable fallback to direct connection when proxies fail
+    enable_direct_fallback: bool = Field(
+        default=True, alias="ENABLE_DIRECT_FALLBACK"
+    )
+    # Number of proxy failures before trying direct connection
+    proxy_fallback_threshold: int = Field(
+        default=2, alias="PROXY_FALLBACK_THRESHOLD"
+    )
+
     # Auto-Suspend / Circuit Breaker Settings
     # Enable ROI-based auto-suspend
     faucet_auto_suspend_enabled: bool = True

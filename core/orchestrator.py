@@ -1783,6 +1783,64 @@ class JobScheduler:
                 # Regular faucet bot method
                 method = getattr(bot, job.job_type)
                 result = await asyncio.wait_for(method(page), timeout=job_timeout)
+            
+            # Check if bot signaled that we should retry without proxy
+            if (
+                hasattr(bot, 'should_retry_without_proxy') 
+                and bot.should_retry_without_proxy
+                and getattr(self.settings, "enable_direct_fallback", True)
+                and current_proxy is not None
+            ):
+                logger.warning(
+                    f"🔄 [DIRECT FALLBACK] Proxy failed for {job.name}. "
+                    f"Retrying with direct connection..."
+                )
+                
+                # Close current context
+                try:
+                    await self.browser_manager.safe_close_context(context, profile_name=username)
+                except Exception as cleanup_error:
+                    logger.debug(f"Context cleanup error: {cleanup_error}")
+                
+                # Create new context WITHOUT proxy
+                try:
+                    context = await self.browser_manager.create_context(
+                        proxy=None,  # Force direct connection
+                        user_agent=ua,
+                        profile_name=username,
+                        locale_override=locale_hint,
+                        timezone_override=timezone_hint,
+                        allow_sticky_proxy=False,  # Disable sticky proxy
+                        block_images_override=False if self._should_disable_image_block(job.faucet_type) else None
+                    )
+                    page = await self.browser_manager.new_page(context=context)
+                    
+                    # Create new bot instance with direct connection
+                    bot = bot_class(self.settings, page)
+                    bot.settings_account_override = override
+                    bot.set_behavior_profile(profile_name=username, profile_hint=getattr(job.profile, "behavior_profile", None))
+                    bot.current_proxy = None  # Explicitly set no proxy
+                    
+                    # Retry the job
+                    logger.info(f"🚀 [RETRY] Executing {job.name} with DIRECT connection...")
+                    method = getattr(bot, job.job_type)
+                    result = await asyncio.wait_for(method(page), timeout=job_timeout)
+                    
+                    # Log success or failure of direct connection attempt
+                    if hasattr(result, 'success') and result.success:
+                        logger.info(
+                            f"✅ [DIRECT FALLBACK SUCCESS] {job.name} completed via direct connection!"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ [DIRECT FALLBACK FAILED] {job.name} also failed without proxy: {result.status if hasattr(result, 'status') else 'Unknown'}"
+                        )
+                        
+                except Exception as direct_error:
+                    logger.error(
+                        f"❌ [DIRECT FALLBACK ERROR] Direct connection retry failed: {direct_error}"
+                    )
+                    # Continue with original result processing
 
             # Post-execution status check - only if page is still alive
             page_alive = await self.browser_manager.check_page_alive(page)
