@@ -366,7 +366,8 @@ class FireFaucetBot(FaucetBot):
                         f"[{self.faucet_name}] Custom PTC "
                         f"captcha image detected. Solving..."
                     )
-                    await self.solver.solve_captcha(self.page)
+                    if not await self.solver.solve_captcha(self.page):
+                        logger.warning(f"[{self.faucet_name}] Custom PTC captcha solve failed")
                     logger.debug(
                         f"[{self.faucet_name}] "
                         f"Custom PTC captcha solved"
@@ -381,7 +382,8 @@ class FireFaucetBot(FaucetBot):
                         f"[{self.faucet_name}] Standard "
                         f"CAPTCHA detected on PTC ad"
                     )
-                    await self.solver.solve_captcha(self.page)
+                    if not await self.solver.solve_captcha(self.page):
+                        logger.warning(f"[{self.faucet_name}] Standard CAPTCHA solve failed")
                     logger.debug(
                         f"[{self.faucet_name}] "
                         f"Standard CAPTCHA solved"
@@ -848,7 +850,8 @@ class FireFaucetBot(FaucetBot):
                 await processor.select_option("faucetpay")
                 await asyncio.sleep(1)
 
-            await self.solver.solve_captcha(self.page)
+            if not await self.solver.solve_captcha(self.page):
+                logger.warning(f"[{self.faucet_name}] Withdrawal CAPTCHA solve failed or not present")
 
             submit = self.page.locator(
                 "button:has-text('Withdraw')"

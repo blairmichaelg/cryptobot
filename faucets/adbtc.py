@@ -117,7 +117,8 @@ class AdBTCBot(FaucetBot):
             
             # Solve hCaptcha/Turnstile if present
             logger.info(f"[{self.faucet_name}] Checking for hCaptcha/Turnstile...")
-            await self.solver.solve_captcha(self.page)
+            if not await self.solver.solve_captcha(self.page):
+                logger.debug(f"[{self.faucet_name}] No login CAPTCHA found or solve failed")
             
             # Small delay before submit
             await self.random_delay(0.5, 1.0)
@@ -329,7 +330,8 @@ class AdBTCBot(FaucetBot):
                     captcha_frame = self.page.locator(".h-captcha, iframe[src*='hcaptcha'], iframe[src*='turnstile']")
                     if await captcha_frame.count() > 0:
                         logger.info(f"[{self.faucet_name}] Session CAPTCHA detected, solving...")
-                        await self.solver.solve_captcha(self.page)
+                        if not await self.solver.solve_captcha(self.page):
+                            logger.warning(f"[{self.faucet_name}] Session CAPTCHA solve failed")
                         
                         # Usually need to click "Submit" after CAPTCHA
                         submit = self.page.locator("input[type='submit'], button:has-text('Submit')")
@@ -503,7 +505,7 @@ class AdBTCBot(FaucetBot):
             captcha_solved = await self.solver.solve_captcha(self.page)
             
             if not captcha_solved:
-                logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not present.")
+                logger.warning(f"[{self.faucet_name}] CAPTCHA solving failed or not present, continuing anyway...")
             
             await self.random_delay(0.5, 1.0)
             

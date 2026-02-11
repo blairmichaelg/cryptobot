@@ -153,7 +153,8 @@ class CoinPayUBot(FaucetBot):
                         "iframe[src*='hcaptcha']"
                     )
                     if captcha_frame:
-                        await self.solver.solve_captcha(page)
+                        if not await self.solver.solve_captcha(page):
+                            logger.warning(f"[{self.faucet_name}] Shortlink CAPTCHA solve failed")
 
                     # Solve shortlink
                     success_pats = [

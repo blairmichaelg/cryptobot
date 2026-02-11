@@ -93,6 +93,8 @@ class FaucetCryptoBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] Login CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
+                elif not captcha_solved:
+                    logger.debug(f"[{self.faucet_name}] No login CAPTCHA found or solve failed")
 
                 # Click login button with human-like behavior
                 logger.info(f"[{self.faucet_name}] Clicking login button...")
@@ -258,6 +260,8 @@ class FaucetCryptoBot(FaucetBot):
                 if captcha_solved:
                     logger.info(f"[{self.faucet_name}] CAPTCHA solved successfully")
                     await self.random_delay(1, 2)
+                else:
+                    logger.warning(f"[{self.faucet_name}] CAPTCHA solve failed or not present")
 
                     # Manually enable submit button (some sites disable it until CAPTCHA callback)
                     try:
@@ -425,7 +429,8 @@ class FaucetCryptoBot(FaucetBot):
 
                     # Sometimes there is an antibot check (select symbols in order)
                     # We look for turnstile/recaptcha first
-                    await self.solver.solve_captcha(self.page)
+                    if not await self.solver.solve_captcha(self.page):
+                        logger.warning(f"[{self.faucet_name}] PTC ad CAPTCHA solve failed")
 
                     await self.thinking_pause()  # Brief hesitation before clicking reward
                     await self.human_like_click(reward_btn)

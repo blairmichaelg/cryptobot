@@ -183,7 +183,9 @@ class PickFaucetBase(FaucetBot):
             captcha_locator = self.page.locator(".h-captcha, .cf-turnstile")
             if await captcha_locator.count() > 0 and await captcha_locator.first.is_visible():
                 logger.info(f"[{self.faucet_name}] Solving registration captcha...")
-                await self.solver.solve_captcha(self.page)
+                if not await self.solver.solve_captcha(self.page):
+                    logger.error(f"[{self.faucet_name}] Registration CAPTCHA solve failed")
+                    return False
                 await self.random_delay(2, 5)
 
             # Find and click register button
@@ -360,14 +362,14 @@ class PickFaucetBase(FaucetBot):
                         # Prefer hCaptcha (value typically "hcaptcha" or "0")
                         try:
                             await captcha_dropdown.first.select_option(label="hCaptcha")
-                        except Exception:
+                        except Exception as e:
                             try:
                                 await captcha_dropdown.first.select_option(label="Turnstile")
-                            except Exception:
-                                pass
+                            except Exception as e2:
+                                logger.debug(f"[{self.faucet_name}] Could not select login captcha type: {e2}")
                         await self.random_delay(0.5, 1.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[{self.faucet_name}] Login captcha dropdown handling failed: {e}")
 
             # Check for hCaptcha or Turnstile
             captcha_locator = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
@@ -396,8 +398,8 @@ class PickFaucetBase(FaucetBot):
                                         }
                                     });
                                 """)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"[{self.faucet_name}] Could not enable login submit button: {e}")
 
                             break
                         await self.human_wait(2)
@@ -492,10 +494,11 @@ class PickFaucetBase(FaucetBot):
         """
         try:
             logout = self.page.locator('a:has-text("Logout"), a[href*="logout"]')
-            if await logout.count() > 0 and await logout.first.is_visible():
+            logout_count = await logout.count()
+            if logout_count > 0 and await logout.first.is_visible():
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] Logout check failed: {e}")
 
         balance_selectors = [
             ".balance",
@@ -514,8 +517,8 @@ class PickFaucetBase(FaucetBot):
         try:
             if any(token in self.page.url.lower() for token in ["dashboard", "account", "profile"]):
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.faucet_name}] URL check failed: {e}")
 
         return False
 
@@ -624,14 +627,14 @@ class PickFaucetBase(FaucetBot):
                     if self.solver.api_key:
                         try:
                             await captcha_dropdown.first.select_option(label="hCaptcha")
-                        except Exception:
+                        except Exception as e:
                             try:
                                 await captcha_dropdown.first.select_option(label="Turnstile")
-                            except Exception:
-                                pass
+                            except Exception as e2:
+                                logger.debug(f"[{self.faucet_name}] Could not select faucet captcha type: {e2}")
                         await self.random_delay(0.5, 1.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[{self.faucet_name}] Faucet captcha dropdown handling failed: {e}")
 
             # Check for hCaptcha or Turnstile in the faucet page
             captcha_loc = self.page.locator(".h-captcha, .cf-turnstile, .g-recaptcha")
@@ -658,8 +661,8 @@ class PickFaucetBase(FaucetBot):
                                         }
                                     });
                                 """)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"[{self.faucet_name}] Could not enable faucet claim button: {e}")
 
                             break
                         await self.human_wait(2)
@@ -699,12 +702,13 @@ class PickFaucetBase(FaucetBot):
             )
 
             # Try to wait for button to be visible
-            try:
-                await claim_btn.first.wait_for(state="visible", timeout=5000)
-            except Exception:
-                pass
+            if await claim_btn.count() > 0:
+                try:
+                    await claim_btn.first.wait_for(state="visible", timeout=5000)
+                except Exception:
+                    pass
 
-            if not await claim_btn.first.is_visible():
+            if await claim_btn.count() == 0 or not await claim_btn.first.is_visible():
                 logger.warning(f"[{self.faucet_name}] Claim button not visible")
                 # Log what buttons we can find
                 all_buttons = await self.page.query_selector_all("button")
@@ -716,7 +720,7 @@ class PickFaucetBase(FaucetBot):
                     balance=await self.get_balance()
                 )
 
-            await self.human_like_click(claim_btn)
+            await self.human_like_click(claim_btn.first)
             await self.random_delay(3, 6)
 
             # Extract result from alert or specific message div
@@ -824,7 +828,8 @@ class PickFaucetBase(FaucetBot):
             await self.human_type(address_field, withdraw_address)
 
             # Solve Captcha
-            await self.solver.solve_captcha(self.page)
+            if not await self.solver.solve_captcha(self.page):
+                logger.warning(f"[{self.faucet_name}] Withdrawal CAPTCHA solve failed or not present")
 
             withdraw_btn = self.page.locator('button:has-text("Withdraw"), button.process_btn')
             await self.human_like_click(withdraw_btn)
