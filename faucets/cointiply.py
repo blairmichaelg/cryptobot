@@ -64,14 +64,27 @@ class CointiplyBot(FaucetBot):
         Returns:
             Balance as string. Returns "0" if extraction fails.
         """
+        # Balance selectors (reordered 2026-02-11: ID > data-* > class)
+        balance_selectors = [
+            "#user-balance",          # ID (most stable)
+            "[data-balance]",         # Data attribute
+            ".user-balance-coins",    # Class (specific)
+            ".user-balance",          # Class (generic)
+        ]
         balance = await self.get_balance(
-            ".user-balance-coins",
-            fallback_selectors=[".user-balance"],
+            balance_selectors[0],
+            fallback_selectors=balance_selectors[1:],
         )
-        logger.debug(
-            f"[{self.faucet_name}] "
-            f"Current balance: {balance}"
-        )
+        if balance == "0":
+            logger.warning(
+                f"[{self.faucet_name}] Balance extraction returned '0' - "
+                "may indicate selector staleness or extraction failure"
+            )
+        else:
+            logger.info(
+                f"[{self.faucet_name}] "
+                f"Current balance: {balance}"
+            )
         return balance
 
     async def view_ptc_ads(self) -> None:
@@ -522,11 +535,13 @@ class CointiplyBot(FaucetBot):
                         "button found and visible"
                     )
 
-                    # Extract timer
+                    # Extract timer (reordered 2026-02-11: ID > data-* > class)
                     timer_selectors = [
-                        ".timer_display",
-                        "#timer_display",
-                        ".timer-text",
+                        "#timer_display",     # ID (most stable)
+                        "[data-timer]",       # Data attribute
+                        ".timer_display",     # Class
+                        ".timer-text",        # Class
+                        "[class*='timer']",   # Attribute pattern fallback
                     ]
                     timer_mins = await self.get_timer(
                         timer_selectors[0],
@@ -535,7 +550,7 @@ class CointiplyBot(FaucetBot):
                         ),
                     )
 
-                    logger.debug(
+                    logger.info(
                         f"[{self.faucet_name}] Timer "
                         f"extracted: {timer_mins} minutes"
                     )

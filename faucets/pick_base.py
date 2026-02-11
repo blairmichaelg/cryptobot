@@ -534,7 +534,13 @@ class PickFaucetBase(FaucetBot):
         for current_selector in selectors:
             balance = await super().get_balance(current_selector, fallback_selectors=fallback)
             if balance and balance != "0":
+                logger.debug(f"[{self.faucet_name}] Balance extracted: {balance} using selector '{current_selector}'")
                 return balance
+        
+        logger.warning(
+            f"[{self.faucet_name}] All balance selectors failed - "
+            "may indicate selector staleness or page structure change"
+        )
         return "0"
 
     def get_jobs(self) -> List['Job']:
