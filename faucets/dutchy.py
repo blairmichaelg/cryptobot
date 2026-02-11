@@ -274,6 +274,20 @@ class DutchyBot(FaucetBot):
                 page_title = await self.page.title()
                 logger.info(f"[{self.faucet_name}] After CF: URL={current_url}, Title='{page_title}'")
 
+                # Detect Firefox "Problem loading page" error
+                if "problem loading page" in page_title.lower():
+                    logger.warning(f"[{self.faucet_name}] Page failed to load after CF (Firefox error page)")
+                    # Retry navigation
+                    try:
+                        logger.info(f"[{self.faucet_name}] Retrying page load...")
+                        await self.page.reload(wait_until='commit', timeout=nav_timeout)
+                        await asyncio.sleep(5)  # Give page time to load
+                        page_title = await self.page.title()
+                        logger.info(f"[{self.faucet_name}] After reload: Title='{page_title}'")
+                    except Exception as reload_err:
+                        logger.error(f"[{self.faucet_name}] Reload failed: {reload_err}")
+                        continue
+
                 # Check for common failure states (including proxy detection)
                 failure_state = await self.check_failure_states()
                 if failure_state:
