@@ -178,13 +178,17 @@ class BotSettings(BaseSettings):
     proxy_bypass_faucets: List[str] = Field(
         default_factory=lambda: [
             "freebitcoin", "cointiply", "firefaucet",
-        ]
+        ],
+        alias="PROXY_BYPASS_FAUCETS",
+        validation_alias="PROXY_BYPASS_FAUCETS"
     )
     # Image blocking overrides (allow images for selected faucets)
     image_bypass_faucets: List[str] = Field(
         default_factory=lambda: [
             "freebitcoin", "firefaucet",
-        ]
+        ],
+        alias="IMAGE_BYPASS_FAUCETS",
+        validation_alias="IMAGE_BYPASS_FAUCETS"
     )
 
     # Optimization
