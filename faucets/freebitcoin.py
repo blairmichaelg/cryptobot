@@ -809,6 +809,38 @@ class FreeBitcoinBot(FaucetBot):
                 
                 logger.info(f"[DEBUG] Timer extraction result: {timer_result}")
                 
+                # DETAILED DEBUG: Dump actual page state
+                page_debug = await self.page.evaluate("""
+                    () => {
+                        return {
+                            url: window.location.href,
+                            title: document.title,
+                            balance_exists: !!document.querySelector('#balance'),
+                            balance_text: document.querySelector('#balance')?.textContent?.trim(),
+                            timer_exists: !!document.querySelector('#time_remaining'),
+                            timer_text: document.querySelector('#time_remaining')?.textContent?.trim(),
+                            timer_html: document.querySelector('#time_remaining')?.outerHTML,
+                            button_exists: !!document.querySelector('#free_play_form_button'),
+                            button_disabled: document.querySelector('#free_play_form_button')?.disabled,
+                            button_visible: document.querySelector('#free_play_form_button')?.offsetParent !== null,
+                            all_timer_elements: Array.from(document.querySelectorAll('[id*="time"], [class*="time"], [id*="countdown"], [class*="countdown"]')).map(el => ({
+                                tag: el.tagName,
+                                id: el.id,
+                                classes: el.className,
+                                text: el.textContent?.trim()?.substring(0, 100)
+                            }))
+                        };
+                    }
+                """)
+                logger.info(f"[DEBUG] Page state: URL={page_debug.get('url')}, Title={page_debug.get('title')[:50]}")
+                logger.info(f"[DEBUG] Balance: exists={page_debug.get('balance_exists')}, text='{page_debug.get('balance_text')}'")
+                logger.info(f"[DEBUG] Timer: exists={page_debug.get('timer_exists')}, text='{page_debug.get('timer_text')}'")
+                logger.info(f"[DEBUG] Timer HTML: {page_debug.get('timer_html')}")
+                logger.info(f"[DEBUG] Button: exists={page_debug.get('button_exists')}, disabled={page_debug.get('button_disabled')}, visible={page_debug.get('button_visible')}")
+                logger.info(f"[DEBUG] All timer elements found: {len(page_debug.get('all_timer_elements', []))}")
+                for idx, el in enumerate(page_debug.get('all_timer_elements', [])[:5], 1):
+                    logger.info(f"[DEBUG]   Timer element {idx}: {el}")
+                
                 # Parse timer result
                 wait_min = 0.0
                 if timer_result == 'BUTTON_DISABLED':
