@@ -1,29 +1,56 @@
-# 🚜 Gen 3.0 Crypto Faucet Farm
+# 🤖 Cryptobot Gen 3.0 - Multi-Purpose Browser Automation Platform
 
-**Professional-Grade Autonomous Harvesting Infrastructure**
+**Professional-Grade Infrastructure for Web Automation & Monetization**
 
-[![Production Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](docs/summaries/PRODUCTION_STATUS.md)
-[![Azure VM](https://img.shields.io/badge/Azure%20VM-RUNNING-blue)](docs/azure/AZURE_VM_STATUS.md)
-[![Week 1 Fixes](https://img.shields.io/badge/Week%201%20Fixes-COMPLETE-success)](docs/summaries/AGENT_TASKS.md)
+[![Infrastructure](https://img.shields.io/badge/Infrastructure-OPERATIONAL-brightgreen)](docs/DEPLOYMENT_INSTRUCTIONS.md)
+[![Azure VMs](https://img.shields.io/badge/Azure%20VMs-9%20ACTIVE-blue)](docs/DEPLOY_AZURE_PROXIES_QUICK.md)
+[![Clean Codebase](https://img.shields.io/badge/Codebase-CLEANED-success)](#)
 
-This project is a sophisticated, modular automation system designed to harvest high-value crypto faucets using advanced stealth technology (`Camoufox`) and automated CAPTCHA solving (`2Captcha`). **Production deployed and running 24/7 on Azure VM.**
+A sophisticated, production-ready automation platform featuring:
+- **8 Azure proxy VMs** across global regions
+- **Stealth browser automation** (Camoufox + anti-detection)
+- **Multi-account orchestration** (12 profiles with session persistence)
+- **Enterprise captcha solving** (2Captcha + CapSolver)
+- **Analytics & monitoring** (detailed logging, performance tracking)
 
-**Latest Update (Feb 8, 2026)**: Faucets optimized and standardized. FreeBitcoin login fixed. DutchyCorp, Cointiply, and FireFaucet enhanced for stealth and robustness. Test coverage expanded.
+**Latest Update (Feb 11, 2026)**: Infrastructure optimized. Cleaned codebase. Researching profitable monetization strategies. See [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md) for next steps.
+
+> **Note**: Originally built for crypto faucets (unprofitable in 2026). Infrastructure is solid and being redirected to actually profitable opportunities. See [docs/PROFITABLE_OPPORTUNITIES.md](docs/PROFITABLE_OPPORTUNITIES.md) for research.
 
 ---
 
-## ⚡ Key Features (Gen 3.0)
+## 🎯 What's Next
 
-### Core Capabilities
+This infrastructure is **production-ready** and looking for profitable applications:
 
-- **🛡️ Advanced Stealth**: Uses **Camoufox** (Firefox fork) with fingerprint randomization to defeat sophisticated anti-bot detection
-- **🤖 Auto-Solve Captchas**: Integration with 2Captcha and CapSolver for Turnstile, hCaptcha, reCaptcha, and image-based captchas
-- **📊 Standardized Data Extraction**: Unified `get_balance()` and `get_timer()` methods across all faucets using `DataExtractor` utility
-- **🔗 Smart Shortlink Traverser**: Generic solver with timer detection, captcha handling, and popup management
-- **📺 PTC Support**: Automated ad-watching with active focus management for high-yield faucets
-- **⚡ Job-Based Scheduler**: High-concurrency orchestrator eliminates idle time and maximizes crypto extraction
-- **🩹 Crash Prevention**: Safe browser context management with health checks (Task 2 - Feb 2026)
-- **☁️ Cloudflare Bypass**: Progressive retry with automatic Turnstile solving (Task 3 - Jan 2026)
+1. **📋 [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - 3 immediate monetization paths
+2. **📚 [docs/PROFITABLE_OPPORTUNITIES.md](docs/PROFITABLE_OPPORTUNITIES.md)** - 6 tiers of researched strategies
+3. **🔬 [RESEARCH_PROMPT.md](RESEARCH_PROMPT.md)** - Copy this to Gemini/Perplexity for current 2026 research
+
+**Best opportunities being evaluated**:
+- Crypto airdrop farming ($2,400-12,000 potential per campaign)
+- Web scraping services ($300-1,500/month recurring)
+- Passive income on VMs ($120/month guaranteed)
+
+---
+
+## ⚡ Key Features
+
+### Infrastructure
+
+- **8 Azure B1s VMs** - Global proxy network (West US, East US, Europe, Asia)
+- **Main production VM** - DevNode01 (West US 2) running systemd service
+- **Rotating proxies** - Automatic rotation with cooldown/burn windows
+- **Monthly cost**: ~$55 (Azure credits available)
+
+### Automation Capabilities
+
+- **🛡️ Advanced Stealth**: Camoufox (Firefox fork) with fingerprint randomization, WebRTC hardening, human-like behavior
+- **🤖 Captcha Solving**: 2Captcha and CapSolver integration (Turnstile, hCaptcha, reCaptcha, image captchas)
+- **👥 Multi-Account**: 12 profiles with unique fingerprints, encrypted session cookies, proxy binding
+- **⚡ Job Scheduler**: High-concurrency orchestrator with retry logic, error handling, state persistence
+- **🩹 Crash Prevention**: Safe browser context management with health checks and recovery
+- **☁️ Cloudflare Bypass**: Progressive retry with automatic Turnstile solving
 
 ### Architecture
 
@@ -39,38 +66,185 @@ This project is a sophisticated, modular automation system designed to harvest h
 - **`scripts/dev/`**: Development and debugging utilities
 - **`docs/`**: Complete documentation including guides, API docs, and summaries
 
-### Advanced Features
+### Tech Stack
 
-- **💰 Golden Tier Targets**: Prioritizes high-yield, direct-deposit or reliable payers
-- **🏦 Wallet Daemon**: (Optional) Ready for **Electrum** JSON-RPC integration
-- **🎯 Zero Idle Time**: Job-based scheduler runs multiple earning methods simultaneously
-- **🔍 Robust Error Handling**: Failure state detection, proxy detection, and automatic retries
-- **🩺 Health Monitoring**: Enterprise-grade uptime monitoring with alerting
-- **📊 Real-Time Monitoring Dashboard**: Track per-faucet health, success rates, and profitability
-- **🚀 Azure Deployment**: Production-ready systemd service running 24/7
+- **Language**: Python 3.11+ with asyncio
+- **Browser**: Playwright + Camoufox (stealth Firefox)
+- **Data**: Pydantic v2 models, JSON persistence
+- **Deployment**: systemd service on Ubuntu (Azure VM)
+- **Proxies**: tinyproxy on 8 Azure B1s VMs
+- **Version Control**: Git + GitHub (single master branch)
 
----
+### Codebase Structure
 
-## 🎯 Supported Targets
+- **`core/`** - Orchestration, scheduling, configuration, data extraction, analytics
+- **`browser/`** - Stealth browser management, session persistence, fingerprinting
+- **`faucets/`** - Bot modules (18 implemented, currently disabled - see note)
+- **`tasks/`** - New automation tasks (airdrop farming, etc.)
+- **`solvers/`** - Captcha solving, shortlink traversal
+- **`scripts/`** - Diagnostic tools, deployment scripts, analysis
+- **`deploy/`** - Systemd service, Azure deployment automation
+- **`config/`** - Configuration, session state, encrypted cookies
+- **`docs/`** - Comprehensive documentation, guides, research
 
-| Faucet | Status | Features | Notes |
-| :--- | :--- | :--- | :--- |
-| **FireFaucet** | ✅ Active | Auto-claims, PTC, Daily Bonus, Shortlinks, Cloudflare Bypass | Turnstile selection, custom PTC captcha |
-| **Cointiply** | ✅ Enhanced | Hourly Roll, PTC Ads, Safe Operations | Task 7 improvements: enhanced selectors + crash prevention |
-| **FreeBitcoin** | ✅ Enhanced | "Golden Tier" Hourly Roll | Fixed login failure (Feb 2026); HTML5 selectors + Cloudflare timeout |
-| **DutchyCorp** | ✅ Enhanced | Auto-Rolls, Shortlinks, PTC | Multi-roll support (Dutchy + Coin), residential proxy required |
-| **FaucetCrypto** | ✅ Active | Faucet claims, PTC | Standardized extraction, v4.0+ compatible |
-| **CoinPayU** | ✅ Enhanced | Multi-coin faucet, Surf Ads | Improved consolidation logic, Turnstile handling |
-| **Pick.io Family** | ✅ Ready | 11 faucets (LTC, TRX, DOGE, etc.) | Unified architecture, auto-registration scripts |
-| **AdBTC** | ⚠️ Limited | Surf Ads, Math captcha | Proxy detection may block cloud IPs |
+> **Current Status**: Faucet bots are implemented but disabled (unprofitable). Infrastructure is being redirected to airdrop farming, web scraping services, and passive income opportunities.
 
 ---
 
-## 🚀 Installation & Setup
+## 🚀 Quick Start
 
-### 1. Prerequisites
+### For Development
 
-- Python 3.10+
+```bash
+# Clone repo
+git clone https://github.com/blairmichaelg/cryptobot.git
+cd cryptobot
+
+# Setup environment
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Configure
+cp .env.example .env
+# Edit .env with your credentials
+
+# Run tests
+pytest
+
+# Run single automation (example)
+python main.py --single firefaucet --once
+```
+
+### For Production (Azure VM)
+
+```bash
+# Deploy to existing Azure VM
+./deploy/azure_deploy.sh --resource-group APPSERVRG --vm-name DevNode01
+
+# Or setup new infrastructure
+./scripts/setup_azure_infrastructure.sh  # Creates 8 proxy VMs
+```
+
+See [DEPLOYMENT_INSTRUCTIONS.md](DEPLOYMENT_INSTRUCTIONS.md) for full setup guide.
+
+---
+
+## 📚 Documentation
+
+- **[QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - Pick a monetization path and start TODAY
+- **[docs/PROFITABLE_OPPORTUNITIES.md](docs/PROFITABLE_OPPORTUNITIES.md)** - 6 tiers of researched opportunities
+- **[RESEARCH_PROMPT.md](RESEARCH_PROMPT.md)** - Prompt for Gemini/Perplexity to research current opportunities
+- **[docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Architecture and development workflow
+- **[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)** - Site-specific implementation details
+- **[docs/DEPLOY_AZURE_PROXIES_QUICK.md](docs/DEPLOY_AZURE_PROXIES_QUICK.md)** - Azure proxy setup
+
+### Key Files
+
+- **Configuration**: `.env`, `config/profiles.json`, `config/proxies.txt`
+- **Analytics**: `earnings_analytics.json`, `logs/faucet_bot.log`
+- **State**: `config/faucet_state.json`, `config/session_state.json`
+
+---
+
+## 💰 Current Monetization Research
+
+**Status**: Pivoting from unprofitable faucets to high-value automation
+
+**Top 3 Opportunities Being Evaluated** (Feb 2026):
+
+1. **Crypto Airdrop Farming** - $2,400-12,000 per campaign
+   - LayerZero, zkSync, Scroll, Linea
+   - Perfect fit: multi-account + proxies + automation
+   - [Implementation template](tasks/airdrop_farmer_template.py) ready
+
+2. **Web Scraping Services** - $300-1,500/month recurring
+   - Unique selling point: 8 geographic proxy locations
+   - Fiverr/Upwork gigs for e-commerce, leads, price monitoring
+   - Existing infrastructure handles anti-scraping measures
+
+3. **Passive Income** - $120/month guaranteed
+   - Earnapp, Peer2Profit on 8 VMs
+   - Zero effort after 2-hour setup
+   - First payments in 4-6 weeks
+
+See [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md) to pick a path and start.
+
+---
+
+## 🔧 Customizing for New Automation Tasks
+
+The infrastructure is designed to be repurposed:
+
+```python
+# tasks/your_automation.py
+from faucets.base import FaucetBot, ClaimResult
+
+class YourBot(FaucetBot):
+    async def login(self):
+        await self.page.goto("https://example.com/login")
+        await self.page.fill("input[name='email']", self.email)
+        await self.page.fill("input[name='password']", self.password)
+        await self.page.click("button[type='submit']")
+        
+    async def claim(self):
+        # Your automation logic
+        # Uses: self.page (Playwright), self.solver (captchas), anti-detection
+        result = await self.perform_your_actions()
+        return ClaimResult(success=True, amount=result.amount)
+```
+
+**You get for free**:
+- Stealth browser with fingerprint randomization
+- Automatic proxy rotation
+- Captcha solving (2Captcha/CapSolver)
+- Session persistence (encrypted cookies)
+- Error handling and retries
+- Analytics and logging
+
+Just implement `login()` and `claim()` - the framework handles everything else.
+
+---
+
+## 📊 Current Status
+
+**Infrastructure**: ✅ Fully operational (9 Azure VMS)  
+**Codebase**: ✅ Cleaned and documented  
+**Original Purpose** (faucets): ❌ Unprofitable ($0.264 spent, $0.00 earned)  
+**New Direction**: 🔄 Researching profitable applications  
+**Best Leads**: Airdrops ($2.4k-12k), Scraping ($300-1500/mo), Passive ($120/mo)
+
+**Next Step**: Pick ONE opportunity from [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md) and implement it this week.
+
+---
+
+## 🤝 Contributing
+
+This is currently a personal project, but if you're interested in collaborating or have ideas for profitable uses of this infrastructure:
+
+1. Check [RESEARCH_PROMPT.md](RESEARCH_PROMPT.md) for what we're researching
+2. See [docs/PROFITABLE_OPPORTUNITIES.md](docs/PROFITABLE_OPPORTUNITIES.md) for current ideas
+3. Open an issue or discussion with your suggestions
+
+---
+
+## 📝 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+**Note**: This software is for educational and research purposes. Users are responsible for complying with the terms of service of any websites they interact with and all applicable laws.
+
+---
+
+## 🔗 Links
+
+- **GitHub**: [blairmichaelg/cryptobot](https://github.com/blairmichaelg/cryptobot)
+- **Deployment**: Azure VM (DevNode01, West US 2) + 8 proxy VMs
+- **Status**: Infrastructure operational, seeking profitable use cases
+
+---
+
+**Built with 💻 by an automation enthusiast. Infrastructure is solid - just needs the right target market. Got ideas? Let's talk.**
 - A **2Captcha** API Key (Required for automation)
 - `pytest` (for running tests)
 
