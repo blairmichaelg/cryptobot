@@ -105,6 +105,11 @@ task.md
 
 # Temporary files and directories
 tmpclaude-*
+debug_*.html
+debug_*.png
+firefaucet_*.html
+claim_btn_missing_*.png
+azure_proxies_fixed.txt
 nul
 *.html
 *.png
