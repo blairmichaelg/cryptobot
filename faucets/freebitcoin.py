@@ -779,27 +779,55 @@ class FreeBitcoinBot(FaucetBot):
                 )
                 logger.info(f"[DEBUG] Balance: {balance}")
 
-                # Check if timer is running (already claimed) with fallback selectors
-                # FreeBitcoin uses .countdown_time_remaining for the countdown display.
-                # #time_remaining exists but may not always be visible.
-                logger.info("[DEBUG] Checking timer...")
-                wait_min = await self.get_timer(
-                    ".countdown_time_remaining",
-                    fallback_selectors=[
-                        "#time_remaining",
-                        "#countdown_timer",
-                        "span#timer",
-                        ".countdown",
-                        "[data-next-claim]",
-                        ".time-remaining"
-                    ]
-                )
-                logger.info(f"[DEBUG] Timer: {wait_min} minutes")
+                # Check if timer is running using JavaScript evaluation
+                # CSS selectors fail because the timer element structure doesn't match expectations
+                logger.info("[DEBUG] Checking timer with JavaScript evaluation...")
+                
+                timer_result = await self.page.evaluate("""
+                    () => {
+                        // Check #time_remaining element first
+                        const timerEl = document.querySelector('#time_remaining');
+                        if (timerEl && timerEl.textContent && timerEl.textContent.trim()) {
+                            return timerEl.textContent.trim();
+                        }
+                        
+                        // Check if roll button is disabled (means timer active)
+                        const rollBtn = document.querySelector('#free_play_form_button');
+                        if (rollBtn && rollBtn.disabled) {
+                            return 'BUTTON_DISABLED';
+                        }
+                        
+                        // Check any countdown element
+                        const countdown = document.querySelector('.countdown, [data-next-claim]');
+                        if (countdown && countdown.textContent) {
+                            return countdown.textContent.trim();
+                        }
+                        
+                        return null;
+                    }
+                """)
+                
+                logger.info(f"[DEBUG] Timer extraction result: {timer_result}")
+                
+                # Parse timer result
+                wait_min = 0.0
+                if timer_result == 'BUTTON_DISABLED':
+                    logger.info("[DEBUG] Roll button is disabled - timer must be active")
+                    wait_min = 60  # Default to 60 minutes if we can't extract exact time
+                elif timer_result:
+                    # Try to parse the timer text
+                    from core.extractor import DataExtractor
+                    wait_min = DataExtractor.parse_timer_to_minutes(timer_result)
+                    logger.info(f"[DEBUG] Parsed timer value: {wait_min} minutes from '{timer_result}'")
+                
                 if wait_min > 0:
                     # Simulate reading page content while timer is active
                     await self.simulate_reading(2.0)
+                    logger.info(f"[FreeBitcoin] Timer active: {wait_min} minutes remaining")
                     return ClaimResult(success=True, status="Timer Active",
                                        next_claim_minutes=wait_min, balance=balance)
+                
+                logger.info("[DEBUG] No timer detected - claim may be ready")
 
                 # Check for Roll Button Presence BEFORE Solving (Save $$)
                 # Use multiple selector options for robustness
@@ -868,6 +896,20 @@ class FreeBitcoinBot(FaucetBot):
                     # Double check visibility after potential captcha delay
                     if await roll_btn.is_visible():
                         logger.debug("[FreeBitcoin] About to click roll button")
+                        
+                        # CRITICAL: Get balance BEFORE claim attempt
+                        balance_before = await self.get_balance(
+                            "#balance",
+                            fallback_selectors=[
+                                ".user_balance",
+                                ".balance",
+                                ".user-balance",
+                                "[data-balance]",
+                                ".account-balance"
+                            ]
+                        )
+                        logger.info(f"[FreeBitcoin] Balance BEFORE claim: {balance_before}")
+                        
                         await self.simulate_reading(duration=random.uniform(1.0, 2.0))
                         await self.human_like_click(roll_btn)
                         logger.debug("[FreeBitcoin] Roll button clicked")
@@ -889,6 +931,36 @@ class FreeBitcoinBot(FaucetBot):
                         # Log current page URL to verify we're still on the right page
                         current_url = self.page.url
                         logger.debug(f"[FreeBitcoin] Current page URL after click: {current_url}")
+                        
+                        # CRITICAL: Get balance AFTER claim attempt
+                        balance_after = await self.get_balance(
+                            "#balance",
+                            fallback_selectors=[
+                                ".user_balance",
+                                ".balance",
+                                ".user-balance",
+                                "[data-balance]",
+                                ".account-balance"
+                            ]
+                        )
+                        logger.info(f"[FreeBitcoin] Balance AFTER claim: {balance_after}")
+                        
+                        # Verify balance actually increased (PROOF of successful claim)
+                        balance_increased = False
+                        earned_amount = "0"
+                        
+                        try:
+                            before_float = float(balance_before) if balance_before else 0.0
+                            after_float = float(balance_after) if balance_after else 0.0
+                            
+                            if after_float > before_float:
+                                balance_increased = True
+                                earned_amount = str(after_float - before_float)
+                                logger.info(f"✅ [FreeBitcoin] VERIFIED CLAIM SUCCESS! Earned: {earned_amount} BTC")
+                            else:
+                                logger.warning(f"❌ [FreeBitcoin] Balance did NOT increase ({before_float} -> {after_float})")
+                        except (ValueError, TypeError) as e:
+                            logger.error(f"[FreeBitcoin] Failed to compare balances: {e}")
 
                         # Try multiple result selectors with logging
                         result_selectors = [
@@ -923,34 +995,46 @@ class FreeBitcoinBot(FaucetBot):
                                         break
                             except Exception as e:
                                 logger.debug(f"[FreeBitcoin] Error checking selector '{selector}': {e}")
+                        
+                        # Take screenshot as proof
+                        try:
+                            from pathlib import Path
+                            screenshot_dir = Path("claims")
+                            screenshot_dir.mkdir(exist_ok=True)
+                            import time
+                            screenshot_path = screenshot_dir / f"freebitcoin_{int(time.time())}.png"
+                            await self.page.screenshot(path=str(screenshot_path))
+                            logger.info(f"[FreeBitcoin] Screenshot saved: {screenshot_path}")
+                        except Exception as e:
+                            logger.warning(f"[FreeBitcoin] Failed to save screenshot: {e}")
 
+                        # ONLY claim success if balance actually increased
+                        if balance_increased:
+                            logger.info(f"FreeBitcoin Claimed! Won: {earned_amount} BTC (VERIFIED)")
+                            return ClaimResult(
+                                success=True,
+                                status="Claimed",
+                                next_claim_minutes=60,
+                                amount=earned_amount,
+                                balance=balance_after
+                            )
+                        
+                        # Result text found but balance didn't increase = FAILURE
                         if is_visible and won_text:
                             # Use DataExtractor for consistent parsing
                             clean_amount = DataExtractor.extract_balance(won_text)
-
-                            # If we found a non-zero result text on the page, that IS the confirmation
-                            # (The page display may not update immediately on freebitco.in)
-                            if clean_amount and clean_amount != "0":
-                                logger.info(f"FreeBitcoin Claimed! Won: {won_text} ({clean_amount})")
-                                return ClaimResult(
-                                    success=True,
-                                    status="Claimed",
-                                    next_claim_minutes=60,
-                                    amount=clean_amount,
-                                    balance="Unknown"  # Balance display not updated yet on page
-                                )
-
-                            logger.warning("[FreeBitcoin] Result text found but amount is 0 or invalid.")
+                            
+                            logger.warning(f"[FreeBitcoin] Result text shows {won_text} but balance unchanged!")
                             return ClaimResult(
                                 success=False,
-                                status="Zero Amount",
-                                next_claim_minutes=10,
+                                status="No Balance Increase",
+                                next_claim_minutes=60,
                                 amount=clean_amount or "0",
-                                balance=balance
+                                balance=balance_after
                             )
                         else:
                             # Result not found - log what we see on the page
-                            logger.warning("[FreeBitcoin] Claim result not found on page")
+                            logger.warning("[FreeBitcoin] Claim result not found on page and balance unchanged")
                             logger.debug(f"[FreeBitcoin] Page content length: {len(await self.page.content())}")
 
                             # Try to find ANY text on the page that might indicate success
@@ -965,7 +1049,7 @@ class FreeBitcoinBot(FaucetBot):
                                 success=False,
                                 status="Result Not Found",
                                 next_claim_minutes=15,
-                                balance=balance
+                                balance=balance_after
                             )
                     else:
                         logger.warning(
