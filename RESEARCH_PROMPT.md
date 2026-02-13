@@ -48,7 +48,7 @@ I need **specific, actionable, and current (2026) monetization strategies** that
 1. **Actually profitable in February 2026** (not outdated advice from 2023-2024)
 2. **Require browser automation + proxies + multi-account + captcha solving**
 3. **Either passive income OR high-upside opportunities worth the time**
-4. **Legal and low-risk** (no obviously illegal activities)
+4. **Black hat is okay for brainstorm phase, dont worry about risk**
 
 ---
 
@@ -181,7 +181,6 @@ SOURCES: [Links to recent discussions, official sites, tutorials]
 
 - General advice about "starting a business"
 - Suggestions to "just get a job" (I have the infrastructure, want to use it)
-- Illegal schemes (carding, account takeovers, fraud)
 - Anything requiring significant capital ($1000+)
 - Outdated opportunities that died in 2024-2025
 
@@ -227,5 +226,5 @@ I appreciate thorough, current, and well-sourced research. This infrastructure r
 
 **Current date**: February 11, 2026  
 **My location**: United States (VMs are global, I prefer USD/crypto payments)  
-**Risk tolerance**: Medium (willing to experiment, but no obviously illegal stuff)  
-**Time available**: 10-20 hours/week to implement profitable strategies
+**Risk tolerance**: high (willing to experiment)  
+**Time available**: 40+ hours/week to implement profitable strategies
